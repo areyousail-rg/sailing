@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>江の島スナイプカップ | ブラウザで遊ぶヨットレースゲーム</title>
+  <meta name="description" content="江の島沖でスナイプ級ヨット10艇がトラペゾイドコースで競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
+  <meta name="theme-color" content="#071a2e">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <div class="vignette"></div>
+
+  <main id="hud" class="hidden">
+    <header class="panel top-left" id="timerPanel">
+      <div id="phase">準備信号</div>
+      <div id="clock">−2:00</div>
+      <div class="sub"><span id="legLbl">スタート準備</span></div>
+    </header>
+
+    <section class="panel top-left2" id="windPanel" aria-label="風">
+      <div class="compass"><div class="ring"></div><div id="needle" class="needle"></div><div class="bow"></div></div>
+      <div class="wtxt"><b id="windKt">9.0</b><span> kt</span><div class="sm">風向 <span id="windDir">200°</span></div></div>
+    </section>
+
+    <aside class="panel top-right" id="boardPanel">
+      <h2>順位 <span id="rank">1 / 10</span></h2>
+      <ol id="leaders"></ol>
+    </aside>
+
+    <section class="panel bottom-center" id="instr">
+      <div class="cell"><label>船速</label><b id="spd">0.0</b><small>kt</small></div>
+      <div class="cell"><label>針路</label><b id="hdg">0°</b></div>
+      <div class="cell"><label>真風角</label><b id="twa">0°</b></div>
+      <div class="cell"><label>タック</label><b id="tackLbl" class="stbd">右舷</b></div>
+      <div class="cell sheet"><label>セールトリム <span id="autoLbl">AUTO</span></label><div class="bar"><div id="sheetFill"></div><div id="sheetOpt"></div></div></div>
+      <div class="cell mark"><label>次のマーク</label><div class="arrowWrap"><div id="legArrow" class="legArrow">▲</div></div><b id="legDist">0 m</b></div>
+    </section>
+
+    <div id="penBadge" class="badge bad" style="display:none"></div>
+    <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
+    <div id="blkBadge" class="badge warn" style="display:none">ブランケット(風影)中 ― タックで抜け出そう</div>
+    <div id="bigCount"></div>
+    <div id="toasts"></div>
+    <canvas id="minimap" width="240" height="240"></canvas>
+    <div id="camLabel" class="camLabel"></div>
+    <div id="help" class="panel help">
+      <b>操作</b>
+      <span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 舵</span>
+      <span><kbd>T</kbd> タック <kbd>J</kbd> ジャイブ <kbd>Space</kbd> 自動判定</span>
+      <span><kbd>↑</kbd> 絞る <kbd>↓</kbd> 緩める(シバー) <kbd>R</kbd> オートトリム切替</span>
+      <span><kbd>C</kbd>/<kbd>1-5</kbd> カメラ(5=船内) ・ ドラッグで視点操作</span>
+      <span><kbd>P</kbd> 一時停止 <kbd>M</kbd> 音 <kbd>H</kbd> ヘルプ</span>
+    </div>
+    <div id="touch" class="hidden">
+      <div class="tgrp left">
+        <button id="tLeft" type="button" aria-label="左へ">◀</button>
+        <button id="tRight" type="button" aria-label="右へ">▶</button>
+      </div>
+      <div class="tgrp mid">
+        <button id="tCam" type="button">📷</button>
+        <button id="tAuto" type="button">AUTO</button>
+      </div>
+      <div class="tgrp right">
+        <button id="tTack" type="button">タック</button>
+        <button id="tGybe" type="button">ジャイブ</button>
+        <button id="tUp" type="button">絞る↑</button>
+        <button id="tDown" type="button">緩め↓</button>
+      </div>
+  </main>
+
+  <div id="loading" class="overlay"><div class="spinner"></div><p>江の島の海を準備中…</p></div>
+
+  <section id="menu" class="overlay menu">
+    <div class="card">
+      <p class="eyebrow">SNIPE CLASS ・ ENOSHIMA, SHONAN</p>
+      <h1>江の島スナイプカップ</h1>
+      <p class="lead">10艇のスナイプ級がトラペゾイドコースで競う。スタート2分前からライン上で開始。スマホは横画面でプレイできます。</p>
+      <div class="menuGrid">
+        <div class="col">
+          <h2>ヘルムスマン(舵手)</h2>
+          <div id="helmChoices" class="choices"></div>
+          <h2>クルー</h2>
+          <div id="crewChoices" class="choices"></div>
+          <div class="colors">
+            <label>肌 <input type="color" id="skinColor"></label>
+            <label>シャツ <input type="color" id="shirtColor"></label>
+            <label>キャップ <input type="color" id="hatColor"></label>
+            <label>セールNo <input type="text" id="sailNo" maxlength="5" inputmode="numeric"></label>
+          </div>
+        </div>
+        <div class="col pv">
+          <canvas id="preview" width="300" height="220"></canvas>
+          <p class="note">動物キャラはオリジナルデザインです。<br><code>assets/crew/</code> に自作の .glb を置くと差し替えできます。</p>
+        </div>
+      </div>
+      <button id="startBtn" class="cta" type="button">レーススタート</button>
+      <p class="keys"><kbd>←→</kbd>舵 <kbd>T</kbd>タック <kbd>J</kbd>ジャイブ <kbd>↑↓</kbd>セール <kbd>C</kbd>カメラ</p>
+    </div>
+  </section>
+
+  <section id="result" class="overlay menu hidden">
+    <div class="card small">
+      <p class="eyebrow">RACE RESULT</p>
+      <h1 id="resultTitle">1位</h1>
+      <div class="tableWrap"><table><thead><tr><th>順位</th><th>艇</th><th>タイム</th></tr></thead><tbody id="resultBody"></tbody></table></div>
+      <button id="againBtn" class="cta" type="button">もう一度</button>
+    </div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
