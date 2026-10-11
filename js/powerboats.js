@@ -111,43 +111,45 @@ export function makeMotorboat(type, o = {}) {
   const g = new THREE.Group();
   const flagCfg = o.flags || [];
   if (type === 'committee') {
-    const L = 11.5, B = 3.7, H = 1.0;
+    // 本部船: 全長約16mのモータークルーザー(サロン + フライブリッジ)。後部に信号マストとヤード
+    const L = 16, B = 4.8, H = 1.4;
     const hull = hullGroup(L, B, H, 0xf6f7f7, o.stripe ?? 0x1c3f86); g.add(hull);
     const hb = hull.userData.halfB, sh = hull.userData.sheer;
-    // キャビン(側面プロファイル押し出し)
-    const cs = new THREE.Shape(); cs.moveTo(-3.0, 0); cs.lineTo(2.0, 0); cs.lineTo(2.0, 0.55); cs.lineTo(0.9, 1.7); cs.lineTo(-2.5, 1.7); cs.lineTo(-3.0, 1.5); cs.closePath();
-    const cg = new THREE.ExtrudeGeometry(cs, { depth: 2.7, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2 }); cg.rotateY(-Math.PI / 2); cg.translate(1.35, H + 0.05, 0);
+    // サロン(側面プロファイル押し出し)
+    const cs = new THREE.Shape(); cs.moveTo(-5.2, 0); cs.lineTo(3.0, 0); cs.lineTo(3.0, 0.5); cs.lineTo(1.4, 1.9); cs.lineTo(-4.8, 1.9); cs.lineTo(-5.2, 1.7); cs.closePath();
+    const cg = new THREE.ExtrudeGeometry(cs, { depth: 3.7, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 2 }); cg.rotateY(-Math.PI / 2); cg.translate(1.85, H + 0.05, 0);
     g.add(new THREE.Mesh(cg, white));
-    // 屋根(オーバーハング)+ 手すり
-    g.add(box(2.9, 0.1, 3.9, white, 0, H + 1.78, -0.9)); 
-    // 窓: 側面連続窓 + 前面窓
+    // 船体側面の舷窓とサロンの連続窓
     for (const sg of [-1, 1]) {
-      g.add(box(0.03, 0.55, 3.2, glass, sg * 1.37, H + 1.05, -1.4));
-      g.add(box(0.025, 0.55, 0.9, glass, sg * 1.34, H + 0.9, 0.7)); 
+      g.add(box(0.03, 0.7, 5.6, glass, sg * 1.9, H + 1.15, -1.6));
+      g.add(box(0.03, 0.22, 2.6, glass, sg * (hb(2.6) + 0.01), H - 0.35, 2.6));
     }
-    const ws = box(2.55, 0.62, 0.03, glass, 0, H + 1.12, 1.03); ws.rotation.x = -0.88; g.add(ws);
-    const wf = box(2.65, 0.05, 0.05, alu, 0, H + 1.43, 0.98); g.add(wf);
-    g.add(box(0.7, 1.1, 0.05, glass, 0, H + 0.9, -3.0 + 0.0).translateZ(0)); // 後部ドア
-    g.add(box(0.8, 1.3, 0.04, mat(0xd7dbde, 0.5), 0, H + 0.75, -3.04));
-    // ハードトップ上のレーダーアーチ + マスト
-    g.add(box(2.4, 0.07, 0.07, alu, 0, H + 2.6, -1.6));
-    for (const sg of [-1, 1]) g.add(cyl(0.04, 0.8, alu, sg * 1.2, H + 2.2, -1.6));
-    const mast = pole(4.3, flagCfg); mast.position.set(0, H + 1.78, 0.3); g.add(mast);
+    const ws = box(3.4, 0.8, 0.03, glass, 0, H + 1.25, 1.95); ws.rotation.x = -0.86; g.add(ws);
+    // フライブリッジ(上部操舵席)+ ハードトップ
+    g.add(box(3.6, 0.1, 5.0, white, 0, H + 1.98, -2.4));
+    g.add(box(3.2, 0.75, 2.6, white, 0, H + 2.4, -1.6));
+    g.add(box(3.0, 0.4, 0.03, glass, 0, H + 2.55, -0.28));
+    for (const [x, z] of [[-1.5, -0.4], [1.5, -0.4], [-1.5, -3.0], [1.5, -3.0]]) g.add(cyl(0.035, 1.3, alu, x, H + 3.4, z));
+    g.add(box(3.4, 0.08, 3.0, white, 0, H + 4.08, -1.7));
+    for (const sg of [-1, 1]) { const pp = []; for (let i = 0; i <= 6; i++) pp.push([sg * 1.75, H + 2.75, -4.6 + i * 0.75]); g.add(tube(pp, 0.025, chrome)); }
+    // レーダー・アンテナ
+    const radar = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.14, 16), mat(0xdee2e6, 0.5)); radar.position.set(0, H + 4.2, -1.2); g.add(radar);
+    g.add(cyl(0.02, 1.6, mat(0xf0f0f0, 0.5), 1.3, H + 4.9, -2.6));
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), mat(0xffa500, 0.3, 0, { emissive: 0xff7700, emissiveIntensity: 0.6 })); beacon.position.set(-1.2, H + 4.2, -2.6); g.add(beacon);
+    // 後部デッキの信号マスト + ヤード(フラッグはここに揚げる)
+    const mast = pole(5.2, flagCfg); mast.position.set(0, H + 0.05, -6.0); g.add(mast);
     g.userData.mast = mast;
-    // 信号旗ヤード(横桁)
-    const yard = cyl(0.025, 2.2, alu, 0, 0, 0, 0, Math.PI / 2); yard.position.set(0, H + 1.78 + 3.2, 0.3); g.add(yard);
-    const radar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.12, 16), mat(0xdee2e6, 0.5)); radar.position.set(0, H + 2.75, -1.6); g.add(radar);
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), mat(0xffa500, 0.3, 0, { emissive: 0xff7700, emissiveIntensity: 0.6 })); beacon.position.set(0.8, H + 2.7, -1.6); g.add(beacon);
-    pulpit(g, hb, 2.5, sh(2.5));
-    // 後部デッキ設備: フラッグボックス・ホーン・船外機×2
-    g.add(box(0.8, 0.5, 0.5, mat(0xff7a00, 0.6), 0.95, H + 0.3, -4.4));
-    g.add(box(0.55, 0.3, 0.9, mat(0x2a2d33, 0.8), -0.95, H + 0.18, -4.3));
-    g.add(outboard(-0.8, -L / 2 - 0.2, 1.1)); g.add(outboard(0.8, -L / 2 - 0.2, 1.1));
-    for (const [x, z] of [[-1.55, 1.3], [1.55, 1.3], [-1.6, -1.5], [1.6, -1.5], [-1.4, -4.6], [1.4, -4.6]]) g.add(cleat(x, sh(z) + 0.06, z));
-    // フェンダー
-    for (const z of [-3.2, -0.6, 1.8]) for (const sg of [-1, 1]) g.add(fender(sg * (hb(z) + 0.05), sh(z) + 0.05, z));
+    const yard = cyl(0.03, 3.0, alu, 0, 0, 0, 0, Math.PI / 2); yard.position.set(0, H + 4.3, -6.0); g.add(yard);
+    // 後部デッキ設備: フラッグボックス・クーラー・スイムプラットフォーム
+    g.add(box(0.9, 0.55, 0.55, mat(0xff7a00, 0.6), 1.3, H + 0.3, -6.7));
+    g.add(box(0.7, 0.4, 1.0, mat(0x2a2d33, 0.8), -1.3, H + 0.22, -6.6));
+    g.add(box(B * 0.9, 0.12, 1.1, mat(0xd8c7a5, 0.8), 0, 0.35, -L / 2 - 0.5));
+    g.add(box(0.03, 1.0, 1.4, glass, 0, H + 0.95, -5.27)); // 後部ドア
+    pulpit(g, hb, 4.0, sh(4.0));
+    for (const [x, z] of [[-2.0, 2.0], [2.0, 2.0], [-2.1, -2.5], [2.1, -2.5], [-1.9, -7.2], [1.9, -7.2]]) g.add(cleat(x, sh(z) + 0.06, z));
+    for (const z of [-5.0, -2.0, 1.2]) for (const sg of [-1, 1]) g.add(fender(sg * (hb(z) + 0.05), sh(z) + 0.05, z));
     // 錨
-    g.add(box(0.12, 0.08, 0.5, chrome, 0, sh(4.1) + 0.12, 4.0));
+    g.add(box(0.14, 0.1, 0.6, chrome, 0, sh(6.0) + 0.12, 5.9));
   } else if (type === 'outer') {
     const L = 7.6, B = 2.7, H = 0.85;
     const hull = hullGroup(L, B, H, 0xf2f4f5, o.stripe ?? 0xd9531e); g.add(hull);

@@ -7,12 +7,12 @@ import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
 import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, updateProgress, progressOf, toCourse, toWorld } from './course.js';
-import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, flap, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio } from './audio.js';
+import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 10;
+const N_BOATS = 15;
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -67,9 +67,10 @@ function clearFleet() {
 function makeFleet() {
   clearFleet();
   const slots = [];
-  // 1分前はラインの40〜60m手前。右舷クローズホールドで少しずつ左へ流れながら近づくので、やや右寄りに配置
-  for (let i = 0; i < N_BOATS; i++) slots.push({ a: -38 - (i % 3) * 9, c: -10 + i * (85 / (N_BOATS - 1)) });
-  const pslot = slots.splice(5, 1)[0];
+  // 1分前はCP艇がラインの40〜60m手前。右舷クローズホールドで少しずつ左へ流れながら近づくので、やや右寄りに配置
+  for (let i = 0; i < N_BOATS - 1; i++) slots.push({ a: -38 - (i % 3) * 9, c: -12 + i * (88 / (N_BOATS - 2)) });
+  // 自艇は他艇のいない左後方(風上に誰もいない位置)からスタート
+  const pslot = { a: -78, c: -38 };
   for (let i = slots.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0;[slots[i], slots[j]] = [slots[j], slots[i]]; }
   const used = new Set([cfg.sailNo]);
   for (let k = 0; k < N_BOATS; k++) {
@@ -105,6 +106,13 @@ function toast(text, kind = 'info', ms = 5200) {
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = text;
   hud.toasts.prepend(d);
   while (hud.toasts.children.length > 5) hud.toasts.lastChild.remove();
+  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, ms);
+}
+// 他艇同士の出来事など、重要度の低い通知は画面端に小さく
+function miniLog(text, ms = 3500) {
+  const box = $('miniLog'); if (!box) return;
+  const d = document.createElement('div'); d.textContent = text; box.prepend(d);
+  while (box.children.length > 3) box.lastChild.remove();
   setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, ms);
 }
 const nameOf = (b) => (b.isPlayer ? 'あなた' : `${b.nat} ${b.sailNo}`);
@@ -238,8 +246,8 @@ function handleCollision(e) {
     const issued = gw.startPenalty(e.rule === 18 ? 18 : e.rule);
     if (quiet) return;
     if (gw.isPlayer) toast(`ペナルティ! ${nameOf(row)} と接触\n${e.text}\n→ 360°ターン(タック+ジャイブ)で消化`, 'bad', 7000);
-    else if (row.isPlayer) toast(`${nameOf(gw)} が違反(ルール${e.rule})。相手は360°ターンを行います`, 'good');
-    else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) toast(`${nameOf(gw)} が ${nameOf(row)} に違反(ルール${e.rule}) → 360°ターン`, 'info', 3500);
+    else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}) → 360°ターン`);
+    else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) miniLog(`${nameOf(gw)} 違反(R${e.rule}) → 360°`);
     if (!issued) return;
   } else if (e.type === 'touch') {
     const b = e.boat; const ok = b.startPenalty(31);
@@ -255,6 +263,7 @@ function startRace() {
   initAudio();
   makeFleet();
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
+  state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
   toast('スタート1分前。ライン手前で待機し、号砲に合わせて加速しよう(カメラ切替で船内視点も)', 'info', 7000);
@@ -288,10 +297,25 @@ function tryManeuver(kind) {
   if (player.finished && state.pAI) return;
   if (!player.startManeuver(kind) && player.pole && !player.maneuver) toast('ランチャーを下ろしてからタックしてください', 'warn', 2500);
 }
+// 舵: 矢印を短く押すと針路が1°ずつ変わる。押し続けると徐々に速く回頭(タック/ジャイブも舵で風をまたぐ)
+let hTarget = null, hErrT = 0;
+const steerHold = { L: 0, R: 0 };
 function playerControl(dt) {
-  const b = player;
-  const r = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0);
-  if (!b.maneuver) b.steer += (r - b.steer) * (1 - Math.exp(-dt * 9));
+  const b = player, DEG = Math.PI / 180;
+  const L = keys.has('ArrowLeft') || keys.has('KeyA'), R = keys.has('ArrowRight') || keys.has('KeyD');
+  if (hTarget === null || b.maneuver) hTarget = b.h;
+  for (const [on, k, s] of [[L, 'L', -1], [R, 'R', 1]]) {
+    if (on) {
+      if (steerHold[k] === 0) hTarget = wrap(hTarget + s * DEG); // タップ = 1°
+      steerHold[k] += dt;
+      if (steerHold[k] > 0.35) hTarget = wrap(hTarget + s * Math.min(35, 8 + (steerHold[k] - 0.35) * 30) * DEG * dt);
+    } else steerHold[k] = 0;
+  }
+  let err = wrap(hTarget - b.h);
+  if (Math.abs(err) > 0.6) { hTarget = wrap(b.h + Math.sign(err) * 0.6); err = wrap(hTarget - b.h); }
+  // ランチャー制限などで目標針路へ向けない状態が続いたら目標を現在の針路に合わせる
+  if (!L && !R && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
+  if (!b.maneuver) b.steer = clamp(err * 4, -1, 1);
   const up = keys.has('ArrowUp') || keys.has('KeyW'), dn = keys.has('ArrowDown') || keys.has('KeyS');
   if (autoTrim) {
     let tg = b.sOpt;
@@ -311,7 +335,10 @@ function simStep(dt) {
   for (const a of ais) a.update(dt, t, boats);
   if (player.finished && state.pAI) state.pAI.update(dt, t, boats);
   else if (window.__ap) window.__ap.update(dt, t, boats); else playerControl(dt);
-  if (player.maneuverStarted) { if (!state.ff) flap(0.8); player.maneuverStarted = null; }
+  if (player.maneuverStarted) player.maneuverStarted = null;
+  // タック/ジャイブ(風をまたいだ瞬間)にセールの「バサッ」、ランチャー上下で「シャキン」
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished) sailFlog(0.85); state.lastTack = player.tack; }
+  if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   for (const b of boats) b.update(dt, t);
   for (const e of resolveCollisions(boats, t)) handleCollision(e);
@@ -434,11 +461,6 @@ window.addEventListener('blur', () => keys.clear());
 
 function setCamera(m) {
   cam.setMode(m);
-  if (cam.mode === COCKPIT) {
-    toast('艇内カメラ: [Q]風上 / [E]風下 / [W]正面 / [S]後方 で他艇の位置とテルテールを確認', 'info', 7000);
-  } else {
-    toast('ドローンカメラ: 艇群全景とコース全貌を撮影', 'info', 3000);
-  }
 }
 
 // タッチ & ボタンUI操作
@@ -451,11 +473,6 @@ function initTouch() {
   tap('restartBtn', () => { togglePause(false); startRace(); });
   tap('exitMenuBtn', () => { togglePause(false); $('result').classList.add('hidden'); $('hud').classList.add('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; makeFleet(); });
 
-  // 視点切り替えボタン
-  tap('btnLookWind', () => cam.lookWindward(player ? player.tack : 1));
-  tap('btnLookAhead', () => cam.lookAhead());
-  tap('btnLookLee', () => cam.lookLeeward(player ? player.tack : 1));
-  tap('btnLookStern', () => cam.lookStern());
   // ランチャー アップ/ダウン
   tap('poleUpBtn', () => setPlayerPole(true));
   tap('poleDownBtn', () => setPlayerPole(false));
@@ -472,7 +489,6 @@ function initTouch() {
   hold('tLeft', 'ArrowLeft'); hold('tRight', 'ArrowRight'); hold('tUp', 'ArrowUp'); hold('tDown', 'ArrowDown');
   
   const tapTouch = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); if (state.phase === 'race') fn(); });
-  tapTouch('tTack', () => tryManeuver('tack')); tapTouch('tGybe', () => tryManeuver('gybe'));
   tapTouch('tPole', () => setPlayerPole(!player.pole));
   tapTouch('tCam', () => setCamera(cam.mode + 1)); tapTouch('tAuto', () => setAuto(!autoTrim));
   $('tAuto').classList.add('on');
@@ -524,6 +540,7 @@ function initMenu() {
 }
 
 (async function boot() {
+  if (window.__setLoad) window.__setLoad(95);
   const extra = await loadCustomCrew();
   crewOptions = [...CREW_TYPES, ...extra];
   if (!crewOptions.find((c) => c.id === cfg.helm)) cfg.helm = 'human';
@@ -531,7 +548,8 @@ function initMenu() {
   makeFleet();
   initMenu();
   initTouch();
-  $('loading').classList.add('hidden');
+  if (window.__setLoad) window.__setLoad(100);
+  setTimeout(() => $('loading').classList.add('hidden'), 250);
   loop();
   const q = new URLSearchParams(location.search);
   window.__game = { state, get boats() { return boats; }, get player() { return player; }, simStep, cam };

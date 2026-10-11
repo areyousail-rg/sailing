@@ -5,6 +5,9 @@ import { wrap, clamp } from './sim.js';
 
 export const CAM_MODES = ['ドローンカメラ', '艇内カメラ(オンボード)'];
 export const COCKPIT = 1;
+// スマホ(小さい画面)ではドローンを少し引いて周囲を見やすくする
+const SMALL = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
+const DRONE_D = SMALL ? 29 : 22, DRONE_H = SMALL ? 11 : 8, DRONE_FOV = SMALL ? 58 : 54;
 
 export class DroneCam {
   constructor(camera, dom) {
@@ -89,7 +92,7 @@ export class DroneCam {
 
     // ドローンカメラ視点
     const ang = boat.h + this.yaw;
-    const d = 22 * this.zoom, hgt = (8 + this.pitch * 12) * this.zoom;
+    const d = DRONE_D * this.zoom, hgt = (DRONE_H + this.pitch * 12) * this.zoom;
     w.set(boat.x - Math.sin(ang) * d, hgt, boat.z + Math.cos(ang) * d);
     lk.set(boat.x + Math.sin(boat.h) * 8, 1.6, boat.z - Math.cos(boat.h) * 8);
 
@@ -102,7 +105,7 @@ export class DroneCam {
     this.cam.lookAt(this.look);
     this.cam.rotateZ(Math.sin(t * 0.7) * 0.003 + Math.sin(t * 1.9) * 0.002);
     
-    const fov = 54 + clamp(boat.v / 7, 0, 1) * 6;
+    const fov = DRONE_FOV + clamp(boat.v / 7, 0, 1) * 6;
     if (Math.abs(this.cam.fov - fov) > 0.01) { this.cam.fov += (fov - this.cam.fov) * 0.05; this.cam.updateProjectionMatrix(); }
   }
 }

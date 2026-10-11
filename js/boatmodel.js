@@ -142,11 +142,7 @@ function jibTexture() {
     x.beginPath(); x.moveTo(0, y); x.lineTo(128, y); x.stroke();
   }
 
-  // 赤色トリムドラフトライン（3本）
-  x.fillStyle = '#d93636';
-  for (const u of [0.28, 0.52, 0.76]) {
-    x.fillRect(0, (1 - u) * 512 - 4, 128, 8);
-  }
+  // (赤いドラフトストライプは無し。テルテールは別メッシュで表示)
 
   // ジブ用クリア窓
   x.fillStyle = 'rgba(200, 230, 250, 0.65)';

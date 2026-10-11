@@ -13,7 +13,8 @@ const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); retu
 export const POLE_MIN = (100 * Math.PI) / 180;
 
 // スナイプ風のポーラー(TWA deg → m/s @ 9kt)
-const POLAR = [[0, 0], [30, 0], [36, 1.0], [42, 1.9], [47, 2.25], [60, 2.85], [75, 3.3], [90, 3.55], [110, 3.6], [130, 3.4], [150, 3.0], [165, 2.75], [180, 2.6]];
+// ランニングは真追い手(180°)より少し上った170°付近が最も速い(風下へのVMGも最大)
+const POLAR = [[0, 0], [30, 0], [36, 1.0], [42, 1.9], [47, 2.25], [60, 2.85], [75, 3.3], [90, 3.55], [110, 3.6], [130, 3.4], [150, 3.0], [160, 2.84], [170, 2.9], [180, 2.45]];
 export function polar(deg) {
   for (let i = 1; i < POLAR.length; i++) {
     if (deg <= POLAR[i][0]) {
@@ -142,7 +143,8 @@ export class Boat {
     // トリム評価(オーバー/アンダー)とラフ・ストール
     const so = sheetOpt(twa); this.sOpt = so;
     const d = this.sheet - so;
-    const pinch = twa < 0.8 ? clamp((0.8 - twa) * 4, 0, 1) : 0;
+    const PINCH = (40 * Math.PI) / 180; // これより上るとセールがシバーする
+    const pinch = twa < PINCH ? clamp((PINCH - twa) * 4, 0, 1) : 0;
     this.luff = clamp(Math.max(Math.max(0, -d - 0.05) * 3.2, pinch * 0.9), 0, 1);
     this.stall = clamp((d - 0.1) * 3.5, 0, 1);
     const eff = clamp(1 - Math.max(0, -d - 0.06) * 1.45 - Math.max(0, d - 0.1) * 0.9, 0.12, 1);
@@ -170,10 +172,11 @@ export class Boat {
 // 障害物(マーク・委員会艇)のワールド座標円
 export const OBSTACLES = (() => {
   const list = [];
-  for (const k of ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm']) { const p = toWorld(MARKS[k].a, MARKS[k].c); list.push({ key: k, x: p.x, z: p.z, r: 2.0 }); }
-  // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)
-  for (const [k, sp, n, r] of [['com', MARKS.com, 3, 2.5], ['pin', MARKS.pin, 2, 2.2], ['com', MARKS.fcom, 3, 2.5]]) {
-    for (let i = -(n - 1) / 2; i <= (n - 1) / 2; i++) { const p = toWorld(sp.a + i * 4.5, sp.c); list.push({ key: k, x: p.x, z: p.z, r }); }
+  // マークの当たり判定は水線位置のブイの太さ(半径約1.3m)に合わせる
+  for (const k of ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm']) { const p = toWorld(MARKS[k].a, MARKS[k].c); list.push({ key: k, x: p.x, z: p.z, r: 1.35 }); }
+  // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)。本部船は全長約16mのクルーザー
+  for (const [k, sp, n, r, gap] of [['com', MARKS.com, 4, 2.4, 4.0], ['pin', MARKS.pin, 2, 2.2, 4.5], ['com', MARKS.fcom, 4, 2.4, 4.0]]) {
+    for (let i = -(n - 1) / 2; i <= (n - 1) / 2; i++) { const p = toWorld(sp.a + i * gap, sp.c); list.push({ key: k, x: p.x, z: p.z, r }); }
   }
   return list;
 })();

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>江の島スナイプカップ | ブラウザで遊ぶヨットレースゲーム</title>
-  <meta name="description" content="江の島沖でスナイプ級ヨット10艇がトラペゾイドコースで競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
+  <title>スナイプカップ | ブラウザで遊ぶヨットレースゲーム</title>
+  <meta name="description" content="江の島沖でスナイプ級ヨット15艇がトラペゾイドコースで競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#071a2e">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,6 +15,30 @@
   </script>
 </head>
 <body>
+  <div id="loading" class="overlay"><div class="spinner"></div><p>Loading <span id="loadPct">0</span>%</p><div class="loadBar"><div id="loadFill"></div></div></div>
+  <script>
+  // 読み込み進捗: モジュール(three.js と js/*.js)の取得数から推定し、main.js の初期化完了で100%
+  (function () {
+    var target = 3, shown = 0, done = 0, EXPECT = 14;
+    window.__setLoad = function (p) {
+      target = Math.max(target, p);
+      if (p >= 100) { shown = 100; var e1 = document.getElementById('loadPct'), e2 = document.getElementById('loadFill'); if (e1) e1.textContent = '100'; if (e2) e2.style.width = '100%'; }
+    };
+    try {
+      new PerformanceObserver(function (l) {
+        l.getEntries().forEach(function (e) { if (/\.js(\?|$)/.test(e.name)) { done++; window.__setLoad(Math.min(90, 5 + (done / EXPECT) * 85)); } });
+      }).observe({ type: 'resource', buffered: true });
+    } catch (e) {}
+    function tick() {
+      if (shown < target) shown = Math.min(target, shown + Math.max(0.6, (target - shown) * 0.12));
+      else if (target < 90) target += 0.05; // 取得待ちの間も少しずつ進める
+      var p = document.getElementById('loadPct'), f = document.getElementById('loadFill');
+      if (p) p.textContent = Math.floor(shown); if (f) f.style.width = shown + '%';
+      if (shown < 100) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  })();
+  </script>
   <canvas id="gl"></canvas>
   <div class="vignette"></div>
 
@@ -47,27 +71,22 @@
 
     <div id="penBadge" class="badge bad" style="display:none"></div>
     <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
-    <div id="blkBadge" class="badge warn" style="display:none">ブランケット(風影)中 ― タックで抜け出そう</div>
+    <div id="blkBadge" class="badge warn" style="display:none">ブランケット(風影)中</div>
     <button id="pauseBtn" class="pauseBtn" type="button">⏸ 中断</button>
 
     <div id="bigCount"></div>
     <div id="toasts"></div>
+    <div id="miniLog"></div>
     <canvas id="minimap" width="240" height="240"></canvas>
     
     <div id="camControlGroup" class="camControlGroup">
       <div id="camLabel" class="camLabel"></div>
-      <div class="quickLooks">
-        <button id="btnLookWind" type="button" title="風上を見る [Q]">風上 [Q]</button>
-        <button id="btnLookAhead" type="button" title="前方・セール [W]">正面 [W]</button>
-        <button id="btnLookLee" type="button" title="風下を見る [E]">風下 [E]</button>
-        <button id="btnLookStern" type="button" title="後方・他艇 [S]">後方 [S]</button>
-      </div>
     </div>
 
     <div id="help" class="panel help">
       <b>操作</b>
-      <span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 舵</span>
-      <span><kbd>T</kbd> タック <kbd>J</kbd> ジャイブ <kbd>Space</kbd> 自動</span>
+      <span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 舵(短く押すと1°ずつ、押し続けると大きく。風をまたぐとタック/ジャイブ)</span>
+      <span><kbd>T</kbd> オートタック <kbd>J</kbd> オートジャイブ</span>
       <span><kbd>↑</kbd> 絞る <kbd>↓</kbd> 緩める(シバー) <kbd>R</kbd> オートトリム</span>
       <span><kbd>L</kbd> ランチャー アップ/ダウン(下レグのみ。上げると風上には向けない)</span>
       <span><kbd>C</kbd> カメラ切替(ドローン / 艇内視点)</span>
@@ -86,8 +105,6 @@
         <button id="tPole" type="button">ランチャー</button>
       </div>
       <div class="tgrp right">
-        <button id="tTack" type="button">タック</button>
-        <button id="tGybe" type="button">ジャイブ</button>
         <button id="tUp" type="button">絞る↑</button>
         <button id="tDown" type="button">緩め↓</button>
       </div>
@@ -108,13 +125,12 @@
     </div>
   </section>
 
-  <div id="loading" class="overlay"><div class="spinner"></div><p>江の島の海を準備中…</p></div>
 
   <section id="menu" class="overlay menu">
     <div class="card">
       <p class="eyebrow">SNIPE CLASS ・ ENOSHIMA, SHONAN</p>
-      <h1>江の島スナイプカップ</h1>
-      <p class="lead">10艇のスナイプ級がトラペゾイドコースで競う。スタート1分前からライン上で開始。スマホは横画面でプレイできます。</p>
+      <h1>スナイプカップ</h1>
+      <p class="lead">15艇のスナイプ級がトラペゾイドコースで競う。スタート1分前からライン上で開始。スマホは横画面でプレイできます。</p>
       <div class="menuGrid">
         <div class="col">
           <h2>ヘルムスマン(舵手)</h2>
@@ -130,11 +146,11 @@
         </div>
         <div class="col pv">
           <canvas id="preview" width="300" height="220"></canvas>
-          <p class="note">動物キャラはオリジナルデザインです。<br><code>assets/crew/</code> に自作の .glb を置くと差し替えできます。</p>
+          <p class="note">キャラクターは人間・猫から選べます。</p>
         </div>
       </div>
       <button id="startBtn" class="cta" type="button">レーススタート</button>
-      <p class="keys"><kbd>←→</kbd>舵 <kbd>T</kbd>タック <kbd>J</kbd>ジャイブ <kbd>↑↓</kbd>セール <kbd>L</kbd>ランチャー <kbd>C</kbd>カメラ <kbd>Q/E</kbd>風上/風下視点</p>
+      <p class="keys"><kbd>←→</kbd>舵(1°単位) <kbd>↑↓</kbd>セール <kbd>L</kbd>ランチャー <kbd>C</kbd>カメラ</p>
     </div>
   </section>
 

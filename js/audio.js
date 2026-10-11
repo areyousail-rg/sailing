@@ -257,3 +257,45 @@ export function flap(vol = 0.6) {
   noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.42 * vol);
   tone(70 + Math.random() * 25, 0.09, 'sawtooth', 0.1 * vol);
 }
+// タック/ジャイブでセールが返る「バサッ」: 布がはためく数回の立ち上がり + 低い風圧
+export function sailFlog(vol = 0.8) {
+  if (!ctx || vol <= 0.02) return;
+  const t0 = ctx.currentTime;
+  const hits = [[0, 1.0], [0.07, 0.75], [0.13, 0.55], [0.2, 0.35]];
+  for (const [dt, k] of hits) {
+    const t = t0 + dt + Math.random() * 0.015;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.8;
+    f.frequency.setValueAtTime(2600 + Math.random() * 600, t); f.frequency.exponentialRampToValueAtTime(500, t + 0.16);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.55 * vol * k, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 1.2); s.stop(t + 0.2);
+  }
+  // 風をはらむ「ボフッ」
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t0 + 0.18); g.gain.linearRampToValueAtTime(0.7 * vol, t0 + 0.22); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
+  s.connect(lp); lp.connect(g); g.connect(master); s.start(t0 + 0.18, Math.random()); s.stop(t0 + 0.6);
+}
+// ランチャー上げ下げの「シャキン」: 金属がこすれるスライド音 + 金属の響き
+export function poleClank(up = true, vol = 0.7) {
+  if (!ctx || vol <= 0.02) return;
+  const t = ctx.currentTime, slide = 0.16;
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.Q.value = 6;
+  hp.frequency.setValueAtTime(up ? 2600 : 6200, t); hp.frequency.exponentialRampToValueAtTime(up ? 6200 : 2600, t + slide);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.5 * vol, t + 0.02); g.gain.setValueAtTime(0.45 * vol, t + slide - 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + slide + 0.03);
+  s.connect(hp); hp.connect(g); g.connect(master); s.start(t, Math.random() * 1.2); s.stop(t + slide + 0.05);
+  // 止まった瞬間の「キン」(非整数倍音の金属共鳴)
+  const tk = t + slide;
+  for (const [f, a, d] of [[2240, 0.22, 0.45], [3510, 0.14, 0.35], [5180, 0.1, 0.25], [7330, 0.05, 0.18]]) {
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = f * (up ? 1 : 0.94);
+    og.gain.setValueAtTime(0.0001, tk); og.gain.linearRampToValueAtTime(a * vol, tk + 0.003); og.gain.exponentialRampToValueAtTime(0.0001, tk + d);
+    o.connect(og); og.connect(master); const send = ctx.createGain(); send.gain.value = 0.25; og.connect(send); send.connect(fx);
+    o.start(tk); o.stop(tk + d + 0.05);
+  }
+  noiseBurst(0.03, 4500, 'highpass', 0.35 * vol);
+}

@@ -53,6 +53,14 @@ kbd{background:rgba(255,255,255,.14);border:1px solid var(--line);border-radius:
 #loading{background:#071a2e;flex-direction:column;gap:16px;z-index:30}
 .spinner{width:42px;height:42px;border:4px solid var(--line);border-top-color:var(--sea);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+#loading p{font-family:Outfit,sans-serif;font-weight:600;letter-spacing:.08em;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.loadBar{width:min(240px,60vw);height:4px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden}
+#loadFill{height:100%;width:0;background:linear-gradient(90deg,var(--sea),#7fd3ff);border-radius:4px}
+#miniLog{position:fixed;left:12px;bottom:12px;z-index:4;display:flex;flex-direction:column;gap:3px;pointer-events:none;max-width:42vw}
+#miniLog div{font-size:.68rem;line-height:1.3;padding:2px 8px;border-radius:6px;background:rgba(7,26,46,.55);color:rgba(255,255,255,.82);transition:opacity .5s}
+#miniLog div.out{opacity:0}
+body.touch #miniLog{left:auto;right:8px;top:184px;bottom:auto;align-items:flex-end;max-width:34vw}
+body.touch #miniLog div{font-size:.6rem}
 .menu{background:linear-gradient(180deg,rgba(4,16,32,.55),rgba(4,16,32,.82));overflow:auto}
 .card{width:min(960px,94vw);background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:24px;padding:30px 36px;box-shadow:0 30px 90px rgba(0,0,0,.5);margin:auto}
 .card.small{width:min(560px,94vw);max-height:90vh;display:flex;flex-direction:column}

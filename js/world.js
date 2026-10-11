@@ -432,18 +432,18 @@ export function createWorld(scene) {
   const com = putBoat(makeMotorboat('committee', { flags: [ORG, { color: '#1c4fa0', w: 1.4, h: 0.9, text: 'P' }] }), MARKS.com.a, MARKS.com.c, HEAD - 0.05);
   markObjs.com = com;
 
-  // コース周辺の観覧艇・サポート艇
+  // コース周辺の観覧艇・サポート艇(レースエリアの外: 右は c≥175、左は c≤-220、1マークの上 a≥355、フィニッシュの下 a≤-185)
   const specPositions = [
-    { a: 315, c: 70, rot: 1.2, type: 'cruiser' },
-    { a: 150, c: 75, rot: -0.8, type: 'rib' },
-    { a: 235, c: -225, rot: 2.1, type: 'cruiser' },
-    { a: 60, c: -215, rot: 0.4, type: 'rib' },
-    { a: -90, c: -215, rot: -1.5, type: 'cruiser' },
-    { a: 345, c: -60, rot: 0.9, type: 'rib' },
-    { a: 30, c: 130, rot: -2.2, type: 'cruiser' },
-    { a: 210, c: 95, rot: 0.1, type: 'rib' },
-    { a: -150, c: 20, rot: 2.6, type: 'cruiser' },
-    { a: -20, c: -250, rot: 0.9, type: 'rib' },
+    { a: 360, c: 40, rot: 1.2, type: 'cruiser' },
+    { a: 180, c: 180, rot: -0.8, type: 'rib' },
+    { a: 240, c: -232, rot: 2.1, type: 'cruiser' },
+    { a: 60, c: -228, rot: 0.4, type: 'rib' },
+    { a: -90, c: -232, rot: -1.5, type: 'cruiser' },
+    { a: 372, c: -70, rot: 0.9, type: 'rib' },
+    { a: 20, c: 190, rot: -2.2, type: 'cruiser' },
+    { a: 290, c: 192, rot: 0.1, type: 'rib' },
+    { a: -195, c: -20, rot: 2.6, type: 'cruiser' },
+    { a: -30, c: -262, rot: 0.9, type: 'rib' },
   ];
   const TUBES = [0x2d3748, 0xc2410c, 0x1e3a8a, 0x374151];
   specPositions.forEach((s, i) => putBoat(makeMotorboat(s.type, { tube: TUBES[i % 4], flags: s.type === 'rib' ? [{ color: i % 2 ? '#ffffff' : '#ffd23f', w: 0.8, h: 0.5 }] : [] }), s.a, s.c, s.rot));

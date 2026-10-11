@@ -10,7 +10,7 @@ export class AI {
     this.b = b; this.rng = rng;
     // VMGが最大になる角度(約48〜51°)付近で上らせる(以前は43〜45°と上り過ぎで遅かった)
     this.closeAngle = 0.83 + rng() * 0.05;
-    this.cLim = 110 + rng() * 80;
+    this.cLim = 100 + rng() * 40;
     this.lastTack = -99;
     // ラインを切る目標時刻(号砲=0秒の後)。ほとんどは0.3〜2秒後、一部は遅れてスタート、稀にOCS。
     const r = rng();
@@ -180,23 +180,29 @@ export class AI {
     return nL ? (nL.type === 'mark' ? this.buildRounding(nL).entry : nL.center) : L.mark;
   }
 
-  // 衝突回避: 避ける義務艇のみ回避ヘディングを返す
-  avoid(t) {
+  // 衝突回避: 避ける義務艇のみ回避ヘディングを返す。
+  // 希望針路からのずれが最小で、相手とぎりぎり(最接近距離 CLEAR)離れられる針路を選ぶ(大回りしない)
+  avoid(t, desired) {
     const b = this.b;
     if (t < this.avoidUntil) return this.avoidH;
+    const CLEAR = 4.0, DETECT = 3.8; // 艇体同士が触れない最小限(中心間距離)
     const vb = Math.max(b.v, 1.2);
-    const bvx = Math.sin(b.h) * vb, bvz = -Math.cos(b.h) * vb;
-    let threat = null, worst = 6;
+    const cpaFor = (h, o) => {
+      const vx = Math.sin(h) * vb, vz = -Math.cos(h) * vb, vo = Math.max(o.v, 0.8);
+      const dvx = Math.sin(o.h) * vo - vx, dvz = -Math.cos(o.h) * vo - vz;
+      const dx = o.x - b.x, dz = o.z - b.z;
+      const dv2 = dvx * dvx + dvz * dvz || 1e-6;
+      const tca = clamp(-(dx * dvx + dz * dvz) / dv2, 0, 8);
+      return Math.hypot(dx + dvx * tca, dz + dvz * tca);
+    };
+    const h0 = desired ?? b.h;
+    let threat = null, worst = DETECT;
     for (const o of this.others) {
       if (o === b || o.finished) continue;
       const dx = o.x - b.x, dz = o.z - b.z;
       const d2 = dx * dx + dz * dz;
       if (d2 > 900) continue;
-      const vo = Math.max(o.v, 0.8);
-      const dvx = Math.sin(o.h) * vo - bvx, dvz = -Math.cos(o.h) * vo - bvz;
-      const dv2 = dvx * dvx + dvz * dvz || 1e-6;
-      const tca = clamp(-(dx * dvx + dz * dvz) / dv2, 0, 8);
-      const cpa = Math.hypot(dx + dvx * tca, dz + dvz * tca);
+      const cpa = cpaFor(h0, o);
       if (cpa >= worst) continue;
       const gw = giveWayBoat(b, o).gw;
       if (gw === b || (cpa < 2.2 && d2 < 36)) { threat = o; worst = cpa; }
@@ -204,21 +210,18 @@ export class AI {
     if (!threat) return null;
     const W = b.windFrom;
     let best = null, bestScore = -1e9;
-    for (const dh of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9]) {
-      const h = wrap(b.h + dh);
-      if (Math.abs(wrap(W - h)) < 0.66) continue;
-      if (b.pole && Math.abs(wrap(W - h)) < POLE_MIN) continue;
-      const vx = Math.sin(h) * vb, vz = -Math.cos(h) * vb;
-      const vo = Math.max(threat.v, 0.8);
-      const dvx = Math.sin(threat.h) * vo - vx, dvz = -Math.cos(threat.h) * vo - vz;
-      const dx = threat.x - b.x, dz = threat.z - b.z;
-      const dv2 = dvx * dvx + dvz * dvz || 1e-6;
-      const tca = clamp(-(dx * dvx + dz * dvz) / dv2, 0, 8);
-      const cpa = Math.hypot(dx + dvx * tca, dz + dvz * tca);
-      const score = Math.min(cpa, 9) - Math.abs(dh) * 1.2 - Math.max(0, 4.5 - this.markClear(h)) * 2.5;
-      if (score > bestScore) { bestScore = score; best = h; }
+    for (let i = 0; i <= 12; i++) {
+      for (const s of i ? [1, -1] : [1]) {
+        const dh = s * i * 0.075, h = wrap(h0 + dh);
+        if (Math.abs(wrap(W - h)) < 0.66) continue;
+        if (b.pole && Math.abs(wrap(W - h)) < POLE_MIN) continue;
+        const cpa = cpaFor(h, threat);
+        const base = cpa >= CLEAR ? 100 - Math.abs(dh) * 10 : cpa - Math.abs(dh) * 0.5;
+        const score = base - Math.max(0, 3.5 - this.markClear(h)) * 2.5;
+        if (score > bestScore) { bestScore = score; best = h; }
+      }
     }
-    if (best !== null) { this.avoidUntil = t + 0.8; this.avoidH = best; }
+    if (best !== null) { this.avoidUntil = t + 0.5; this.avoidH = best; }
     return best;
   }
 
@@ -370,7 +373,7 @@ export class AI {
       this.updatePole(dt, heading, distMark, rounding);
     }
     // スタート直前(密集時)の無闇な回避行動による風下へのベアアウェイを防ぐため、スタート前は回避を抑制
-    const av = prestart ? null : this.avoid(t);
+    const av = prestart ? null : this.avoid(t, heading);
     if (av !== null && av !== undefined) heading = av;
     heading = this.avoidMarks(heading, prestart);
     const err = wrap(heading - b.h);
