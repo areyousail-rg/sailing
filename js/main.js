@@ -12,7 +12,7 @@ import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearby
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 15;
+const N_BOATS = 10;
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -69,8 +69,8 @@ function makeFleet() {
   const slots = [];
   // 1分前はCP艇がラインの40〜60m手前。右舷クローズホールドで少しずつ左へ流れながら近づくので、やや右寄りに配置
   for (let i = 0; i < N_BOATS - 1; i++) slots.push({ a: -38 - (i % 3) * 9, c: -12 + i * (88 / (N_BOATS - 2)) });
-  // 自艇は他艇のいない左後方(風上に誰もいない位置)からスタート
-  const pslot = { a: -78, c: -38 };
+  // 自艇は本部船(c=LINE_HALF)のやや右後方からスタート
+  const pslot = { a: -70, c: LINE_HALF + 15 };
   for (let i = slots.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0;[slots[i], slots[j]] = [slots[j], slots[i]]; }
   const used = new Set([cfg.sailNo]);
   for (let k = 0; k < N_BOATS; k++) {
@@ -194,7 +194,7 @@ function updateHUD(sorted) {
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
-  if (b.cover > 0.3) { hud.blk.style.display = 'block'; hud.blk.textContent = `ブランケット(風影)中 ${Math.round(b.cover * 100)}% ― タックで抜け出そう`; } else hud.blk.style.display = 'none';
+  if (b.cover > 0.3) { hud.blk.style.display = 'block'; hud.blk.textContent = `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`; } else hud.blk.style.display = 'none';
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   hud.leg.textContent = b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
@@ -308,14 +308,14 @@ function playerControl(dt) {
     if (on) {
       if (steerHold[k] === 0) hTarget = wrap(hTarget + s * DEG); // タップ = 1°
       steerHold[k] += dt;
-      if (steerHold[k] > 0.35) hTarget = wrap(hTarget + s * Math.min(35, 8 + (steerHold[k] - 0.35) * 30) * DEG * dt);
+      if (steerHold[k] > 0.25) hTarget = wrap(hTarget + s * Math.min(60, 20 + (steerHold[k] - 0.25) * 60) * DEG * dt);
     } else steerHold[k] = 0;
   }
   let err = wrap(hTarget - b.h);
   if (Math.abs(err) > 0.6) { hTarget = wrap(b.h + Math.sign(err) * 0.6); err = wrap(hTarget - b.h); }
   // ランチャー制限などで目標針路へ向けない状態が続いたら目標を現在の針路に合わせる
   if (!L && !R && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
-  if (!b.maneuver) b.steer = clamp(err * 4, -1, 1);
+  if (!b.maneuver) b.steer = clamp(err * 7, -1, 1);
   const up = keys.has('ArrowUp') || keys.has('KeyW'), dn = keys.has('ArrowDown') || keys.has('KeyS');
   if (autoTrim) {
     let tg = b.sOpt;
