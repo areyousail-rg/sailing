@@ -1,6 +1,8 @@
 param([int]$Port = 8080)
 # 簡易ローカルWebサーバー(ES Modules を file:// では読めないため)
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# 修正が必ず反映されるよう Cache-Control: no-store を付与
+$root = $PSScriptRoot
+if (-not $root) { $root = (Get-Item .).FullName }
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
@@ -11,6 +13,7 @@ while ($listener.IsListening) {
   $path = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath)
   if ($path -eq '/') { $path = '/index.html' }
   $file = Join-Path $root ($path.TrimStart('/') -replace '/', '\')
+  $ctx.Response.Headers.Add('Cache-Control', 'no-store, no-cache, must-revalidate')
   if ((Test-Path $file -PathType Leaf) -and ($file.StartsWith($root))) {
     $ext = [IO.Path]::GetExtension($file).ToLower()
     $ctx.Response.ContentType = if ($mime[$ext]) { $mime[$ext] } else { 'application/octet-stream' }

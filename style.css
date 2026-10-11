@@ -85,7 +85,33 @@ tbody tr:nth-child(even) td{background:rgba(255,255,255,.04)}
 .cell.sheet .bar{position:relative}
 #sheetOpt{position:absolute;top:-3px;width:3px;height:14px;background:var(--gold);border-radius:2px;box-shadow:0 0 6px var(--gold);transition:left .15s}
 #autoLbl{color:var(--sea);font-weight:700}#autoLbl.off{color:var(--mute)}
+.cell.pole{min-width:120px}
+#poleLbl{color:var(--mute);font-weight:700}#poleLbl.on{color:var(--gold);text-shadow:0 0 8px rgba(255,210,63,.6)}
+.poleBtns{display:flex;gap:4px;margin-top:5px}
+.poleBtns button{background:rgba(255,255,255,.08);border:1px solid var(--line);color:#e2e8f0;padding:4px 8px;border-radius:7px;font-family:inherit;font-weight:700;font-size:.7rem;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}
+.poleBtns button:hover{background:rgba(53,224,193,.35);border-color:var(--sea);color:#fff}
+.poleBtns button:active{transform:scale(.94)}
+body.touch .cell.pole{display:none}
 .badge.warn{background:rgba(220,140,20,.92);box-shadow:0 0 24px rgba(255,170,40,.5);top:128px}
+
+/* ポーズボタン */
+.pauseBtn{position:fixed;top:14px;right:290px;z-index:6;background:rgba(7,26,46,0.75);border:1px solid var(--line);color:#fff;padding:8px 16px;border-radius:12px;font-family:inherit;font-weight:700;font-size:.9rem;cursor:pointer;backdrop-filter:blur(8px);transition:all .15s}
+.pauseBtn:hover{background:rgba(53,224,193,0.3);border-color:var(--sea);transform:scale(1.04)}
+
+/* クイックルック＆カメラHUD */
+.camControlGroup{position:fixed;bottom:100px;left:18px;z-index:4;display:flex;flex-direction:column;gap:6px}
+.quickLooks{display:flex;gap:6px}
+.quickLooks button{background:rgba(8,26,46,0.7);border:1px solid var(--line);color:#e2e8f0;padding:6px 12px;border-radius:8px;font-family:inherit;font-weight:600;font-size:.78rem;cursor:pointer;backdrop-filter:blur(6px);transition:all .15s}
+.quickLooks button:hover{background:rgba(53,224,193,0.4);border-color:var(--sea);color:#fff}
+
+/* ポーズモーダルスタイル */
+.pauseCard{text-align:center;max-width:380px}
+.pauseActions{display:flex;flex-direction:column;gap:10px;margin-top:20px}
+.btnSec{background:rgba(255,255,255,0.1);border:1px solid var(--line);color:#fff;padding:12px 20px;border-radius:12px;font-family:inherit;font-weight:700;font-size:1rem;cursor:pointer;transition:all .15s}
+.btnSec:hover{background:rgba(255,255,255,0.2);transform:scale(1.02)}
+.btnSec.danger{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5);color:#fca5a5}
+.btnSec.danger:hover{background:rgba(239,68,68,0.4)}
+
 #touch{position:fixed;inset:0;pointer-events:none;z-index:5}
 #touch button{pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;border:1px solid var(--line);background:rgba(8,26,46,.55);color:#fff;font-family:inherit;font-weight:700;border-radius:18px;backdrop-filter:blur(8px)}
 #touch button:active,#touch button.on{background:rgba(53,224,193,.55);transform:scale(.95)}
@@ -109,3 +135,4 @@ body.touch #bigCount{font-size:5rem;top:36%}
 body.touch .badge{top:62px;font-size:.78rem;padding:6px 12px}body.touch .badge.warn{top:92px}
 @media(max-height:480px){.card{padding:14px 18px}h1{font-size:1.6rem}.lead{margin-bottom:8px}.menuGrid{gap:12px}#preview{width:200px;height:140px}.cta{margin-top:10px;padding:10px}}
 @media(pointer:coarse) and (orientation:portrait){body::after{content:"横向きにするとプレイしやすくなります";position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:6px 14px;border-radius:10px;font-size:.8rem;z-index:20;pointer-events:none}}
+
