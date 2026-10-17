@@ -100,7 +100,7 @@ export class DroneCam {
       this.cam.rotateY(this.yaw); this.cam.rotateX(0.13 - this.pitch * 0.6); this.cam.rotateZ(-boat.heel * 0.45);
       
       if (this.cam.near !== 0.08) { this.cam.near = 0.08; this.cam.updateProjectionMatrix(); }
-      if (Math.abs(this.cam.fov - 100) > 0.05) { this.cam.fov += (100 - this.cam.fov) * 0.2; this.cam.updateProjectionMatrix(); }
+      if (Math.abs(this.cam.fov - 114) > 0.05) { this.cam.fov += (114 - this.cam.fov) * 0.2; this.cam.updateProjectionMatrix(); }
       return;
     }
 
