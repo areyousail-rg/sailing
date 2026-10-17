@@ -42,7 +42,7 @@
   <canvas id="gl"></canvas>
   <div class="vignette"></div>
 
-  <main id="hud" class="hidden">
+  <main id="hud">
     <header class="panel top-left" id="timerPanel">
       <div id="phase">準備信号</div>
       <div id="clock">−1:00</div>
@@ -63,6 +63,7 @@
       <div class="cell mark"><label>次のマーク</label><div class="arrowWrap"><div id="legArrow" class="legArrow">▲</div></div></div>
     </section>
 
+    <div id="markPointer" class="markPointer" style="display:none"><span id="mpArrow" class="mpArrow">▲</span><span id="mpText">1</span></div>
     <div id="penBadge" class="badge bad" style="display:none"></div>
     <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
     <div id="blkBadge" class="badge warn" style="display:none">ブランケット(風影)中</div>
@@ -120,35 +121,38 @@
   </section>
 
 
-  <section id="menu" class="overlay menu">
-    <div class="card">
+  <section id="menu" class="overlay menu menuPractice">
+    <div class="card menuCard">
       <p class="eyebrow" id="menuEyebrow">SNIPE CLASS ・ ENOSHIMA / HAKKEIJIMA</p>
       <h1>スナイプカップ</h1>
       <div class="menuGrid">
         <div class="col">
-          <h2>コース会場 (ステージ)</h2>
+          <h2>レース海面</h2>
           <div id="venueChoices" class="choices venueChoices"></div>
-          <h2>風・海面モード <span id="realWeatherInfo" class="weatherInfo"></span></h2>
-          <div id="windModeChoices" class="choices venueChoices"></div>
+          <h2>風・海面モード</h2>
+          <div id="realWeatherInfo" class="weatherInfoBox"></div>
           <h2>ペナルティ設定 (RRS規則)</h2>
           <div id="penaltyChoices" class="choices venueChoices"></div>
-          <h2>ヘルムスマン(舵手)</h2>
-          <div id="helmChoices" class="choices"></div>
-          <h2>クルー</h2>
-          <div id="crewChoices" class="choices"></div>
-          <div class="colors">
-            <label>肌 <input type="color" id="skinColor"></label>
-            <label>シャツ <input type="color" id="shirtColor"></label>
-            <label>キャップ <input type="color" id="hatColor"></label>
-            <label>セールNo <input type="text" id="sailNo" maxlength="5" inputmode="numeric"></label>
+          <div class="crewRow">
+            <div>
+              <h2>ヘルムスマン(舵手)</h2>
+              <div id="helmChoices" class="choices"></div>
+            </div>
+            <div>
+              <h2>クルー</h2>
+              <div id="crewChoices" class="choices"></div>
+            </div>
+            <div class="colors">
+              <label>セールNo <input type="text" id="sailNo" maxlength="5" inputmode="numeric"></label>
+            </div>
           </div>
         </div>
         <div class="col pv">
-          <canvas id="preview" width="300" height="220"></canvas>
+          <canvas id="preview" width="240" height="176"></canvas>
         </div>
       </div>
       <button id="startBtn" class="cta" type="button">レーススタート</button>
-      <p class="keys"><kbd>←→</kbd>舵(1°単位) <kbd>↑↓</kbd>セール <kbd>L</kbd>ランチャー <kbd>C</kbd>カメラ</p>
+      <p class="keys">💡 この画面のまま裏で練習操作できます（<kbd>←→</kbd>舵 <kbd>↑↓</kbd>セール <kbd>C</kbd>カメラ）</p>
     </div>
   </section>
 
