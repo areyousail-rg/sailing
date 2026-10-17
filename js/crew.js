@@ -178,7 +178,7 @@ export function buildFigure(type, style = {}) {
     case 'cat':
       cone(head, A.body, 0.07, 0.14, -0.14, 0.2, 0, 0, 0.35); cone(head, A.body, 0.07, 0.14, 0.14, 0.2, 0, 0, -0.35);
       cone(head, 0xff8fa3, 0.04, 0.09, -0.14, 0.19, -0.03, 0, 0.35); cone(head, 0xff8fa3, 0.04, 0.09, 0.14, 0.19, -0.03, 0, -0.35);
-      cap(g, A.body, 0.035, 0.3, 0.0, 0.3, 0.3, 1.0, 0, 0);
+      cap(g, A.body, 0.032, 0.09, 0.0, 0.22, 0.22, 0.85, 0, 0);
       break;
     case 'shiba':
       cone(head, A.body, 0.075, 0.13, -0.14, 0.19, 0, 0, 0.3); cone(head, A.body, 0.075, 0.13, 0.14, 0.19, 0, 0, -0.3);
