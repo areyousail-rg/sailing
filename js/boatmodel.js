@@ -227,8 +227,11 @@ export class BoatModel {
       this.body.add(stay([s * SHROUD_A[0], SHROUD_A[1], SHROUD_A[2]], [s * SHROUD_B[0], SHROUD_B[1], SHROUD_B[2]]), stay([s * 0.58, 3.4, -0.92], [0, 5.3, -0.9]));
     }
     this.body.add(stay([0, 0.42, -2.0], [0, 5.3, -0.9]));
-    // ランチャーポール(全艇)
-    this.pole = new THREE.Mesh(poleGeo, carbonMat); this.pole.position.copy(POLE_ROOT); this.pole.visible = false; this.body.add(this.pole);
+    // ランチャーポール(全艇): 使わない時はブーム脇に沿って格納した金属バーとして見える
+    this.pole = new THREE.Mesh(poleGeo, spar); this.pole.position.copy(POLE_ROOT); this.pole.visible = false; this.body.add(this.pole);
+    const stowGeo = new THREE.CylinderGeometry(0.013, 0.013, 1.9, 8); stowGeo.rotateX(Math.PI / 2);
+    this.poleStow = new THREE.Mesh(stowGeo, spar); this.poleStow.position.set(0.075, 0.99, 1.2); this.mainPivot.add(this.poleStow);
+    for (const zz of [0.45, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.04), M.black); clip.position.set(0.05, 1.01, zz); this.mainPivot.add(clip); }
     this.jibRot = 0;
 
     // 船内カメラ用マウント(スキッパーの目線／デッキ後方カメラ)
@@ -263,8 +266,6 @@ export class BoatModel {
       }
 
 
-      const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 3.8, 48), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
-      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.08; this.root.add(ring); this.ring = ring;
       const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.4, 4), new THREE.MeshBasicMaterial({ color: 0xffd23f }));
       arrow.rotation.x = Math.PI; arrow.position.y = 9; this.root.add(arrow); this.arrow = arrow;
     }
@@ -273,7 +274,7 @@ export class BoatModel {
   setFirstPerson(on) {
     if (this.fp === on) return; this.fp = on;
     // 艇内カメラ時はヘルメット/スキッパーモデルを隠す(クルーは表示したままにする)
-    if (this.ring) { this.ring.visible = !on; this.arrow.visible = !on; }
+    if (this.arrow) this.arrow.visible = !on;
     if (this.helmRig) this.helmRig.visible = !on; // スキッパーを非表示
     // if (this.crewRig) this.crewRig.visible = !on;
   }
@@ -306,7 +307,8 @@ export class BoatModel {
     this.root.position.set(b.x, 0, b.z);
     this.root.rotation.y = -b.h;
     const ph = t * 1.6 + this.phase;
-    this.body.position.y = -0.1 + 0.07 * Math.sin(ph) + 0.03 * Math.sin(ph * 2.3);
+    // コクピット床(FLOOR_Y)が海面(y=0)より下に潜って海が見えないよう、基準高さを上げて上下動も小さくする
+    this.body.position.y = 0.12 + 0.05 * Math.sin(ph) + 0.02 * Math.sin(ph * 2.3);
     this.body.rotation.z = b.heel + 0.025 * Math.sin(ph * 0.8);
     this.body.rotation.x = 0.03 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.2;
 
@@ -317,14 +319,15 @@ export class BoatModel {
     // セール: シート量から角度を決め、ラフ(シバー)時はバタつかせる
     const twa = b.twa, luff = b.luff;
     const sheetAng = 0.08 + (1 - b.sheet) * 1.3;
-    let ang = Math.min(sheetAng, Math.max(0.06, Math.abs(b.awa) - 0.04));
+    let ang = Math.min(sheetAng, Math.max(0.06, Math.abs(b.awa) - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
     ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
     this.mainPivot.rotation.y = -sgn * this.boomA;
     // ジブ: 通常は風下側。ランチャー展開に合わせて風上側へ張り出す(観音開き)
     const pk = b.poleK || 0;
-    const jibRot = -sgn * this.boomA * 0.8 * (1 - pk) + sgn * JIB_WING * pk;
+    const jibLee = Math.min(this.boomA * 0.8, 0.27); // ジブはシュラウドの内側を通す(緩めてもステーに当たって止まる)
+    const jibRot = -sgn * jibLee * (1 - pk) + sgn * JIB_WING * pk;
     this.jibRot = jibRot;
     this.jibPivot.rotation.y = jibRot;
     const bulgeSign = sgn > 0 ? -1 : 1;
@@ -332,7 +335,8 @@ export class BoatModel {
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
     const jibLuff = luff * (1 - pk);
     this.mainSail.scale.x = bulgeSign * flap; this.jibSail.scale.x = jibBulge * Math.max(0.05, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.7 * Math.sin(Math.PI * pk));
-    // ポール: マストの取付点からクリュー方向へ展開度に応じて伸ばす
+    // ポール: マストの取付点からクリュー方向へ展開度に応じて伸ばす(展開中はブーム横の格納バーを隠す)
+    this.poleStow.visible = pk <= 0.01;
     if (pk > 0.01) {
       _v.set(1.9 * Math.sin(jibRot), 0.67, -2.0 + 1.9 * Math.cos(jibRot)).sub(POLE_ROOT);
       const len = _v.length();
@@ -361,7 +365,7 @@ export class BoatModel {
     this.crewRig.rotation.y = -this.side * 0.15;
     
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
-    this.mount.position.set(this.side * (0.45 + lean * 0.7), 1.05 - lean * 0.05, 0.95);
+    this.mount.position.set(this.side * (0.45 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
     if (this.arrow) { this.arrow.position.y = 9 + Math.sin(t * 3) * 0.4; this.arrow.rotation.y = t * 2; }
     if (this.rj) this.syncRopes(sgn);
   }
