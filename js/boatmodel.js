@@ -221,6 +221,7 @@ export class BoatModel {
     this.crew = buildFigure(crewCrew.type, crewCrew.style); this.crewRig = new THREE.Group(); this.crewRig.add(this.crew); this.body.add(this.crewRig);
 
     this.side = boat.tack;
+    this.crewSide = boat.tack;
     this.boomA = 0.3;
     this.phase = Math.random() * 10;
     for (const s of [-1, 1]) {
@@ -355,17 +356,21 @@ export class BoatModel {
         v.g.rotation.z = -0.15 + Math.sin(t * 9 + v.ph) * 0.06;
       }
     }
-    // クルー・スキッパーのハイクアウト姿勢表現（アップウインドで外側にしっかり身を乗り出す）
+    // クルー・スキッパーのハイクアウト姿勢表現（アップウインドで外側にしっかり身を乗り出し、風向に対し150°〜210°＝真風角150°以上ではクルーは風下側に座る）
     this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3));
+    const isDeepRun = twa >= (150 * Math.PI) / 180;
+    const targetCrewSide = isDeepRun ? -sgn : sgn;
+    this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 3.5));
     const isUpwind = twa < Math.PI * 0.6;
     const lean = isUpwind ? clamp(0.95 - twa * 0.35, 0.2, 0.75) * clamp(b.windF * 1.1, 0.7, 1.3) : 0.2;
+    const crewLean = isDeepRun ? 0.14 : lean;
     
-    this.crewRig.position.set(this.side * (0.55 + lean * 0.75), 0.42, -0.1);
-    this.crewRig.rotation.z = -this.side * lean;
+    this.crewRig.position.set(this.crewSide * (0.48 + crewLean * 0.75), 0.42, -0.1);
+    this.crewRig.rotation.z = -this.crewSide * crewLean;
     this.helmRig.position.set(this.side * (0.45 + lean * 0.6), 0.42, 0.95);
     this.helmRig.rotation.z = -this.side * lean * 0.9;
     this.helmRig.rotation.y = -this.side * 0.25;
-    this.crewRig.rotation.y = -this.side * 0.15;
+    this.crewRig.rotation.y = -this.crewSide * 0.18;
     
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
     this.mount.position.set(this.side * (0.45 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
