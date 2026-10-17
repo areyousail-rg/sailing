@@ -33,11 +33,11 @@ vec3 skyBase(vec3 d){
 export const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
 const waterMat = new THREE.ShaderMaterial({
   defines: { NWAVE: MOBILE ? 4 : 6 },
-  uniforms: { uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uSun: { value: SUN_DIR } },
+  uniforms: { uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR } },
   vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
   fragmentShader: `
 precision highp float;
-varying vec3 vW; uniform float uTime; uniform float uWT; uniform float uW0;
+varying vec3 vW; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias;
 ${SKY_FN}
 float hh(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
@@ -55,15 +55,25 @@ void main(){
     g+=d*A*k*cos(dot(d,p)*k-uTime*w+fi*1.7)*fade;
   }
   if(dist<2500.0) g+=(vec2(vn(p*0.9+uTime*0.3),vn(p*0.9-uTime*0.25+7.0))-0.5)*0.12*exp(-dist*0.004);
-  // 風: sim.js windAt と同じ式で強弱(ガスト/ラル)と風向を海面に表現
-  float wf=clamp(1.0+0.10*sin(uWT*0.13+p.x*0.011)+0.08*sin(uWT*0.37-p.y*0.013)+0.05*sin(uWT*0.9+p.x*0.02),0.75,1.25);
-  float wsh=0.10*sin(uWT*0.031+0.7)+0.05*sin(uWT*0.113+1.3)+0.04*sin(p.x*0.0042-p.y*0.0021+uWT*0.05);
+  // 風: sim.js windAt と完全に同じ式で、風上から風下へ流れるブロー(黒い筋)とシフトを海面に表現
+  vec2 uDir=vec2(sin(uW0),-cos(uW0));
+  vec2 rDir=vec2(cos(uW0),sin(uW0));
+  float ca=dot(p,uDir), cc=dot(p,rDir);
+  float adv=ca+uWT*4.8;
+  float p1=sin(adv*0.032+cc*0.018+sin(cc*0.011-uWT*0.08)*1.4);
+  float p2=sin(adv*0.055-cc*0.024+1.7);
+  float p3=sin(adv*0.019+cc*0.038-0.9);
+  float puff=smoothstep(-0.15,0.72,0.50*p1+0.32*p2+0.18*p3);
+  float sideNorm=clamp(cc/160.0,-1.2,1.2);
+  float wf=clamp(0.86+0.34*puff+uSideBias*sideNorm*0.065,0.72,1.32);
+  float wsh=0.12*sin(uWT*0.038+0.7)+0.06*sin(uWT*0.095+1.3)+0.06*sin(adv*0.028-cc*0.021)+uSideBias*sideNorm*0.075;
   float wfr=uW0+wsh; vec2 wd=vec2(-sin(wfr),cos(wfr)); vec2 wp=vec2(-wd.y,wd.x);
   float wu=dot(p,wp), wv=dot(p,wd);
-  float gust=smoothstep(0.82,1.2,wf);
+  float gust=smoothstep(0.84,1.18,wf);
+  float blow=smoothstep(0.98,1.16,wf); // ブロー(強風域)の視覚強調係数
   if(dist<3000.0){
     float rip=vn(vec2(wu*1.2,wv*0.25-uTime*2.6))*0.6+vn(vec2(wu*2.7+3.0,wv*0.55-uTime*3.6))*0.4;
-    g+=wp*(rip-0.5)*(0.12+0.5*gust)*exp(-dist*0.0025);
+    g+=wp*(rip-0.5)*(0.12+0.68*gust)*exp(-dist*0.0025);
   }
   vec3 n=normalize(vec3(-g.x,1.0,-g.y));
   float ndv=max(dot(n,V),0.0);
@@ -78,7 +88,10 @@ void main(){
     float foam=smoothstep(0.62,0.95,length(g)*3.2+vn(p*2.3+uTime*0.5)*0.35)*exp(-dist*0.002);
     col=mix(col,vec3(0.92,0.96,0.98),foam*0.5);
   }
-  col*=mix(1.10,0.74,smoothstep(0.78,1.22,wf));
+  // ブロー(風の強い海面の黒い筋): さざ波で光が散乱し濃紺の筋状に暗く見える現象を再現
+  float catpaw=0.55+0.45*vn(vec2(wu*0.48,wv*0.07-uTime*1.35));
+  col*=mix(1.08,0.68,smoothstep(0.76,1.22,wf));
+  col=mix(col,col*vec3(0.56,0.63,0.72),blow*(0.55+0.45*catpaw)*exp(-dist*0.0006));
   if(dist<5000.0){
     float streak=smoothstep(0.72,0.92,vn(vec2(wu*0.32,wv*0.03-uTime*1.1)));
     col+=vec3(0.55,0.62,0.66)*streak*0.14*(0.4+gust)*exp(-dist*0.0012);
@@ -531,53 +544,32 @@ export function createWorld(scene) {
     finLabel.position.set(flcx, 12, flcz);
   };
   syncCourseObjects();
-  // マークの番号ラベル
+  // マークの番号ラベル (カメラが近づいた時は半透明化して視界を遮らないようにする)
   const markSprites = {};
-  const label = (txt, key, y = 11) => {
+  const label = (txt, key, y = 10.5) => {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(10,20,40,0.75)'; x.beginPath(); x.arc(64, 64, 58, 0, 7); x.fill();
+    x.fillStyle = 'rgba(10,20,40,0.72)'; x.beginPath(); x.arc(64, 64, 56, 0, 7); x.fill();
     x.strokeStyle = '#ffd23f'; x.lineWidth = 6; x.stroke();
-    x.fillStyle = '#fff'; x.font = 'bold 64px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 64, 68);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
-    s.scale.set(9, 9, 1); s.position.y = y; s.renderOrder = 5; markObjs[key].add(s);
+    x.fillStyle = '#fff'; x.font = 'bold 62px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 64, 68);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: true, transparent: true, opacity: 0.88 }));
+    s.scale.set(6.5, 6.5, 1); s.position.y = y; markObjs[key].add(s);
     markSprites[key] = s;
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
 
-  // ---------- 次向かうマークの目立つ3Dターゲット印 (光の柱 + 巨大下向き矢印シェブロン + 水面パルスリング + NEXTバッジ) ----------
-  const nextBeacon = new THREE.Group();
-  nextBeacon.renderOrder = 6;
-  // 水面の光る二重リング
-  const nbRingMat = new THREE.MeshBasicMaterial({ color: 0x35e0c1, side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
-  const nbRing = new THREE.Mesh(new THREE.RingGeometry(5.5, 8.2, 36), nbRingMat);
-  nbRing.rotation.x = -Math.PI / 2; nbRing.position.y = 0.28; nextBeacon.add(nbRing);
-  const nbRing2 = new THREE.Mesh(new THREE.RingGeometry(10.0, 11.8, 36), new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide, transparent: true, opacity: 0.65, depthWrite: false, blending: THREE.AdditiveBlending }));
-  nbRing2.rotation.x = -Math.PI / 2; nbRing2.position.y = 0.26; nextBeacon.add(nbRing2);
-  // 空へ伸びる半透明の光の柱(遠くからでも位置が一目で分かる)
-  const nbPillarMat = new THREE.MeshBasicMaterial({ color: 0x35e0c1, transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-  const nbPillar = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 3.2, 48, 16, 1, true), nbPillarMat);
-  nbPillar.position.y = 24; nextBeacon.add(nbPillar);
-  // 浮遊して上下に動く黄金×シアンの巨大下向きポインター (シェブロン)
-  const nbHead = new THREE.Group();
-  const nbCone = new THREE.Mesh(new THREE.ConeGeometry(4.2, 8.5, 4), new THREE.MeshBasicMaterial({ color: 0xffd23f }));
-  nbCone.rotation.x = Math.PI; nbHead.add(nbCone);
-  const nbEdge = new THREE.Mesh(new THREE.ConeGeometry(4.6, 8.9, 4), new THREE.MeshBasicMaterial({ color: 0x35e0c1, wireframe: true }));
-  nbEdge.rotation.x = Math.PI; nbHead.add(nbEdge);
-  // 「▼ NEXT MARK」スプライト
-  const nbBadge = (() => {
-    const c = document.createElement('canvas'); c.width = 256; c.height = 96; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(6, 28, 44, 0.88)'; x.beginPath(); x.roundRect(6, 6, 244, 84, 18); x.fill();
-    x.strokeStyle = '#35e0c1'; x.lineWidth = 6; x.stroke();
-    x.fillStyle = '#ffd23f'; x.font = 'bold 42px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText('▼ NEXT', 128, 48);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
-    s.scale.set(16, 6, 1); s.position.y = 8.5; s.renderOrder = 8; return s;
-  })();
-  nbHead.add(nbBadge);
-  nbHead.position.y = 22;
-  nextBeacon.add(nbHead);
-  scene.add(nextBeacon);
-
+  // ---------- 次向かうマークの控えめな矢印 (マークの上に少し矢印がある程度、4ゲートは4S/4P両方に表示) ----------
+  const makeTargetArrow = () => {
+    const g = new THREE.Group();
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9 });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.25, 2.4, 4), coneMat);
+    cone.rotation.x = Math.PI;
+    g.add(cone);
+    g.userData.mat = coneMat;
+    g.visible = false;
+    scene.add(g);
+    return g;
+  };
+  const targetArrows = [makeTargetArrow(), makeTargetArrow()];
   let activeMarkKeys = ['m1'];
 
   // ---------- 航跡 ----------
@@ -637,33 +629,47 @@ export function createWorld(scene) {
   return {
     markObjs,
     wake,
-    setVenue(venue) {
+    setVenue(venue, customWindDeg = null, sideBias = -0.6) {
       const isHakkei = venue === 'hakkeijima';
       enoshimaGroup.visible = !isHakkei;
       hakkeijimaGroup.visible = isHakkei;
-      // 八景島は北風スタート(15°北北東の風)、江の島は南南西(200°)
-      setWindDir(isHakkei ? 15 : 200);
+      // 八景島は北風スタート(15°北北東の風)、江の島は南南西(200°)。リアル気象時は取得した風向を使用
+      const deg = (typeof customWindDeg === 'number' && Number.isFinite(customWindDeg)) ? customWindDeg : (isHakkei ? 15 : 200);
+      setWindDir(deg);
       waterMat.uniforms.uW0.value = W0;
+      waterMat.uniforms.uSideBias.value = sideBias;
       syncCourseObjects();
     },
     setTargetMark(legIndex, wt, finished) {
-      if (finished) { nextBeacon.visible = false; return; }
-      nextBeacon.visible = true;
-      const legMap = [
-        { a: MARKS.m1.a, c: MARKS.m1.c, keys: ['m1'] },
-        { a: MARKS.m1a.a, c: MARKS.m1a.c, keys: ['m1a'] },
-        { a: 40, c: 0, keys: ['gL', 'gR'] },
-        { a: MARKS.m1.a, c: MARKS.m1.c, keys: ['m1'] },
-        { a: MARKS.m2.a, c: MARKS.m2.c, keys: ['m2'] },
-        { a: MARKS.m3.a, c: MARKS.m3.c, keys: ['m3'] },
-        { a: (MARKS.fcom.a + MARKS.fm.a) / 2, c: (MARKS.fcom.c + MARKS.fm.c) / 2, keys: [] },
+      if (finished) {
+        for (const ar of targetArrows) ar.visible = false;
+        activeMarkKeys = [];
+        return;
+      }
+      // 各レグで向かうマークのキー配列 (1→1aはm1a、4ゲートはgL(4S)とgR(4P)の両方に矢印を表示)
+      const legKeys = [
+        ['m1'],         // leg 0: Start -> 1
+        ['m1a'],        // leg 1: 1 -> 1a
+        ['gL', 'gR'],   // leg 2: 1a -> 4ゲート (4S / 4P 両方)
+        ['m1'],         // leg 3: 4 -> 1
+        ['m2'],         // leg 4: 1 -> 2
+        ['m3'],         // leg 5: 2 -> 3
+        ['fm'],         // leg 6: 3 -> フィニッシュマーク
       ];
-      const info = legMap[Math.min(Math.max(0, legIndex || 0), legMap.length - 1)];
-      const p = toWorld(info.a, info.c);
-      nextBeacon.position.set(p.x, 0, p.z);
-      activeMarkKeys = info.keys;
+      activeMarkKeys = legKeys[Math.min(Math.max(0, legIndex || 0), legKeys.length - 1)];
+      for (let i = 0; i < targetArrows.length; i++) {
+        const key = activeMarkKeys[i];
+        const ar = targetArrows[i];
+        if (key && markObjs[key]) {
+          ar.visible = true;
+          ar.position.x = markObjs[key].position.x;
+          ar.position.z = markObjs[key].position.z;
+        } else {
+          ar.visible = false;
+        }
+      }
     },
-    // mode: 'start' | 'finish'  emph: 0..1 (\u30d7\u30ec\u30a4\u30e4\u30fc\u304c\u6700\u7d42\u30ec\u30b0\u3067\u5f37\u8abf)
+    // mode: 'start' | 'finish'  emph: 0..1 (プレイヤーが最終レグで強調)
     setLine(mode, emph) {
       finCurtainMat.opacity = 0.25 + 0.3 * emph + (emph > 0.5 ? 0.12 * Math.sin(performance.now() / 250) : 0);
     },
@@ -673,21 +679,22 @@ export function createWorld(scene) {
       sea.position.set(camera.position.x, 0, camera.position.z);
       for (const o of bob) { o.position.y = 0.12 * Math.sin(t * 1.4 + o.position.x) + 0.05; o.rotation.z = 0.05 * Math.sin(t * 1.1 + o.position.z); }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
-      // 次向かうマークの3Dターゲット印アニメーション (距離に応じて少し拡大し遠くからでも見やすくする)
-      if (nextBeacon.visible) {
-        const dist = Math.hypot(camera.position.x - nextBeacon.position.x, camera.position.z - nextBeacon.position.z);
-        const sc = clampN(dist / 120, 1.0, 2.8);
-        nbHead.position.y = 21 + 3.2 * Math.sin(t * 3.2);
-        nbHead.rotation.y = t * 1.8;
-        nbHead.scale.setScalar(sc);
-        const pulse = 1 + 0.22 * Math.sin(t * 4.0);
-        nbRing.scale.setScalar(pulse);
-        nbRing2.scale.setScalar(1.15 - 0.15 * Math.sin(t * 4.0));
+      // マーク上の控えめな矢印アニメーション（カメラ接近時は透過して視界を邪魔しない）
+      for (const ar of targetArrows) {
+        if (!ar.visible) continue;
+        const dCam = Math.hypot(camera.position.x - ar.position.x, camera.position.z - ar.position.z);
+        ar.position.y = 6.8 + 0.55 * Math.sin(t * 3.2);
+        ar.rotation.y = t * 1.6;
+        ar.userData.mat.opacity = clampN((dCam - 10) / 24, 0.15, 0.9);
       }
+      // マーク番号ラベル: ドローンカメラと重なった時に自艇が隠れないよう、カメラ距離に応じて透過させる
       for (const [k, sp] of Object.entries(markSprites)) {
         const isAct = activeMarkKeys.includes(k);
-        const s = isAct ? 13.5 + 1.8 * Math.sin(t * 4.5) : 8.5;
+        const s = isAct ? 7.2 : 6.0;
         sp.scale.set(s, s, 1);
+        const mo = markObjs[k];
+        const dCam = Math.hypot(camera.position.x - mo.position.x, camera.position.z - mo.position.z);
+        sp.material.opacity = clampN((dCam - 12) / 26, 0.12, 0.88);
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
