@@ -13,9 +13,15 @@ const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); retu
 export const POLE_MIN = (100 * Math.PI) / 180;
 
 // スナイプ風のポーラー(TWA deg → m/s @ 9kt)
-// ランニングは真追い手(180°)より少し上った170°付近が最も速い(風下へのVMGも最大)
-const POLAR = [[0, 0], [30, 0], [36, 1.0], [42, 1.9], [47, 2.25], [60, 2.85], [75, 3.3], [90, 3.55], [110, 3.6], [130, 3.4], [150, 3.0], [160, 2.84], [170, 2.9], [180, 2.45]];
+// クローズ(40°〜45°)の間は V(θ)*cos(θ) = 一定 とし、角度と艇速のトレードオフで風上目的地への到達時間に差がつかないようにする
+const V45_CLOSE = 2.10;
+const VMG_CLOSE = V45_CLOSE * Math.cos((45 * Math.PI) / 180); // ≈ 1.4849 m/s (40°で1.938m/s 〜 45°で2.100m/s)
+const V40_CLOSE = VMG_CLOSE / Math.cos((40 * Math.PI) / 180);
+const POLAR = [[0, 0], [30, 0], [36, 1.15], [40, V40_CLOSE], [45, V45_CLOSE], [48, 2.26], [60, 2.85], [75, 3.3], [90, 3.55], [110, 3.6], [130, 3.4], [150, 3.0], [160, 2.84], [170, 2.9], [180, 2.45]];
 export function polar(deg) {
+  if (deg >= 40 && deg <= 45) {
+    return VMG_CLOSE / Math.cos((deg * Math.PI) / 180);
+  }
   for (let i = 1; i < POLAR.length; i++) {
     if (deg <= POLAR[i][0]) {
       const [d0, v0] = POLAR[i - 1], [d1, v1] = POLAR[i];
