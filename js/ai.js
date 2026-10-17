@@ -8,8 +8,9 @@ const START_T = -60;
 export class AI {
   constructor(b, rng) {
     this.b = b; this.rng = rng;
-    // VMGが最大になる角度(約48〜51°)付近で上らせる(以前は43〜45°と上り過ぎで遅かった)
-    this.closeAngle = 0.83 + rng() * 0.05;
+    // クローズホールド角度(41〜45°付近)
+    this.closeAngle = 0.72 + rng() * 0.06;
+    this.targetStartC = b.startTargetC ?? b.c;
     this.cLim = 100 + rng() * 40;
     this.lastTack = -99;
     // ラインを切る目標時刻(号砲=0秒の後)。ほとんどは0.3〜2秒後、一部は遅れてスタート、稀にOCS。
@@ -340,11 +341,17 @@ export class AI {
         b.sheet = Math.max(0, sheetOpt(b.twa) - 0.05 - 0.25 * (1 - b.throttle));
       }
       const W = b.windFrom;
-      heading = wrap(W - b.tack * this.closeAngle); // 常にクローズホールドの角度を維持
-      if (t - this.lastTack > 15) {
+      // 目標のスタート位置(targetStartC: 下側〜本部船側まで均一分布)に合わせて角度・タックを調整
+      const tgtC = this.targetStartC ?? 0;
+      const cPred = b.c - gap * Math.tan(this.closeAngle) * 0.78; // 右舷タックのままラインに達した時の予想横位置
+      const preAngle = b.tack === 1 ? clamp(this.closeAngle + (cPred - tgtC) * 0.012, 0.66, 0.90) : this.closeAngle;
+      heading = wrap(W - b.tack * preAngle);
+      if (t - this.lastTack > 11) {
         let wantTack = false;
-        if (b.tack === 1 && b.c < -LINE_HALF * 0.8) wantTack = true;
-        if (b.tack === -1 && b.c > LINE_HALF * 0.8) wantTack = true;
+        // 目標位置より下(左)へ流れすぎた場合は、スタート13秒前までなら左舷タックで上(本部船)側へ戻る
+        if (b.tack === 1 && (b.c < -LINE_HALF * 0.82 || (t < -13 && cPred < tgtC - 12))) wantTack = true;
+        // 左舷タックで目標スロットの風上レイラインまで上ったら、またはスタート10秒前になったら右舷タックへ返す
+        if (b.tack === -1 && (b.c > LINE_HALF * 0.88 || cPred >= tgtC || t > -10)) wantTack = true;
         if (wantTack && !this.crowded()) { this.lastTack = t; b.startManeuver('tack'); }
       }
     } else if (b.ocs) {
