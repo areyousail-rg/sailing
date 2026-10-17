@@ -171,16 +171,17 @@ export class Boat {
 }
 
 // 障害物(マーク・委員会艇)のワールド座標円
-export const OBSTACLES = (() => {
-  const list = [];
+export const OBSTACLES = [];
+export function rebuildObstacles() {
+  OBSTACLES.length = 0;
   // マークの当たり判定は水線位置のブイの太さ(半径約1.3m)に合わせる
-  for (const k of ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm']) { const p = toWorld(MARKS[k].a, MARKS[k].c); list.push({ key: k, x: p.x, z: p.z, r: 1.35 }); }
+  for (const k of ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm']) { const p = toWorld(MARKS[k].a, MARKS[k].c); OBSTACLES.push({ key: k, x: p.x, z: p.z, r: 1.35 }); }
   // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)。本部船は全長約16mのクルーザー
   for (const [k, sp, n, r, gap] of [['com', MARKS.com, 4, 2.4, 4.0], ['pin', MARKS.pin, 2, 2.2, 4.5], ['com', MARKS.fcom, 4, 2.4, 4.0]]) {
-    for (let i = -(n - 1) / 2; i <= (n - 1) / 2; i++) { const p = toWorld(sp.a + i * gap, sp.c); list.push({ key: k, x: p.x, z: p.z, r }); }
+    for (let i = -(n - 1) / 2; i <= (n - 1) / 2; i++) { const p = toWorld(sp.a + i * gap, sp.c); OBSTACLES.push({ key: k, x: p.x, z: p.z, r }); }
   }
-  return list;
-})();
+}
+rebuildObstacles();
 
 function circles(b) {
   const dx = Math.sin(b.h), dz = -Math.cos(b.h);
