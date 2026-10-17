@@ -75,7 +75,7 @@ export class Boat {
     this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.turned = 0;
     this.sOpt = 1; this.luff = 0; this.stall = 0; this.cover = 0; this.coverT = 0;
     this.awa = 0; this.aws = 0; this.awx = -Math.sin(W0); this.awz = Math.cos(W0);
-    this.dnf = false;
+    this.dnf = false; this.dsq = false; this.dsqReason = '';
     this.pole = false; this.poleK = 0; // ランチャー(上げる指示 / 展開度0..1)
   }
   place(x, z, h) {
