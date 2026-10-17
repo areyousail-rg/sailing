@@ -1,7 +1,7 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, wrap, clamp } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, wrap, clamp, rebuildObstacles } from './sim.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
@@ -508,6 +508,7 @@ function initTouch() {
 // ---------- メニューUI ----------
 function applyVenue() {
   world.setVenue(cfg.venue);
+  rebuildObstacles();
   const v = VENUES.find((x) => x.id === cfg.venue) || VENUES[0];
   const eb = $('menuEyebrow');
   if (eb) eb.textContent = v.eyebrow;
@@ -519,7 +520,7 @@ function buildVenueChoices() {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'choice' + (cfg.venue === v.id ? ' sel' : ''); btn.id = `venue-${v.id}`;
     btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
-    btn.onclick = () => { cfg.venue = v.id; saveCfg(); applyVenue(); buildVenueChoices(); };
+    btn.onclick = () => { cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildVenueChoices(); };
     box.appendChild(btn);
   }
 }
@@ -574,18 +575,15 @@ function initMenu() {
   crewOptions = [...CREW_TYPES, ...extra];
   if (!crewOptions.find((c) => c.id === cfg.helm)) cfg.helm = 'human';
   if (!crewOptions.find((c) => c.id === cfg.crew)) cfg.crew = 'cat';
+  const q = new URLSearchParams(location.search);
+  if (q.has('venue') && VENUES.find((v) => v.id === q.get('venue'))) cfg.venue = q.get('venue');
+  applyVenue();
   makeFleet();
   initMenu();
   initTouch();
   if (window.__setLoad) window.__setLoad(100);
   setTimeout(() => $('loading').classList.add('hidden'), 250);
   loop();
-  const q = new URLSearchParams(location.search);
-  if (q.has('venue') && VENUES.find((v) => v.id === q.get('venue'))) {
-    cfg.venue = q.get('venue');
-    applyVenue();
-    buildVenueChoices();
-  }
   window.__game = { state, get boats() { return boats; }, get player() { return player; }, simStep, cam };
   if (q.has('auto')) {
     startRace();
