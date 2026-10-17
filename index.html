@@ -58,7 +58,7 @@
       <div class="cell"><label>船速</label><b id="spd">0.0</b><small>kt</small><div class="wsm">風 <span id="windKt">9.0</span>kt <span id="windDir">200°</span></div></div>
       <div class="cell"><label>針路</label><b id="hdg">0°</b></div>
       <div class="cell"><label>真風角</label><b id="twa">0°</b></div>
-      <div class="cell sheet"><label>セールトリム <span id="autoLbl">AUTO</span></label><div class="bar"><div id="sheetFill"></div><div id="sheetOpt"></div></div></div>
+      <div class="cell sheet"><label>セールトリム <span id="autoLbl">セールAUTO</span></label><div class="bar"><div id="sheetFill"></div><div id="sheetOpt"></div></div></div>
       <div class="cell pole"><label>ランチャー <span id="poleLbl">DOWN</span></label><div class="poleBtns"><button id="poleUpBtn" type="button" title="ランチャーアップ [L]">▲ UP</button><button id="poleDownBtn" type="button" title="ランチャーダウン [L]">▼ DOWN</button></div></div>
       <div class="cell mark"><label>次のマーク</label><div class="arrowWrap"><div id="legArrow" class="legArrow">▲</div></div></div>
     </section>
@@ -81,7 +81,7 @@
       <b>操作</b>
       <span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 舵(短く押すと1°ずつ、押し続けると大きく。風をまたぐとタック/ジャイブ)</span>
       <span><kbd>T</kbd> オートタック <kbd>J</kbd> オートジャイブ</span>
-      <span><kbd>↑</kbd> セール引く <kbd>↓</kbd> セール出す(シバー) <kbd>R</kbd> オートトリム</span>
+      <span><kbd>↑</kbd> セール引く <kbd>↓</kbd> セール出す(シバー) <kbd>R</kbd> セールAUTO</span>
       <span><kbd>L</kbd> ランチャー アップ/ダウン(下レグのみ。上げると風上には向けない)</span>
       <span><kbd>C</kbd> カメラ切替(ドローン / 艇内視点)</span>
       <span><kbd>Q</kbd> 風上視点 <kbd>E</kbd> 風下視点 <kbd>W</kbd> 正面 <kbd>S</kbd> 後方</span>
@@ -95,7 +95,7 @@
       </div>
       <div class="tgrp mid">
         <button id="tCam" type="button">📷 船内</button>
-        <button id="tAuto" type="button">AUTO</button>
+        <button id="tAuto" type="button">セールAUTO</button>
         <button id="tPole" type="button">ランチャー</button>
       </div>
       <div class="tgrp right">
@@ -124,7 +124,6 @@
     <div class="card">
       <p class="eyebrow" id="menuEyebrow">SNIPE CLASS ・ ENOSHIMA / HAKKEIJIMA</p>
       <h1>スナイプカップ</h1>
-      <p class="lead">10艇のスナイプ級がトラペゾイドコースで競う。スタート1分前からライン上で開始。スマホは横画面でプレイできます。</p>
       <div class="menuGrid">
         <div class="col">
           <h2>コース会場 (ステージ)</h2>
@@ -142,7 +141,6 @@
         </div>
         <div class="col pv">
           <canvas id="preview" width="300" height="220"></canvas>
-          <p class="note">キャラクターは人間・猫から選べます。</p>
         </div>
       </div>
       <button id="startBtn" class="cta" type="button">レーススタート</button>
