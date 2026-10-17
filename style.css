@@ -30,6 +30,7 @@ kbd{background:rgba(255,255,255,.14);border:1px solid var(--line);border-radius:
 .cell{display:flex;flex-direction:column;align-items:center;min-width:64px}
 .cell label{font-size:.66rem;letter-spacing:.06em;color:var(--mute)}
 .cell b{font-size:1.5rem;font-variant-numeric:tabular-nums}.cell small{font-size:.68rem;color:var(--mute);margin-top:-4px}
+.cell .wsm{font-size:.68rem;color:#9ad8ff;margin-top:2px;white-space:nowrap;font-variant-numeric:tabular-nums}
 #tackLbl.stbd{color:#7dffb2}#tackLbl.port{color:#ff8f8f}
 .cell.sheet{min-width:150px}.cell.sheet .bar{width:140px;height:8px;border-radius:5px;background:rgba(255,255,255,.14);margin-top:10px;overflow:hidden}
 #sheetFill{height:100%;background:linear-gradient(90deg,var(--sea),#6aa8ff);border-radius:5px;transition:width .1s}
@@ -75,6 +76,9 @@ h1{margin:6px 0 8px;font-size:2.6rem;background:linear-gradient(90deg,#fff,#8fe9
 .choice:hover{transform:translateY(-3px);background:rgba(255,255,255,.12)}
 .choice.sel{border-color:var(--sea);background:rgba(53,224,193,.16);box-shadow:0 0 20px rgba(53,224,193,.25)}
 .choice .ic{font-size:1.7rem}.choice .lb{font-size:.74rem}
+.venueChoices .choice{width:auto;min-width:140px;flex-direction:row;gap:8px;padding:8px 14px;justify-content:center}
+.venueChoices .choice .ic{font-size:1.35rem}
+.venueChoices .choice .lb{font-size:.82rem;font-weight:600}
 .colors{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px;font-size:.82rem;color:var(--mute);align-items:center}
 .colors input[type=color]{width:34px;height:26px;border:none;background:none;vertical-align:middle;cursor:pointer}
 .colors input[type=text]{width:70px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:var(--txt);font-family:inherit}
@@ -142,5 +146,28 @@ body.touch #toasts{top:96px;width:min(420px,60vw)}body.touch .toast{font-size:.7
 body.touch #bigCount{font-size:5rem;top:36%}
 body.touch .badge{top:62px;font-size:.78rem;padding:6px 12px}body.touch .badge.warn{top:92px}
 @media(max-height:480px){.card{padding:14px 18px}h1{font-size:1.6rem}.lead{margin-bottom:8px}.menuGrid{gap:12px}#preview{width:200px;height:140px}.cta{margin-top:10px;padding:10px}}
-@media(pointer:coarse) and (orientation:portrait){body::after{content:"横向きにするとプレイしやすくなります";position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:6px 14px;border-radius:10px;font-size:.8rem;z-index:20;pointer-events:none}}
+@media(pointer:coarse) and (orientation:portrait){body.hintOn::after{content:"横向きにするとプレイしやすくなります";position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:5px 12px;border-radius:10px;font-size:.7rem;z-index:20;pointer-events:none;white-space:nowrap}}
+
+/* スマホ縦画面: 文字・パネルを全体的に小さくして画面を広く使う */
+@media(orientation:portrait) and (max-width:600px){
+  html{font-size:12px}
+  body.touch .top-left{top:6px;left:6px;padding:4px 10px;min-width:0;border-radius:12px}
+  body.touch #clock{font-size:1.5rem}body.touch #phase{font-size:.55rem}
+  body.touch .top-right{top:6px;right:6px;padding:4px 10px;border-radius:12px}
+  body.touch .top-right h2{margin:0;font-size:.6rem}body.touch .top-right h2 span{font-size:.85rem;margin-left:6px}
+  body.touch .pauseBtn{top:50px;right:6px;padding:4px 10px;font-size:.62rem;border-radius:10px}
+  body.touch .bottom-center{top:50px;left:6px;transform:none;transform-origin:top left;gap:8px;padding:4px 8px;border-radius:12px}
+  body.touch .cell{min-width:0}
+  body.touch .cell label{font-size:.5rem}body.touch .cell b{font-size:1.05rem}body.touch .cell small,body.touch .cell .wsm{font-size:.55rem}
+  body.touch .cell.sheet{min-width:84px}body.touch .cell.sheet .bar{width:80px;height:6px;margin-top:6px}
+  body.touch #minimap{width:96px;height:96px;right:6px;top:80px}
+  body.touch #toasts{top:132px;width:92vw}body.touch .toast{font-size:.62rem;padding:4px 10px}
+  body.touch #miniLog{top:182px;max-width:44vw}body.touch #miniLog div{font-size:.5rem}
+  body.touch .badge{top:100px;font-size:.62rem;padding:4px 10px}body.touch .badge.warn{top:124px}
+  body.touch #bigCount{font-size:3.6rem}
+  .tgrp.left{left:8px;bottom:10px;gap:6px}.tgrp.left button{width:62px;height:62px;font-size:1.3rem;border-radius:14px}
+  .tgrp.mid{left:8px;top:auto;bottom:84px;flex-direction:row}.tgrp.mid button{width:auto;min-width:50px;height:34px;padding:0 8px;font-size:.62rem}
+  .tgrp.right{right:8px;bottom:10px;width:150px;gap:6px}.tgrp.right button{width:72px;height:48px;font-size:.62rem;border-radius:14px}
+  .card{padding:16px 18px}h1{font-size:1.8rem}
+}
 
