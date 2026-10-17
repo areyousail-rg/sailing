@@ -353,7 +353,9 @@ export class BoatModel {
         v.g.rotation.z = -0.15 + Math.sin(t * 9 + v.ph) * 0.06;
       }
     }
-    // クルー・スキッパーのハイクアウト姿勢表現（アップウインドで外側にしっかり身を乗り出し、風向に対し150°〜210°＝真風角150°以上ではクルーは風下側に座る）
+    // クルー・スキッパーの乗船・ハイクアウト姿勢表現
+    // サイドデッキ(ガンネル)に腰掛け、身体と脚は船内側(コクピット中央)へ向けて足をコクピット内のストラップ下に入れ、
+    // 上半身(腰から上)を海側へ反らせてハイクアウトし、顔は前方(バウ・セール方向)を見るリアルな姿勢にする
     this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3));
     const isDeepRun = twa >= (150 * Math.PI) / 180;
     const targetCrewSide = isDeepRun ? -sgn : sgn;
@@ -361,14 +363,46 @@ export class BoatModel {
     const isUpwind = twa < Math.PI * 0.6;
     const lean = isUpwind ? clamp(0.95 - twa * 0.35, 0.2, 0.75) * clamp(b.windF * 1.1, 0.7, 1.3) : 0.2;
     const crewLean = isDeepRun ? 0.14 : lean;
-    
-    this.crewRig.position.set(this.crewSide * (0.48 + crewLean * 0.75), 0.42, -0.1);
-    this.crewRig.rotation.z = -this.crewSide * crewLean;
-    this.helmRig.position.set(this.side * (0.45 + lean * 0.6), 0.42, 0.95);
-    this.helmRig.rotation.z = -this.side * lean * 0.9;
-    this.helmRig.rotation.y = -this.side * 0.25;
-    this.crewRig.rotation.y = -this.crewSide * 0.18;
-    
+
+    const sideAbs = Math.abs(this.side);
+    const crewSideAbs = Math.abs(this.crewSide);
+
+    // ヘルムスマン(スキッパー): 後部サイドデッキ(z=0.86)に座り、脚はコクピット内へ、腰から上を外へハイクアウト
+    this.helmRig.position.set(this.side * (0.48 + lean * 0.09), 0.35 - (1 - sideAbs) * 0.06, 0.86);
+    this.helmRig.rotation.y = this.side * 1.35; // 船内側(横方向＋わずかに前)を向き、足がコクピット内に収まる
+    if (this.helm.userData.upper) {
+      this.helmRig.rotation.z = 0;
+      const duck = (1 - sideAbs) * 0.42; // タック・ジャイブ移動中はブームの下をくぐる前傾
+      const hike = lean * 0.76 * sideAbs; // 腰から上を海側へ反らすハイクアウト
+      this.helm.userData.upper.rotation.x = hike - duck;
+      this.helm.userData.upper.rotation.z = -this.side * 0.08;
+    } else {
+      this.helmRig.rotation.z = -this.side * lean * 0.4;
+    }
+    if (this.helm.userData.head) {
+      const uRx = this.helm.userData.upper ? this.helm.userData.upper.rotation.x : 0;
+      this.helm.userData.head.rotation.x = -uRx * 0.65;
+      this.helm.userData.head.rotation.y = -this.side * 0.55; // 顔をバウ・セール側へ向ける
+    }
+
+    // クルー: 前部サイドデッキ(z=-0.04, コクピット前端より後ろ)に座り、脚はコクピット内へ収める
+    this.crewRig.position.set(this.crewSide * (0.49 + crewLean * 0.09), 0.36 - (1 - crewSideAbs) * 0.06, -0.04);
+    this.crewRig.rotation.y = this.crewSide * 1.35;
+    if (this.crew.userData.upper) {
+      this.crewRig.rotation.z = 0;
+      const cDuck = (1 - crewSideAbs) * 0.45;
+      const cHike = crewLean * 0.78 * crewSideAbs;
+      this.crew.userData.upper.rotation.x = cHike - cDuck;
+      this.crew.userData.upper.rotation.z = -this.crewSide * 0.08;
+    } else {
+      this.crewRig.rotation.z = -this.crewSide * crewLean * 0.35;
+    }
+    if (this.crew.userData.head) {
+      const cRx = this.crew.userData.upper ? this.crew.userData.upper.rotation.x : 0;
+      this.crew.userData.head.rotation.x = -cRx * 0.65;
+      this.crew.userData.head.rotation.y = -this.crewSide * 0.50;
+    }
+
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
     this.mount.position.set(this.side * (0.45 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
     if (this.rj) this.syncRopes(sgn);
