@@ -100,26 +100,26 @@ tbody tr:nth-child(even) td{background:rgba(255,255,255,.04)}
 .cell.pole{min-width:120px}
 #poleLbl{color:var(--mute);font-weight:700}#poleLbl.on{color:var(--gold);text-shadow:0 0 8px rgba(255,210,63,.6)}
 .poleBtns{display:flex;gap:4px;margin-top:5px}
-.poleBtns button{background:rgba(255,255,255,.08);border:1px solid var(--line);color:#e2e8f0;padding:4px 8px;border-radius:7px;font-family:inherit;font-weight:700;font-size:.7rem;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}
+.poleBtns button{pointer-events:auto;touch-action:manipulation;background:rgba(255,255,255,.08);border:1px solid var(--line);color:#e2e8f0;padding:4px 8px;border-radius:7px;font-family:inherit;font-weight:700;font-size:.7rem;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}
 .poleBtns button:hover{background:rgba(53,224,193,.35);border-color:var(--sea);color:#fff}
 .poleBtns button:active{transform:scale(.94)}
 body.touch .cell.pole{display:none}
 .badge.warn{background:rgba(220,140,20,.92);box-shadow:0 0 24px rgba(255,170,40,.5);top:128px}
 
-/* ポーズボタン */
-.pauseBtn{position:fixed;top:14px;right:290px;z-index:6;background:rgba(7,26,46,0.75);border:1px solid var(--line);color:#fff;padding:8px 16px;border-radius:12px;font-family:inherit;font-weight:700;font-size:.9rem;cursor:pointer;backdrop-filter:blur(8px);transition:all .15s}
-.pauseBtn:hover{background:rgba(53,224,193,0.3);border-color:var(--sea);transform:scale(1.04)}
+/* ポーズボタン (#hud が pointer-events:none のため auto を明示) */
+.pauseBtn{pointer-events:auto;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;position:fixed;top:14px;right:290px;z-index:15;background:rgba(7,26,46,0.82);border:1px solid var(--line);color:#fff;padding:8px 16px;border-radius:12px;font-family:inherit;font-weight:700;font-size:.9rem;cursor:pointer;backdrop-filter:blur(8px);transition:all .15s}
+.pauseBtn:hover,.pauseBtn:active{background:rgba(53,224,193,0.35);border-color:var(--sea);transform:scale(1.04)}
 
 /* クイックルック＆カメラHUD */
 .camControlGroup{position:fixed;bottom:100px;left:18px;z-index:4;display:flex;flex-direction:column;gap:6px}
 .quickLooks{display:flex;gap:6px}
-.quickLooks button{background:rgba(8,26,46,0.7);border:1px solid var(--line);color:#e2e8f0;padding:6px 12px;border-radius:8px;font-family:inherit;font-weight:600;font-size:.78rem;cursor:pointer;backdrop-filter:blur(6px);transition:all .15s}
+.quickLooks button{pointer-events:auto;touch-action:manipulation;background:rgba(8,26,46,0.7);border:1px solid var(--line);color:#e2e8f0;padding:6px 12px;border-radius:8px;font-family:inherit;font-weight:600;font-size:.78rem;cursor:pointer;backdrop-filter:blur(6px);transition:all .15s}
 .quickLooks button:hover{background:rgba(53,224,193,0.4);border-color:var(--sea);color:#fff}
 
 /* ポーズモーダルスタイル */
 .pauseCard{text-align:center;max-width:380px}
 .pauseActions{display:flex;flex-direction:column;gap:10px;margin-top:20px}
-.btnSec{background:rgba(255,255,255,0.1);border:1px solid var(--line);color:#fff;padding:12px 20px;border-radius:12px;font-family:inherit;font-weight:700;font-size:1rem;cursor:pointer;transition:all .15s}
+.btnSec{touch-action:manipulation;background:rgba(255,255,255,0.1);border:1px solid var(--line);color:#fff;padding:12px 20px;border-radius:12px;font-family:inherit;font-weight:700;font-size:1rem;cursor:pointer;transition:all .15s}
 .btnSec:hover{background:rgba(255,255,255,0.2);transform:scale(1.02)}
 .btnSec.danger{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5);color:#fca5a5}
 .btnSec.danger:hover{background:rgba(239,68,68,0.4)}
@@ -138,6 +138,7 @@ body.touch .top-left2{top:76px;left:8px;padding:6px 10px}
 body.touch .compass{width:44px;height:44px}body.touch .compass .needle{margin:-19px 0 0 -5px;transform-origin:5px 19px;border-width:0 5px;border-top-width:18px;border-left:5px solid transparent;border-right:5px solid transparent}
 body.touch .wtxt b{font-size:1.2rem}
 body.touch .top-right{top:8px;right:8px;width:auto;padding:6px 12px}
+body.touch .pauseBtn{top:8px;right:124px;padding:7px 13px;font-size:.8rem}
 body.touch #minimap{width:120px;height:120px;right:8px;top:56px;bottom:auto}
 body.touch .camLabel{display:none}
 body.touch .bottom-center{bottom:auto;top:8px;transform:translateX(-50%) scale(.72);transform-origin:top center;gap:12px;padding:6px 12px}
@@ -157,7 +158,7 @@ body.touch .badge{top:62px;font-size:.78rem;padding:6px 12px}body.touch .badge.w
   body.touch .top-right{top:6px;right:6px;padding:4px 9px;border-radius:10px}
   body.touch .top-right h2{margin:0;font-size:.58rem;align-items:center}
   body.touch .top-right h2 span{font-size:.82rem;margin-left:5px}
-  body.touch .pauseBtn{top:6px;right:88px;padding:4px 8px;font-size:.58rem;border-radius:9px}
+  body.touch .pauseBtn{top:6px;right:86px;padding:6px 10px;font-size:.66rem;border-radius:9px}
   body.touch .bottom-center{top:46px;left:6px;right:auto;transform:none;gap:8px;padding:4px 8px;border-radius:10px;max-width:calc(100vw - 110px);justify-content:flex-start}
   body.touch .cell{min-width:0}
   body.touch .cell label{font-size:.48rem;white-space:nowrap}
