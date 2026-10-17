@@ -117,7 +117,7 @@ function mainSailTexture(no, color) {
   x.fillStyle = '#1b3b8a'; x.font = 'bold 54px Arial';
   x.fillText('JPN', 128, 220);
   x.font = 'bold 60px Arial';
-  const numText = no.length >= 4 ? no : '31933';
+  const numText = no.length >= 4 ? no : '30804';
   x.fillText(numText, 128, 285);
   
   // 視認用クリアウィンドウ(透明窓)
@@ -254,15 +254,17 @@ export class BoatModel {
         }
       }
 
-      // サイドステーの風見(毛糸): 左右のシュラウド上、目線の高さに結ぶ
+      // サイドステーの風見(毛糸): 左右のシュラウド上、目線の高さと少し上の2箇所に結ぶ
       this.vanes = [];
       for (const s of [-1, 1]) {
-        const p = onShroud(VANE_Y);
-        const vane = new THREE.Group(); vane.position.set(s * p[0], p[1], p[2]);
-        const vm = new THREE.Mesh(ribbonGeo(0.14, 0.03), new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide }));
-        vm.geometry = vm.geometry.clone(); vm.geometry.rotateY(Math.PI / 2);
-        const bead = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2222 }));
-        vane.add(vm, bead); this.body.add(vane); this.vanes.push({ g: vane, ph: s * 1.7 });
+        for (const vy of [1.68, 2.28]) {
+          const p = onShroud(vy);
+          const vane = new THREE.Group(); vane.position.set(s * p[0], p[1], p[2]);
+          const vm = new THREE.Mesh(ribbonGeo(0.14, 0.03), new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide }));
+          vm.geometry = vm.geometry.clone(); vm.geometry.rotateY(Math.PI / 2);
+          const bead = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2222 }));
+          vane.add(vm, bead); this.body.add(vane); this.vanes.push({ g: vane, ph: s * 1.7 + vy });
+        }
       }
 
 
@@ -313,7 +315,7 @@ export class BoatModel {
     this.body.rotation.x = 0.03 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.2;
 
     if (this.rudderGroup) {
-      this.rudderGroup.rotation.y = -b.steer * 0.6;
+      this.rudderGroup.rotation.y = b.steer * 0.6;
     }
 
     // セール: シート量から角度を決め、ラフ(シバー)時はバタつかせる
