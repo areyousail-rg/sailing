@@ -157,8 +157,9 @@ export class Boat {
     const polarV = polar((twa * 180) / Math.PI) * SPEED_SCALE;
     // ランチャー: 下レグ(深い角度)でジブが開いて若干速くなる。リーチより上では逆効果
     const poleF = 1 + this.poleK * (0.065 * smoothstep(1.85, 2.6, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
-    const target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - 0.2 * Math.abs(steer)) * this.throttle;
-    const tau = target > this.v ? 2.4 : 1.5;
+    const turning = this.tacking || (this.maneuver && this.maneuver.kind === 'tack');
+    const target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.06 : 0.2) * Math.abs(steer)) * this.throttle;
+    const tau = target > this.v ? 2.4 : turning ? 5.0 : 1.5; // タック中は減速を緩やかに
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
     this.x += Math.sin(this.h) * this.v * dt;
     this.z -= Math.cos(this.h) * this.v * dt;
