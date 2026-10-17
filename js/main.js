@@ -142,11 +142,11 @@ function updateLeaders(sorted) {
   const top = sorted.slice(0, 8);
   if (!top.includes(player)) top.push(player);
   for (const b of top) {
-    const st = (b.dnf && !b.finished) || b.late ? 'DNF' : b.finished ? fmtMs(b.finishTime) : b.ocs ? 'OCS' : b.penalty ? 'PEN' : '';
-    rows.push(`<li class="${b.isPlayer ? 'me' : ''}"><span class="pos">${b.rank}</span><span class="sw" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="nm">${nameOf(b)}</span><span class="st">${st}</span></li>`);
+    const st = b.dsq ? 'DSQ' : (b.dnf && !b.finished) || b.late ? 'DNF' : b.finished ? fmtMs(b.finishTime) : b.ocs ? 'OCS' : b.penalty ? 'PEN' : '';
+    rows.push(`<li class="${b.isPlayer ? 'me' : ''}"><span class="pos">${b.dsq ? '−' : b.rank}</span><span class="sw" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="nm">${nameOf(b)}</span><span class="st">${st}</span></li>`);
   }
   hud.leaders.innerHTML = rows.join('');
-  hud.rank.textContent = `${player.rank} / ${boats.length}`;
+  hud.rank.textContent = player.dsq ? `DSQ / ${boats.length}` : `${player.rank} / ${boats.length}`;
 }
 
 const mm = $('minimap'), mctx = mm.getContext('2d');
@@ -190,7 +190,7 @@ function updateHUD(sorted) {
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const nextMarkTxt = L.type === 'finish' ? 'フィニッシュ' : L.type === 'gate' ? '4ゲート(4S/4P)' : `${L.name}マーク`;
   hud.clock.textContent = fmt(t);
-  hud.phase.textContent = t < 0 ? `1分前 ― 次: スタート → 1マーク` : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
+  hud.phase.textContent = t < 0 ? `1分前 ― 次: スタート → 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
   const wd = ((b.windFrom * 180) / Math.PI + 360) % 360;
   hud.wdir.textContent = Math.round(wd) + '°';
@@ -208,13 +208,13 @@ function updateHUD(sorted) {
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
   if (b.cover > 0.3) { hud.blk.style.display = 'block'; hud.blk.textContent = `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`; } else hud.blk.style.display = 'none';
-  hud.leg.textContent = b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
+  hud.leg.textContent = b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
   const brg = Math.atan2(tw.x - b.x, -(tw.z - b.z));
   hud.legArrow.style.transform = `rotate(${wrap(brg - b.h)}rad)`;
-  if (b.penalty) { hud.pen.style.display = 'block'; hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 360°ターン ${Math.min(99, Math.round((b.penalty.turned / (2 * Math.PI)) * 100))}% ― Spaceでタック/ジャイブ`; } else hud.pen.style.display = 'none';
-  hud.ocs.style.display = b.ocs && t >= 0 ? 'block' : 'none';
+  if (b.penalty && !b.finished) { hud.pen.style.display = 'block'; hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 360°ターン ${Math.min(99, Math.round((b.penalty.turned / (2 * Math.PI)) * 100))}% ― フィニッシュ前に消化必須!`; } else hud.pen.style.display = 'none';
+  hud.ocs.style.display = b.ocs && t >= 0 && !b.finished ? 'block' : 'none';
   hud.cam.textContent = '📷 ' + CAM_MODES[cam.mode] + ' [C]';
   if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== '📷 ' + nx) hud.tCam.textContent = '📷 ' + nx; }
   const c = Math.ceil(-t);
@@ -225,10 +225,23 @@ function updateHUD(sorted) {
 }
 
 // ---------- イベント処理 ----------
-function finishRankOf(b) { let n = 1; for (const o of boats) if (o !== b && o.finished && !o.late && o.finishTime < b.finishTime) n++; return n; }
+function finishRankOf(b) { let n = 1; for (const o of boats) if (o !== b && o.finished && !o.late && !o.dsq && o.finishTime < b.finishTime) n++; return n; }
 function handleProgress(b, evs) {
   for (const e of evs) {
     if (e.type === 'finish') {
+      // 違反(ペナルティ未消化 または OCS未解消)がある状態でフィニッシュした場合はプロテスト成立によりDSQ(失格)
+      if (b.penalty || b.ocs) {
+        b.dsq = true;
+        b.dsqReason = b.ocs ? 'OCS未解消' : `ルール${b.penalty.rule}違反・ペナルティ未消化`;
+        if (b.isPlayer) {
+          toast(`プロテスト成立 → DSQ (失格)!\n${b.dsqReason}のままフィニッシュしたため失格となりました`, 'bad', 9000);
+          state.pFinish = state.t;
+          state.pAI = new AI(b, rng);
+        } else if (!state.ff) {
+          miniLog(`${nameOf(b)} が違反未消化でフィニッシュ → DSQ`);
+        }
+        continue;
+      }
       const top = state.firstFinish === null;
       if (top) state.firstFinish = b.finishTime;
       if (b.finishTime > state.firstFinish + FINISH_WINDOW) b.late = true;
@@ -372,13 +385,17 @@ function fastForwardFinishers() {
 
 function showResult() {
   state.resultShown = true;
-  const ok = (b) => b.finished && !b.late;
+  const ok = (b) => b.finished && !b.late && !b.dsq;
   const fin = boats.filter(ok).sort((a, b) => a.finishTime - b.finishTime);
-  const dnf = boats.filter((b) => !ok(b)).sort((a, b) => progressOf(b) - progressOf(a));
+  const dnf = boats.filter((b) => !ok(b) && !b.dsq).sort((a, b) => progressOf(b) - progressOf(a));
+  const dsq = boats.filter((b) => b.dsq);
   const row = (b, pos, tm) => `<tr class="${b.isPlayer ? 'me' : ''}"><td>${pos}</td><td>${nameOf(b)}</td><td>${tm}</td></tr>`;
-  $('resultBody').innerHTML = fin.map((b, i) => row(b, i + 1, fmtMs(b.finishTime))).join('') + dnf.map((b) => row(b, '−', 'DNF')).join('');
+  $('resultBody').innerHTML =
+    fin.map((b, i) => row(b, i + 1, fmtMs(b.finishTime))).join('') +
+    dnf.map((b) => row(b, '−', 'DNF')).join('') +
+    dsq.map((b) => row(b, 'DSQ', `DSQ (${b.dsqReason || 'プロテスト'})`)).join('');
   const p = fin.indexOf(player) + 1;
-  $('resultTitle').textContent = p ? `${p}位 / ${boats.length}艇` : 'DNF';
+  $('resultTitle').textContent = player.dsq ? `DSQ (失格 — ${player.dsqReason})` : p ? `${p}位 / ${boats.length}艇` : 'DNF';
   $('result').classList.remove('hidden');
 }
 
@@ -482,7 +499,21 @@ function setCamera(m) {
 
 // タッチ & ボタンUI操作
 function initTouch() {
-  const tap = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', (e) => { e.preventDefault(); fn(); }); };
+  const tap = (id, fn) => {
+    const el = $(id);
+    if (!el) return;
+    let lastTap = 0;
+    const onTap = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const now = performance.now();
+      if (now - lastTap < 350) return;
+      lastTap = now;
+      fn();
+    };
+    el.addEventListener('pointerdown', onTap);
+    el.addEventListener('click', onTap);
+  };
   
   // ポーズモーダル & ボタン
   tap('pauseBtn', () => togglePause());
