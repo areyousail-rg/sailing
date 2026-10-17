@@ -257,26 +257,30 @@ export function flap(vol = 0.6) {
   noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.42 * vol);
   tone(70 + Math.random() * 25, 0.09, 'sawtooth', 0.1 * vol);
 }
-// タック/ジャイブでセールが返る「バサッ」: 布がはためく数回の立ち上がり + 低い風圧
+// タック/ジャイブでセールが返る「バサッ」: 厚い布が一気に打ち返す大きな衝撃 → 速く減衰するバタつき → 風をはらむ「ボフッ」
 export function sailFlog(vol = 0.8) {
   if (!ctx || vol <= 0.02) return;
   const t0 = ctx.currentTime;
-  const hits = [[0, 1.0], [0.07, 0.75], [0.13, 0.55], [0.2, 0.35]];
-  for (const [dt, k] of hits) {
-    const t = t0 + dt + Math.random() * 0.015;
+  const burst = (t, dur, f0, f1, q, amp, type = 'bandpass') => {
     const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.8;
-    f.frequency.setValueAtTime(2600 + Math.random() * 600, t); f.frequency.exponentialRampToValueAtTime(500, t + 0.16);
+    const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.55 * vol * k, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
-    s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 1.2); s.stop(t + 0.2);
-  }
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(amp, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 1.2); s.stop(t + dur + 0.03);
+  };
+  // 「バッ」: 布が張って打ち返す広帯域の衝撃(低めの帯域まで含める)
+  burst(t0, 0.14, 1800, 420, 0.5, 0.95 * vol);
+  burst(t0, 0.10, 6000, 1800, 0.7, 0.45 * vol, 'highpass');
+  // 「サッ」: 続けて布がバタつく(間隔が詰まり、音量が落ちていく)
+  const flaps = [[0.09, 0.8], [0.16, 0.65], [0.22, 0.5], [0.275, 0.38], [0.32, 0.26], [0.36, 0.16]];
+  for (const [dt, k] of flaps) burst(t0 + dt + Math.random() * 0.01, 0.09, 1400 + Math.random() * 500, 380, 0.6, 0.6 * vol * k);
   // 風をはらむ「ボフッ」
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340;
   const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t0 + 0.18); g.gain.linearRampToValueAtTime(0.7 * vol, t0 + 0.22); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
-  s.connect(lp); lp.connect(g); g.connect(master); s.start(t0 + 0.18, Math.random()); s.stop(t0 + 0.6);
+  g.gain.setValueAtTime(0.0001, t0 + 0.34); g.gain.linearRampToValueAtTime(0.6 * vol, t0 + 0.38); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+  s.connect(lp); lp.connect(g); g.connect(master); s.start(t0 + 0.34, Math.random()); s.stop(t0 + 0.75);
 }
 // ランチャー上げ下げの「シャキン」: 金属がこすれるスライド音 + 金属の響き
 export function poleClank(up = true, vol = 0.7) {
