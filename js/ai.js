@@ -10,6 +10,8 @@ export class AI {
     this.b = b; this.rng = rng;
     // クローズホールド角度(41〜45°付近)
     this.closeAngle = 0.72 + rng() * 0.06;
+    // ランニング角度(下レグで180°の真後ろではなく170°付近を走行してVMGを稼ぐ)
+    this.runAngle = ((168.5 + rng() * 3.0) * Math.PI) / 180;
     this.targetStartC = b.startTargetC ?? b.c;
     this.cLim = 100 + rng() * 40;
     this.lastTack = -99;
@@ -50,13 +52,24 @@ export class AI {
     return Math.abs(wrap(this.b.windFrom - this.bearing(tw.x, tw.z))) > this.closeAngle + margin;
   }
 
-  // 目標点(a,c)へ向かうヘディング(風上ならタックを管理)
+  // 目標点(a,c)へ向かうヘディング(風上ならタック、風下170°超ならジャイブで170°付近を維持)
   headingFor(tgt, t, prestart) {
     const b = this.b, W = b.windFrom;
     const tw = toWorld(tgt.a, tgt.c);
     const brg = this.bearing(tw.x, tw.z);
     const relT = wrap(W - brg);
     const ca = this.closeAngle;
+    const ra = this.runAngle;
+    // 下レグ(目標が真風角170°より深い場合): 180°で走らず170°付近を維持し、レイラインに達したらジャイブする
+    if (!prestart && Math.abs(relT) > ra && Math.hypot(tgt.a - b.a, tgt.c - b.c) > 22) {
+      const hs = wrap(W - ra), hp = wrap(W + ra);
+      const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
+      if (t - this.lastTack > 6 && !this.crowded() && !this.nearObstacle(8)) {
+        if (b.tack === 1 && cp > cs + 0.012) { this.lastTack = t; b.startManeuver('gybe'); }
+        else if (b.tack === -1 && cs > cp + 0.012) { this.lastTack = t; b.startManeuver('gybe'); }
+      }
+      return wrap(W - b.tack * ra);
+    }
     if (Math.abs(relT) > ca + 0.03) return brg; // 直進で到達可能
     // ビーティング
     const da = tgt.a - b.a, dc = b.c - tgt.c;
