@@ -634,7 +634,7 @@ function addTori(scene, x, h, z) {
   g.position.set(x, h, z); scene.add(g);
 }
 
-// ---------- 八景島ステージ構築 (実地図準拠: 八景島・福浦/市大医学部/横浜ヘリポート・海の公園・住友重機械・横浜東京方面) ----------
+// ---------- 八景島ステージ構築 (実地図・セーリングガイド準拠) ----------
 // ワールド座標: x=東(+), 西(-), z=南(+), 北(-)。コースは八景島の東側海面(x≈0, z≈0)で北風(15°)スタート(北が風上)。
 function buildHakkeijima(root, surfStrip) {
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), tc = new THREE.Color(), eul = new THREE.Euler();
@@ -643,7 +643,6 @@ function buildHakkeijima(root, surfStrip) {
 
   const hakkeiIslandH = (x, z) => {
     const dx = (x - H_ISLAND.x) / H_ISLAND.rx, dz = (z - H_ISLAND.z) / H_ISLAND.rz;
-    // 北東〜南西に少し傾いた八景島の形状
     const u = dx * 0.92 + dz * 0.38, v = -dx * 0.38 + dz * 0.92;
     const n = noise2(x * 0.007, z * 0.007) * 0.1;
     const r = Math.pow(Math.pow(Math.abs(u), 2.5) + Math.pow(Math.abs(v), 2.5), 1 / 2.5) + n - 0.04;
@@ -664,20 +663,32 @@ function buildHakkeijima(root, surfStrip) {
   });
   root.add(new THREE.Mesh(islGeo, new THREE.MeshLambertMaterial({ vertexColors: true })));
 
-  // 1) アクアミュージアム (島の北側・ピラミッド型の屋根を持つ大水族館)
+  // 1) アクアミュージアム (島の北側・白いピラミッド型の屋根を持つ大水族館)
   const aqx = H_ISLAND.x + 40, aqz = H_ISLAND.z - 190;
   const aq = new THREE.Group();
-  const aqBase = new THREE.Mesh(new THREE.BoxGeometry(115, 18, 95), new THREE.MeshLambertMaterial({ color: 0xf4f1ea }));
+  const aqBase = new THREE.Mesh(new THREE.BoxGeometry(115, 18, 95), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
   aqBase.position.y = 9; aq.add(aqBase);
-  const aqRoof = new THREE.Mesh(new THREE.ConeGeometry(68, 36, 4), new THREE.MeshLambertMaterial({ color: 0x2563eb, emissive: 0x0f294a }));
+  const aqRoof = new THREE.Mesh(new THREE.ConeGeometry(68, 36, 4), new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x1e293b }));
   aqRoof.rotation.y = Math.PI / 4; aqRoof.position.set(0, 36, 0); aq.add(aqRoof);
-  const aqSubRoof = new THREE.Mesh(new THREE.ConeGeometry(38, 22, 4), new THREE.MeshLambertMaterial({ color: 0x60a5fa, emissive: 0x102a45 }));
+  const aqSubRoof = new THREE.Mesh(new THREE.ConeGeometry(38, 22, 4), new THREE.MeshLambertMaterial({ color: 0xf1f5f9, emissive: 0x1e293b }));
   aqSubRoof.rotation.y = Math.PI / 4; aqSubRoof.position.set(38, 27, 25); aq.add(aqSubRoof);
   aq.position.set(aqx, Math.max(3.5, hakkeiIslandH(aqx, aqz) - 0.5), aqz);
   root.add(aq);
 
-  // 2) シーパラダイスタワー (高さ90mのパノラマ展望タワー: アクアミュージアムの少し南)
-  const stx = H_ISLAND.x + 110, stz = H_ISLAND.z - 50;
+  // 2) フリーフォール / ブルーフォール (アクアミュージアムの西側＝奥側にある高さ107mの垂直タワー)
+  const bfx = H_ISLAND.x - 175, bfz = H_ISLAND.z - 210;
+  const bfGroup = new THREE.Group();
+  const bfTower = new THREE.Mesh(new THREE.BoxGeometry(5.0, 105, 5.0), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+  bfTower.position.y = 52.5; bfGroup.add(bfTower);
+  const bfTop = new THREE.Mesh(new THREE.CylinderGeometry(6.0, 3.2, 8, 12), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+  bfTop.position.y = 106; bfGroup.add(bfTop);
+  const bfCap = new THREE.Mesh(new THREE.ConeGeometry(2.2, 11, 8), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+  bfCap.position.y = 115; bfGroup.add(bfCap);
+  bfGroup.position.set(bfx, Math.max(3.5, hakkeiIslandH(bfx, bfz)), bfz);
+  root.add(bfGroup);
+
+  // 3) シーパラダイスタワー (高さ90mのパノラマ展望タワー: アクアミュージアムの少し南)
+  const stx = H_ISLAND.x + 95, stz = H_ISLAND.z - 55;
   const stGroup = new THREE.Group();
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 88, 16), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
   mast.position.y = 44; stGroup.add(mast);
@@ -692,21 +703,21 @@ function buildHakkeijima(root, surfStrip) {
   stGroup.position.set(stx, Math.max(3.5, hakkeiIslandH(stx, stz)), stz);
   root.add(stGroup);
 
-  // 3) サーフコースター リヴァイアサン (水族館の南側・東の海上に張り出す赤/白の海上ジェットコースター)
+  // 4) サーフコースター リヴァイアサン (水族館の南側・少し奥寄りに位置する青い海上ジェットコースター)
   const coaster = new THREE.Group();
-  const railMat = new THREE.MeshLambertMaterial({ color: 0xe11d48 });
-  const trussMat = new THREE.MeshLambertMaterial({ color: 0xfef2f2 });
+  const railMat = new THREE.MeshLambertMaterial({ color: 0x0284c7 }); // 青色のコースターレール
+  const trussMat = new THREE.MeshLambertMaterial({ color: 0x38bdf8 });
   const pillarMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
-  const loopCx = H_ISLAND.x + 340, loopCz = H_ISLAND.z + 40; // 水族館(z=-190)の南側(z=+40)、島の東端から海上に張り出す
+  const loopCx = H_ISLAND.x + 150, loopCz = H_ISLAND.z + 35; // 以前より少し奥側(西寄り)に配置
   for (let i = 0; i < 36; i++) {
     const t = (i / 36) * Math.PI * 2;
-    const rx = loopCx + Math.cos(t) * 110, rz = loopCz + Math.sin(t) * 165;
-    const ry = 9 + 24 * Math.pow(Math.sin(t * 2 + 0.3) * 0.5 + 0.5, 1.35);
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(32, 2.4, 3.6), railMat);
+    const rx = loopCx + Math.cos(t) * 105, rz = loopCz + Math.sin(t) * 150;
+    const ry = 10 + 25 * Math.pow(Math.sin(t * 2 + 0.3) * 0.5 + 0.5, 1.35);
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(30, 2.4, 3.6), railMat);
     seg.position.set(rx, ry, rz);
-    seg.rotation.y = -Math.atan2(Math.cos(t) * 165, -Math.sin(t) * 110);
+    seg.rotation.y = -Math.atan2(Math.cos(t) * 150, -Math.sin(t) * 105);
     coaster.add(seg);
-    const sub = new THREE.Mesh(new THREE.BoxGeometry(32, 1.0, 2.2), trussMat);
+    const sub = new THREE.Mesh(new THREE.BoxGeometry(30, 1.0, 2.2), trussMat);
     sub.position.set(rx, ry - 1.6, rz); sub.rotation.y = seg.rotation.y;
     coaster.add(sub);
     if (i % 2 === 0) {
@@ -717,34 +728,19 @@ function buildHakkeijima(root, surfStrip) {
   }
   root.add(coaster);
 
-  // ブルーフォール (島南東端の海沿いにある垂直タワーシルエット)
-  const bfx = H_ISLAND.x + 260, bfz = H_ISLAND.z + 240;
-  const bfGroup = new THREE.Group();
-  const bfTower = new THREE.Mesh(new THREE.BoxGeometry(4.5, 105, 4.5), new THREE.MeshLambertMaterial({ color: 0xe0f2fe }));
-  bfTower.position.y = 52.5; bfGroup.add(bfTower);
-  const bfTop = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 3.0, 8, 12), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
-  bfTop.position.y = 106; bfGroup.add(bfTop);
-  const bfCap = new THREE.Mesh(new THREE.ConeGeometry(2.0, 10, 8), new THREE.MeshLambertMaterial({ color: 0xef4444 }));
-  bfCap.position.y = 115; bfGroup.add(bfCap);
-  bfGroup.position.set(bfx, Math.max(3.5, hakkeiIslandH(bfx, bfz)), bfz);
-  root.add(bfGroup);
-
-  // 4) ホテル シーパラダイス イン & その手前(海側・東側)の八景島マリーナ
-  // ホテル棟 (島の南〜南東エリア)
+  // 5) ホテル シーパラダイス イン & その手前(海側・東側)の八景島マリーナ
   const htx = H_ISLAND.x + 40, htz = H_ISLAND.z + 310;
   const hotel = new THREE.Mesh(new THREE.BoxGeometry(42, 30, 95), new THREE.MeshLambertMaterial({ color: 0xfef3c7 }));
   hotel.position.set(htx, 18, htz); root.add(hotel);
   const hotelRoof = new THREE.Mesh(new THREE.BoxGeometry(45, 3, 98), new THREE.MeshLambertMaterial({ color: 0xb45309 }));
   hotelRoof.position.set(htx, 34, htz); root.add(hotelRoof);
 
-  // 八景島マリーナ (ホテル棟のすぐ手前＝コース側 x = H_ISLAND.x + 280〜520, z = H_ISLAND.z + 300)
+  // 八景島マリーナ (ホテル棟のすぐ手前＝コース側)
   const mhx = H_ISLAND.x + 290, mhz = H_ISLAND.z + 310;
   const conc = new THREE.MeshLambertMaterial({ color: 0xcbd5e1 });
-  // マリーナヤード & クラブハウス (赤茶屋根のセンターハウス)
   const yard = new THREE.Mesh(new THREE.BoxGeometry(150, 3.2, 230), conc); yard.position.set(mhx, 0.6, mhz); root.add(yard);
   const club = new THREE.Mesh(new THREE.BoxGeometry(36, 9, 24), new THREE.MeshLambertMaterial({ color: 0xf8fafc })); club.position.set(mhx - 30, 6.5, mhz - 50); root.add(club);
   const clubRoof = new THREE.Mesh(new THREE.ConeGeometry(24, 5, 4), new THREE.MeshLambertMaterial({ color: 0xc2410c })); clubRoof.rotation.y = Math.PI / 4; clubRoof.position.set(mhx - 30, 13.5, mhz - 50); root.add(clubRoof);
-  // 防波堤と係留ヨット・ディンギーヤード(ホテル棟の目の前に広がるハーバー)
   const brk = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
   for (const [x, z, w, d] of [[mhx + 240, mhz, 10, 250], [mhx + 150, mhz - 125, 190, 10], [mhx + 130, mhz + 125, 150, 10]]) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, 4.2, d), brk); b.position.set(x, 1.0, z); root.add(b);
@@ -773,28 +769,45 @@ function buildHakkeijima(root, surfStrip) {
   }
   q.identity(); hTrees.count = tn; root.add(hTrees);
 
-  // マリンゲート橋 & 金沢シーサイドライン高架橋 (八景島の北西〜北側から対岸へ伸びる)
-  const brMesh = new THREE.Mesh(new THREE.BoxGeometry(520, 2.5, 11), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
-  brMesh.position.set(H_ISLAND.x - 520, 8.5, H_ISLAND.z - 220); root.add(brMesh);
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(28, 1.5, 8, 24, Math.PI), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
-  arch.position.set(H_ISLAND.x - 420, 9.5, H_ISLAND.z - 220); root.add(arch);
+  // 6) 八景大橋 (金沢八景大橋) & マリンゲート橋 (ヘリポートと八景島の奥側＝西側水道に架かる青いアーチ橋と高架橋)
+  const ohGroup = new THREE.Group();
+  const ohX = H_ISLAND.x - 410, ohZ = H_ISLAND.z - 390; // ヘリポート奥側〜八景島北西を結ぶ
+  const ohDeck = new THREE.Mesh(new THREE.BoxGeometry(18, 3.2, 460), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  ohDeck.position.set(ohX, 14, ohZ); ohDeck.rotation.y = 0.28; ohGroup.add(ohDeck);
+  // 八景大橋の中央アーチ (青い鋼製ローゼ橋アーチ)
+  for (const s of [-6.5, 6.5]) {
+    const archRib = new THREE.Mesh(new THREE.TorusGeometry(68, 2.0, 8, 28, Math.PI), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+    archRib.rotation.y = Math.PI / 2 + 0.28;
+    archRib.position.set(ohX + s * Math.cos(0.28), 14.5, ohZ - s * Math.sin(0.28));
+    ohGroup.add(archRib);
+  }
+  // 橋脚
+  for (const dz of [-140, -65, 65, 140]) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(20, 16, 6), new THREE.MeshLambertMaterial({ color: 0x94a3b8 }));
+    pier.position.set(ohX + dz * Math.sin(0.28), 6, ohZ + dz * Math.cos(0.28));
+    pier.rotation.y = 0.28; ohGroup.add(pier);
+  }
+  // マリンゲート橋 (八景島西側〜海の公園側)
+  const brMesh = new THREE.Mesh(new THREE.BoxGeometry(460, 2.5, 11), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  brMesh.position.set(H_ISLAND.x - 520, 9.5, H_ISLAND.z - 160); ohGroup.add(brMesh);
+  const mgArch = new THREE.Mesh(new THREE.TorusGeometry(32, 1.6, 8, 24, Math.PI), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+  mgArch.position.set(H_ISLAND.x - 430, 10.5, H_ISLAND.z - 160); ohGroup.add(mgArch);
+  root.add(ohGroup);
 
-  // 5) 八景島の北側: 福浦エリア・横浜市立大学附属病院(市大医学部)・海に突き出た横浜ヘリポート・柴漁港
+  // 7) 八景島の北側: 福浦エリア・セーリングガイド記載の名物ランドマーク群
+  // (横浜市大病院・ヘリポート・テクノタワーホテル・ヤグラ型エントツ・焼却炉・三菱重工)
   const fukuura = new THREE.Group();
-  // 福浦・幸浦の埋立地護岸 (八景島の北側 z = -650 〜 -3800, x = -2800 〜 -550)
   const fkLand = new THREE.Mesh(new THREE.BoxGeometry(2250, 4.5, 3200), new THREE.MeshLambertMaterial({ color: 0x9ca3af }));
   fkLand.position.set(-1675, 1.2, -2250); fukuura.add(fkLand);
-  // 金沢水際線緑地 (福浦岸壁の直線プロムナード)
   const fkWall = new THREE.Mesh(new THREE.BoxGeometry(16, 5.2, 3200), new THREE.MeshLambertMaterial({ color: 0xd1d5db }));
   fkWall.position.set(-555, 1.6, -2250); fukuura.add(fkWall);
 
-  // 海に突き出たヘリポート (八景島のすぐ北側・市大医学部前に突き出た「横浜ヘリポート」着陸帯 & 格納庫)
-  const hpx = -380, hpz = -820; // 福浦岸壁(x=-550)から東の海側へ大きく突き出たパッド
+  // (7-a) 海に突き出た「横浜ヘリポート」
+  const hpx = -380, hpz = -820;
   const hpPad = new THREE.Mesh(new THREE.BoxGeometry(360, 4.2, 260), new THREE.MeshLambertMaterial({ color: 0x64748b }));
   hpPad.position.set(hpx, 1.1, hpz); fukuura.add(hpPad);
   const hpApron = new THREE.Mesh(new THREE.PlaneGeometry(320, 220), new THREE.MeshBasicMaterial({ color: 0x334155 }));
   hpApron.rotation.x = -Math.PI / 2; hpApron.position.set(hpx, 3.3, hpz); fukuura.add(hpApron);
-  // ヘリポートの黄色い「H」マークとサークル標識
   const hRing = new THREE.Mesh(new THREE.RingGeometry(36, 42, 32), new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide }));
   hRing.rotation.x = -Math.PI / 2; hRing.position.set(hpx + 50, 3.4, hpz); fukuura.add(hRing);
   for (const dx of [-14, 14]) {
@@ -803,42 +816,89 @@ function buildHakkeijima(root, surfStrip) {
   }
   const hCross = new THREE.Mesh(new THREE.PlaneGeometry(28, 6), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
   hCross.rotation.x = -Math.PI / 2; hCross.position.set(hpx + 50, 3.42, hpz); fukuura.add(hCross);
-  // 消防航空隊格納庫(赤白ストライプ屋根)と照明塔
   const hangar = new THREE.Mesh(new THREE.BoxGeometry(75, 16, 55), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
   hangar.position.set(hpx - 90, 11, hpz - 40); fukuura.add(hangar);
   const hangarRoof = new THREE.Mesh(new THREE.BoxGeometry(77, 2.5, 57), new THREE.MeshLambertMaterial({ color: 0xdc2626 }));
   hangarRoof.position.set(hpx - 90, 20, hpz - 40); fukuura.add(hangarRoof);
 
-  // 横浜市立大学附属病院 (市大医学部: ヘリポートのすぐ背後にある巨大な白・ベージュ系の大学病院棟 & 研究棟群)
+  // (7-b) 横浜市大病院 (ヘリポートすぐ背後の大学病院棟)
   const hospMain = new THREE.Mesh(new THREE.BoxGeometry(190, 58, 95), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
   hospMain.position.set(-820, 31, -920); fukuura.add(hospMain);
   const hospWing = new THREE.Mesh(new THREE.BoxGeometry(140, 38, 120), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
   hospWing.position.set(-960, 21, -860); fukuura.add(hospWing);
-  const hospTop = new THREE.Mesh(new THREE.BoxGeometry(55, 12, 55), new THREE.MeshLambertMaterial({ color: 0x0284c7 })); // 病院屋上設備・サイン塔
+  const hospTop = new THREE.Mesh(new THREE.BoxGeometry(55, 12, 55), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
   hospTop.position.set(-800, 65, -920); fukuura.add(hospTop);
-  // 市大医学部キャンパス・看護棟・福浦工業団地のビル群
+
+  // (7-c) テクノタワーホテル (福浦工業団地の中央にそびえる高さ約88m・段差頂部の名物高層ビル)
+  const tthX = -1120, tthZ = -1580;
+  const tthBody = new THREE.Mesh(new THREE.BoxGeometry(52, 86, 46), new THREE.MeshLambertMaterial({ color: 0xfef3c7 }));
+  tthBody.position.set(tthX, 45, tthZ); fukuura.add(tthBody);
+  const tthGlass = new THREE.Mesh(new THREE.BoxGeometry(54, 72, 24), new THREE.MeshLambertMaterial({ color: 0x38bdf8, emissive: 0x0c4a6e }));
+  tthGlass.position.set(tthX, 44, tthZ); fukuura.add(tthGlass);
+  const tthCrown = new THREE.Mesh(new THREE.BoxGeometry(34, 14, 32), new THREE.MeshLambertMaterial({ color: 0xd97706 }));
+  tthCrown.position.set(tthX, 95, tthZ); fukuura.add(tthCrown);
+
+  // (7-d) ヤグラ型エントツ (鉄骨トラスの櫓に囲まれた集合煙突: セーリングガイドの目印)
+  const yagX = -860, yagZ = -2280;
+  const yagCore = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 7.0, 98, 12), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  yagCore.position.set(yagX, 51, yagZ); fukuura.add(yagCore);
+  const yagRed = new THREE.Mesh(new THREE.CylinderGeometry(5.7, 6.0, 16, 12), new THREE.MeshLambertMaterial({ color: 0xdc2626 }));
+  yagRed.position.set(yagX, 90, yagZ); fukuura.add(yagRed);
+  const trussCol = new THREE.MeshLambertMaterial({ color: 0x64748b });
+  for (const sx of [-11, 11]) for (const sz of [-11, 11]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(2.2, 92, 2.2), trussCol);
+    post.position.set(yagX + sx, 48, yagZ + sz); fukuura.add(post);
+  }
+  for (let h = 18; h <= 90; h += 18) {
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(25, 1.8, 25), trussCol);
+    ring.position.set(yagX, h, yagZ); fukuura.add(ring);
+  }
+
+  // (7-e) 焼却炉 (横浜市資源循環局金沢工場: 白地に水色ラインの巨大な高層煙突と工場棟)
+  const incX = -1020, incZ = -2920;
+  const incBld = new THREE.Mesh(new THREE.BoxGeometry(180, 42, 130), new THREE.MeshLambertMaterial({ color: 0xf1f5f9 }));
+  incBld.position.set(incX, 23, incZ); fukuura.add(incBld);
+  const incStripe = new THREE.Mesh(new THREE.BoxGeometry(182, 8, 132), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+  incStripe.position.set(incX, 36, incZ); fukuura.add(incStripe);
+  const incStack = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 11, 135, 16), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+  incStack.position.set(incX + 45, 70, incZ - 20); fukuura.add(incStack);
+  for (const sh of [105, 122]) {
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(8.2, 8.6, 7, 16), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+    band.position.set(incX + 45, sh, incZ - 20); fukuura.add(band);
+  }
+
+  // (7-f) 三菱重工 (福浦北端・幸浦の巨大工場群と風력発電風車)
+  const mhiX = -880, mhiZ = -3450;
+  for (let i = 0; i < 4; i++) {
+    const hall = new THREE.Mesh(new THREE.BoxGeometry(240, 32, 85), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }));
+    hall.position.set(mhiX - i * 60, 18, mhiZ - i * 110); fukuura.add(hall);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(242, 3, 87), new THREE.MeshLambertMaterial({ color: 0x1e3a8a }));
+    roof.position.set(mhiX - i * 60, 35, mhiZ - i * 110); fukuura.add(roof);
+  }
+
+  // 福浦工業団地の低〜中層工場・倉庫群 (手前が都会になりすぎないよう高層ビルは置かず工場・倉庫に抑える)
   for (const [bx, bz, bw, bh, bd, col] of [
-    [-760, -1120, 110, 36, 65, 0xf1f5f9],
-    [-950, -1100, 95, 42, 70, 0xe5e7eb],
-    [-720, -1350, 130, 32, 85, 0xdbeafe],
-    [-920, -1420, 140, 28, 95, 0xf3f4f6],
-    [-740, -1680, 160, 45, 90, 0xe2e8f0],
+    [-760, -1180, 110, 24, 75, 0xf1f5f9],
+    [-950, -1220, 120, 22, 80, 0xe5e7eb],
+    [-720, -1480, 130, 20, 95, 0xdbeafe],
+    [-820, -1820, 150, 24, 110, 0xf3f4f6],
+    [-740, -2060, 160, 22, 100, 0xe2e8f0],
+    [-750, -2560, 145, 25, 110, 0xcbd5e1],
   ]) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), new THREE.MeshLambertMaterial({ color: col }));
     m.position.set(bx, bh / 2 + 2, bz); fukuura.add(m);
   }
   root.add(fukuura);
 
-  // 6) 西岸の陸地 (海の公園の砂浜〜野島公園〜南側の横須賀・追浜・夏島エリアの緑の丘陵)
+  // 8) 西岸の陸地 (海の公園の砂浜〜野島公園〜南側の横須賀・追浜・夏島エリアの緑の丘陵)
   const westX = [], westZ = [];
-  for (let i = 0; i <= 90; i++) westX.push(-9500 + (8200 * i) / 90); // x: -9500 .. -1300
-  for (let j = 0; j <= 120; j++) westZ.push(-4500 + (11000 * j) / 120); // z: -4500(北) .. +6500(南・横須賀)
-  const wCoastX = (z) => -1750 + 220 * Math.sin(z / 950) + (z > 900 ? Math.min(750, (z - 900) * 0.42) : 0); // 夏島・横須賀側(z>900)は東へ張り出す半島
+  for (let i = 0; i <= 90; i++) westX.push(-9500 + (8200 * i) / 90);
+  for (let j = 0; j <= 120; j++) westZ.push(-4500 + (11000 * j) / 120);
+  const wCoastX = (z) => -1750 + 220 * Math.sin(z / 950) + (z > 900 ? Math.min(750, (z - 900) * 0.42) : 0);
   const wLandH = (x, z) => {
-    const d = wCoastX(z) - x; // 海岸線から内陸(西)への距離
+    const d = wCoastX(z) - x;
     if (d < 0) return -6;
     const ramp = smooth(0, 120, d);
-    // 横須賀・夏島・鷹取山側(z > 800)は海岸近くまで急峻な緑の山が迫り、町並みは隠れる
     const isYokosuka = smooth(600, 1400, z);
     const hillBase = isYokosuka ? smooth(80, 900, d) * 145 : Math.pow(smooth(450, 4000, d), 1.3) * 130;
     return -1.0 + 3.2 * ramp + hillBase * (0.45 + 0.55 * noise2(x / 900, z / 900));
@@ -850,7 +910,7 @@ function buildHakkeijima(root, surfStrip) {
     else if (z >= 900 && z <= 2500 && d < 320) out.setRGB(0.54, 0.56, 0.58); // 夏島・住友重機械の工場敷地岸壁
     else {
       const g = noise2(x / 120, z / 120);
-      out.setRGB(0.11 + 0.05 * g, 0.24 + 0.08 * g, 0.09 + 0.03 * g); // 横須賀・金沢の深い緑の丘陵
+      out.setRGB(0.11 + 0.05 * g, 0.24 + 0.08 * g, 0.09 + 0.03 * g);
     }
   };
   const wGeo = buildGrid(westX, westZ, wLandH, wColorLand);
@@ -861,80 +921,195 @@ function buildHakkeijima(root, surfStrip) {
   for (let z = -550; z <= 750; z += 35) wcpts.push({ x: wCoastX(z), z, ux: 1, uz: 0 });
   surfStrip(root, wcpts, 12);
 
-  // 7) 横須賀側 (南〜南西 z = +1150 〜 +2350): 町並みではなく「住友重機械工業 横須賀製造所(造船所)」の巨大工場とゴライアスクレーン
+  // 9) 横須賀側 (南〜南西 z = +1150 〜 +2350): 住友重機械工業 横須賀製造所のオレンジ色ゴライアスクレーンと白い大工場棟 (画像準拠)
   const shi = new THREE.Group();
   const shiX = -1050, shiZ = 1650;
-  // 造船所埋め立て岸壁・ドックヤード
-  const shiYard = new THREE.Mesh(new THREE.BoxGeometry(620, 4.5, 1150), new THREE.MeshLambertMaterial({ color: 0x64748b }));
+  const shiYard = new THREE.Mesh(new THREE.BoxGeometry(660, 4.5, 1180), new THREE.MeshLambertMaterial({ color: 0x64748b }));
   shiYard.position.set(shiX, 1.2, shiZ); shi.add(shiYard);
-  // 大型組立工場棟 (青・グレー・白の巨大鉄骨建屋群)
+  // クレーンの右手(西側)に並ぶ白い大型工場建屋 (暗い横連窓ストライプ入り)
   for (const [dx, dz, w, h, d, cBody, cRoof] of [
-    [-110, -240, 260, 44, 190, 0xcbd5e1, 0x1e40af],
-    [-130, 40, 290, 52, 230, 0x94a3b8, 0x1d4ed8],
-    [-90, 320, 240, 38, 180, 0xd1d5db, 0x334155],
-    [110, -80, 140, 32, 160, 0xe2e8f0, 0x0284c7],
+    [-90, 90, 290, 54, 340, 0xf8fafc, 0x475569],   // 写真右側の白い巨大工場棟
+    [-110, -250, 250, 42, 210, 0xf1f5f9, 0x334155],
+    [-95, 380, 230, 38, 180, 0xe2e8f0, 0x334155],
+    [110, 140, 140, 30, 190, 0xf8fafc, 0x475569],
   ]) {
     const bld = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: cBody }));
     bld.position.set(shiX + dx, h / 2 + 3, shiZ + dz); shi.add(bld);
-    const rf = new THREE.Mesh(new THREE.BoxGeometry(w + 4, 3, d + 4), new THREE.MeshLambertMaterial({ color: cRoof }));
-    rf.position.set(shiX + dx, h + 4.5, shiZ + dz); shi.add(rf);
-  }
-  // 象徴的な巨大ゴライアスクレーン(門型クレーン) 2基 + ジブクレーン群
-  const craneYellow = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
-  const craneBlue = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
-  const craneWhite = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
-  for (const [cz, ch, span, mat] of [[shiZ - 180, 108, 170, craneYellow], [shiZ + 190, 96, 155, craneBlue]]) {
-    const cx = shiX + 120;
-    // 左右の脚塔
-    for (const s of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(6, ch, 8), mat);
-      leg.position.set(cx, ch / 2 + 3, cz + s * (span / 2)); shi.add(leg);
-      const brace = new THREE.Mesh(new THREE.BoxGeometry(5, ch * 0.9, 5), mat);
-      brace.position.set(cx - 12, ch * 0.45 + 3, cz + s * (span / 2)); brace.rotation.z = -0.22; shi.add(brace);
+    const rf = new THREE.Mesh(new THREE.BoxGeometry(w + 4, 2.5, d + 4), new THREE.MeshLambertMaterial({ color: cRoof }));
+    rf.position.set(shiX + dx, h + 4.2, shiZ + dz); shi.add(rf);
+    // 工場壁面の横連窓バンド
+    for (const wy of [h * 0.45, h * 0.75]) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(w + 1.5, 3.5, d * 0.92), new THREE.MeshLambertMaterial({ color: 0x334155 }));
+      win.position.set(shiX + dx, wy + 3, shiZ + dz); shi.add(win);
     }
-    // 上部ガーダー(横桁) + SUMITOMOロゴ風プレート
-    const girder = new THREE.Mesh(new THREE.BoxGeometry(12, 9, span + 28), mat);
+  }
+  // 住友重工の象徴: 鮮やかなオレンジ色(赤橙)の巨大ゴライアスクレーン (脚に白帯・上部にSUMITOMO白文字プレート)
+  const craneOrange = new THREE.MeshLambertMaterial({ color: 0xea580c });
+  const craneOrangeSub = new THREE.MeshLambertMaterial({ color: 0xf97316 });
+  const craneWhite = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  for (const [cz, ch, span] of [[shiZ - 140, 112, 185], [shiZ + 220, 98, 160]]) {
+    const cx = shiX + 135;
+    for (const s of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(6.5, ch, 8.5), craneOrange);
+      leg.position.set(cx, ch / 2 + 3, cz + s * (span / 2)); shi.add(leg);
+      // 脚の紅白(オレンジ×白)ストライプ帯
+      for (const bh of [ch * 0.35, ch * 0.68]) {
+        const wBand = new THREE.Mesh(new THREE.BoxGeometry(7.0, 10, 9.0), craneWhite);
+        wBand.position.set(cx, bh + 3, cz + s * (span / 2)); shi.add(wBand);
+      }
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(5.2, ch * 0.92, 5.2), craneOrange);
+      brace.position.set(cx - 14, ch * 0.46 + 3, cz + s * (span / 2)); brace.rotation.z = -0.22; shi.add(brace);
+    }
+    // 上部オレンジガーダー(横桁) + SUMITOMO白ロゴ帯
+    const girder = new THREE.Mesh(new THREE.BoxGeometry(13, 9.5, span + 34), craneOrange);
     girder.position.set(cx - 4, ch + 5, cz); shi.add(girder);
-    const logo = new THREE.Mesh(new THREE.BoxGeometry(12.6, 5.5, span * 0.55), craneWhite);
+    const logo = new THREE.Mesh(new THREE.BoxGeometry(13.6, 5.2, span * 0.58), craneWhite);
     logo.position.set(cx - 4, ch + 5, cz); shi.add(logo);
   }
-  // 造船所のジブクレーン(斜めブーム) 3基
-  for (const [jx, jz] of [[shiX + 210, shiZ - 320], [shiX + 220, shiZ + 20], [shiX + 200, shiZ + 360]]) {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 5, 28, 8), craneBlue);
+  // 周囲のオレンジ色ジブクレーン群
+  for (const [jx, jz] of [[shiX + 215, shiZ - 310], [shiX + 225, shiZ + 20], [shiX + 205, shiZ + 360]]) {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 5, 28, 8), craneOrange);
     base.position.set(jx, 16, jz); shi.add(base);
-    const boom = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 85, 6), craneYellow);
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 85, 6), craneOrangeSub);
     boom.position.set(jx + 18, 52, jz); boom.rotation.z = -0.46; shi.add(boom);
   }
   root.add(shi);
 
-  // 8) 横浜・みなとみらい・東京方面 (北〜北東 z = -2500 〜 -12000): 大都会の高層ビル群・ランドマークタワー・ベイブリッジ・ガントリークレーン
+  // 10) 東京湾の船舶・海上構造物 (八景島遊覧船「パラダイス」・大型商船/コンテナ船・漁船・シーバース・小柴ブイ・沖ノ根)
+  const bayShips = new THREE.Group();
+
+  // (10-a) 八景島の島回り遊覧船「パラダイス」(写真準拠: 黒×赤の2階建て外輪船・金の丸窓・2本煙突・赤い外輪)
+  const para = new THREE.Group();
+  const pBlack = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+  const pRed = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+  const pWhite = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+  const pGold = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+  // 黒い船体 + 白喫水ライン + 赤いブルワーク縁取り (全長約28mにスケールアップして視認性確保)
+  const pHull = new THREE.Mesh(new THREE.BoxGeometry(7.2, 2.8, 28), pBlack);
+  pHull.position.y = 1.2; para.add(pHull);
+  const pBow = new THREE.Mesh(new THREE.ConeGeometry(5.1, 7.5, 4), pBlack);
+  pBow.rotation.x = Math.PI / 2; pBow.rotation.z = Math.PI / 4; pBow.position.set(0, 1.2, 17.5); para.add(pBow);
+  const pStripe = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.45, 28.2), pWhite);
+  pStripe.position.y = 2.4; para.add(pStripe);
+  const pDeck1 = new THREE.Mesh(new THREE.BoxGeometry(6.6, 2.8, 21), pBlack);
+  pDeck1.position.set(0, 3.8, -0.5); para.add(pDeck1);
+  const pRedBand = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.55, 21.4), pRed);
+  pRedBand.position.set(0, 5.2, -0.5); para.add(pRedBand);
+  // 1階側面の金色の丸窓 (片側5個ずつ)
+  for (const sx of [-3.35, 3.35]) for (let wz = -7.5; wz <= 6.5; wz += 3.5) {
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.2, 12), pGold);
+    port.rotation.z = Math.PI / 2; port.position.set(sx, 3.8, wz); para.add(port);
+  }
+  // 2階オープンデッキの屋根と前方の操舵室
+  const pBridge = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.6, 5.5), pBlack);
+  pBridge.position.set(0, 6.6, 6.8); para.add(pBridge);
+  const pBridgeWin = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.1, 5.7), pGold);
+  pBridgeWin.position.set(0, 6.9, 6.8); para.add(pBridgeWin);
+  const pCanopy = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.6, 19.5), pRed);
+  pCanopy.position.set(0, 8.1, -0.2); para.add(pCanopy);
+  // 象徴的な2本の黒い煙突と赤い横連結バー
+  for (const sx of [-1.7, 1.7]) {
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 6.5, 10), pBlack);
+    stack.position.set(sx, 11.2, 2.2); para.add(stack);
+    const sCap = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.7, 10), pRed);
+    sCap.position.set(sx, 13.8, 2.2); para.add(sCap);
+  }
+  const sCross = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.65, 0.65), pRed);
+  sCross.position.set(0, 12.2, 2.2); para.add(sCross);
+  // 船尾の赤い外輪 (パドルホイール)
+  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 4.6, 12), pRed);
+  wheel.rotation.z = Math.PI / 2; wheel.position.set(0, 1.8, -14.8); para.add(wheel);
+  para.position.set(H_ISLAND.x + 640, 0, H_ISLAND.z + 280); // 八景島マリーナ沖を遊覧中
+  para.rotation.y = 0.35;
+  bayShips.add(para);
+
+  // (10-b) 東京湾の大型商船・コンテナ船・自動車運搬船・タンカー (停泊本船・航行船)
+  const cargoConfigs = [
+    { x: 1380, z: -850, ry: -0.18, len: 210, w: 32, col: 0x991b1b, type: 'container' },
+    { x: 1950, z: 420, ry: 0.12, len: 195, w: 30, col: 0x1e3a8a, type: 'container' },
+    { x: 720, z: -2750, ry: -0.45, len: 180, w: 28, col: 0x0f172a, type: 'tanker' },   // 三菱沖の停泊本船
+    { x: 1720, z: -2200, ry: 0.05, len: 190, w: 30, col: 0x1d4ed8, type: 'car' },
+    { x: 2650, z: -1450, ry: -0.1, len: 230, w: 35, col: 0x047857, type: 'container' },
+  ];
+  const contColors = [0xdc2626, 0x2563eb, 0xd97706, 0x059669, 0x9333ea, 0xe11d48];
+  for (const cfg of cargoConfigs) {
+    const sg = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(cfg.w, 13, cfg.len), new THREE.MeshLambertMaterial({ color: cfg.col }));
+    hull.position.y = 5.5; sg.add(hull);
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(cfg.w * 0.82, 24, 22), pWhite);
+    bridge.position.set(0, 22, -cfg.len * 0.34); sg.add(bridge);
+    const funnel = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 4.0, 14, 10), new THREE.MeshLambertMaterial({ color: 0xea580c }));
+    funnel.position.set(0, 36, -cfg.len * 0.38); sg.add(funnel);
+    if (cfg.type === 'container') {
+      for (let cz = -cfg.len * 0.18; cz <= cfg.len * 0.34; cz += 26) {
+        const cMat = new THREE.MeshLambertMaterial({ color: contColors[Math.abs(Math.round(cz)) % contColors.length] });
+        const stack = new THREE.Mesh(new THREE.BoxGeometry(cfg.w * 0.86, 11, 22), cMat);
+        stack.position.set(0, 17, cz); sg.add(stack);
+      }
+    } else if (cfg.type === 'car') {
+      const boxHull = new THREE.Mesh(new THREE.BoxGeometry(cfg.w * 0.96, 16, cfg.len * 0.88), new THREE.MeshLambertMaterial({ color: 0x3b82f6 }));
+      boxHull.position.set(0, 18, 0); sg.add(boxHull);
+    }
+    sg.position.set(cfg.x, 0, cfg.z); sg.rotation.y = cfg.ry;
+    bayShips.add(sg);
+  }
+
+  // (10-c) 柴漁港・金沢の小型漁船群 (白船体・青ライン・船尾スパンカー帆)
+  const fishCoords = [
+    [-460, -540, 0.8], [-390, -1180, -0.4], [520, 460, 1.2],
+    [640, -140, -1.1], [-320, 740, 0.5], [430, -640, 2.1], [820, 820, -0.7]
+  ];
+  const fBlue = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+  for (const [fx, fz, fry] of fishCoords) {
+    const fg = new THREE.Group();
+    const fh = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.2, 10.5), pWhite);
+    fh.position.y = 0.5; fg.add(fh);
+    const fb = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.35, 10.6), fBlue);
+    fb.position.y = 1.1; fg.add(fb);
+    const fc = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 3.0), pWhite);
+    fc.position.set(0, 1.9, -0.5); fg.add(fc);
+    const spanker = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.8, 3), pWhite);
+    spanker.position.set(0, 3.2, -3.8); fg.add(spanker);
+    fg.position.set(fx, 0, fz); fg.rotation.y = fry;
+    bayShips.add(fg);
+  }
+
+  // (10-d) セーリングガイド記載の海上標識: シーバース・小柴2/3/4号灯浮標・沖ノ根ビーコン
+  // 沖ノ根 (黒赤二横線の孤立障害標識)
+  const oki = new THREE.Group();
+  const okiPole = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.6, 11, 10), pBlack);
+  okiPole.position.y = 5.5; oki.add(okiPole);
+  const okiBand = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.45, 3.5, 10), pRed);
+  okiBand.position.y = 6.0; oki.add(okiBand);
+  oki.position.set(-450, 0, 520); bayShips.add(oki);
+
+  // 小柴4(赤)・小柴3(緑)・小柴2(赤) ブイ
+  const gMat = new THREE.MeshLambertMaterial({ color: 0x16a34a });
+  for (const [bx, bz, mat] of [[520, -420, pRed], [780, -820, gMat], [1040, -1420, pRed]]) {
+    const bg = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 2.0, 10), mat);
+    base.position.y = 1.0; bg.add(base);
+    const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.4, 5.5, 8), mat);
+    tw.position.y = 4.5; bg.add(tw);
+    bg.position.set(bx, 0, bz); bayShips.add(bg);
+  }
+
+  // 小柴シーバース (沖合のドルフィン桟橋構造物)
+  const sbGroup = new THREE.Group();
+  const sbDeck = new THREE.Mesh(new THREE.BoxGeometry(16, 3.5, 140), new THREE.MeshLambertMaterial({ color: 0xf59e0b }));
+  sbDeck.position.y = 4.5; sbGroup.add(sbDeck);
+  for (let sz = -60; sz <= 60; sz += 30) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 9, 8), pBlack);
+    leg.position.set(0, 2, sz); sbGroup.add(leg);
+  }
+  sbGroup.position.set(920, 0, -1120); sbGroup.rotation.y = -0.25;
+  bayShips.add(sbGroup);
+  root.add(bayShips);
+
+  // 11) 北〜北東の遠景: 本牧の赤いクレーン群(手前北側) + 遠くうっすら見える横浜みなとみらい・ランドマークタワー・東京湾岸ビル群
   const metro = new THREE.Group();
-  // 本牧・根岸・みなとみらい〜東京湾岸へ続く埋立地ライン
-  const metroLand = new THREE.Mesh(new THREE.BoxGeometry(9000, 5, 14000), new THREE.MeshLambertMaterial({ color: 0x64748b }));
-  metroLand.position.set(-2200, 1.0, -9000); metro.add(metroLand);
 
-  // 横浜ランドマークタワー (高さ296mの象徴的な超高層ビル) & クイーンズスクエア3連棟 & コスモクロック風大観覧車
-  const lmk = new THREE.Mesh(new THREE.CylinderGeometry(28, 42, 296, 4), new THREE.MeshLambertMaterial({ color: 0xdbeafe, emissive: 0x1e293b }));
-  lmk.rotation.y = Math.PI / 4; lmk.position.set(-1400, 148, -5800); metro.add(lmk);
-  for (let i = 0; i < 3; i++) {
-    const qh = 170 - i * 18;
-    const qb = new THREE.Mesh(new THREE.BoxGeometry(48, qh, 48), new THREE.MeshLambertMaterial({ color: 0xe0f2fe, emissive: 0x172554 }));
-    qb.position.set(-1220 + i * 75, qh / 2, -5750 + i * 40); metro.add(qb);
-  }
-  // ヨコハマ グランド インターコンチネンタル ホテル (ヨットのセール型の白い半円ビル)
-  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(55, 55, 18, 24, 1, false, 0, Math.PI), new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x1e3a8a }));
-  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.4; interCon.position.set(-1000, 45, -5650); interCon.scale.set(2.2, 1, 1); metro.add(interCon);
-
-  // 横浜ベイブリッジ (北東の海上に架かる巨大斜張橋: 2本のH型主塔と白い橋桁)
-  const bbX = 650, bbZ = -6200;
-  const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(2400, 8, 26), new THREE.MeshLambertMaterial({ color: 0xf1f5f9 }));
-  bbDeck.position.set(bbX, 58, bbZ); bbDeck.rotation.y = -0.25; metro.add(bbDeck);
-  for (const s of [-420, 420]) {
-    const tw = new THREE.Mesh(new THREE.BoxGeometry(18, 175, 28), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
-    tw.position.set(bbX + s * Math.cos(0.25), 87.5, bbZ + s * Math.sin(0.25)); metro.add(tw);
-  }
-
-  // 本牧ふ頭・南本牧ふ頭の赤白ガントリークレーン群 (横浜港らしさの象徴)
+  // 北側に見える本牧ふ頭・南本牧ふ頭の赤白ガントリークレーン群 (ユーザー好評ポイントとしてそのまま維持)
   const redMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
   for (let i = 0; i < 8; i++) {
     const gx = -450 + i * 95, gz = -3800 - (i % 3) * 140;
@@ -944,35 +1119,69 @@ function buildHakkeijima(root, surfStrip) {
     gBoom.position.set(gx + 32, 64, gz); metro.add(gBoom);
   }
 
-  // 横浜〜川崎〜東京方面へぎっしり立ち並ぶ大都会の高層ビル・タワマン群 (InstancedMesh 2200棟)
-  const HBOX = 2200;
+  // 横浜・川崎・東京側の遠方陸地プレート (かなり奥側 z = -8000 〜 -26000 に配置し、手前が都会になりすぎないようにする)
+  const metroLand = new THREE.Mesh(new THREE.BoxGeometry(14000, 6, 19000), new THREE.MeshLambertMaterial({ color: 0x64748b }));
+  metroLand.position.set(-1500, 1.0, -17000); metro.add(metroLand);
+
+  // 横浜ランドマークタワー・クイーンズスクエア・インターコンチネンタル・横浜ベイブリッジ (z ≈ -10500 に下げて霧越しにうっすら見える距離感を再現)
+  const lmk = new THREE.Mesh(new THREE.CylinderGeometry(36, 52, 340, 4), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }));
+  lmk.rotation.y = Math.PI / 4; lmk.position.set(-1800, 170, -10500); metro.add(lmk);
+  for (let i = 0; i < 3; i++) {
+    const qh = 195 - i * 20;
+    const qb = new THREE.Mesh(new THREE.BoxGeometry(62, qh, 62), new THREE.MeshLambertMaterial({ color: 0xdbeafe }));
+    qb.position.set(-1560 + i * 95, qh / 2, -10400 + i * 50); metro.add(qb);
+  }
+  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, 22, 24, 1, false, 0, Math.PI), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.4; interCon.position.set(-1250, 55, -10250); interCon.scale.set(2.2, 1, 1); metro.add(interCon);
+
+  // 横浜ベイブリッジ (北方の遠景海上にうっすら浮かぶ斜張橋)
+  const bbX = 950, bbZ = -10800;
+  const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(2800, 10, 30), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  bbDeck.position.set(bbX, 68, bbZ); bbDeck.rotation.y = -0.25; metro.add(bbDeck);
+  for (const s of [-480, 480]) {
+    const tw = new THREE.Mesh(new THREE.BoxGeometry(24, 195, 32), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+    tw.position.set(bbX + s * Math.cos(0.25), 97.5, bbZ + s * Math.sin(0.25)); metro.add(tw);
+  }
+
+  // 横浜奥〜川崎〜東京側(羽田・品川・お台場・都心方面)の遠景ビル群と、東の千葉側(木更津・幕張・房総方面)のうっすら見える遠景ビル群
+  const HBOX = 2400;
   const hBoxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial(), HBOX);
   let hbn = 0;
-  const cityPal = [0xf8fafc, 0xe2e8f0, 0xcbd5e1, 0xdbeafe, 0xbfdbfe, 0xfef3c7, 0x94a3b8, 0xe0e7ff];
-  // 1) 福浦・金沢シーサイドタウン・並木方面の中高層マンション・ビル群 (北側 z = -1200 .. -4200)
-  for (let k = 0; k < 700; k++) {
-    const x = -3200 + rnd() * 2550, z = -1300 - rnd() * 2900;
-    const tall = rnd() < 0.35;
-    const bh = tall ? 42 + rnd() * 55 : 16 + rnd() * 24;
-    const bw = 18 + rnd() * 28, bd = 18 + rnd() * 28;
+  const cityPal = [0xcbd5e1, 0x94a3b8, 0xdbeafe, 0xe2e8f0, 0xb4c6da];
+  // (a) 磯子・根岸・本牧の奥側中距離工場・マンション群 (z = -4600 .. -8500)
+  for (let k = 0; k < 450; k++) {
+    const x = -3800 + rnd() * 3200, z = -4600 - rnd() * 3900;
+    const bh = 25 + rnd() * 55, bw = 24 + rnd() * 36, bd = 24 + rnd() * 36;
     m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
     hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
   }
-  // 2) 横浜都心(みなとみらい・関内)・川崎・東京方面の超高層ビル群・摩天楼スカイライン (北〜北東 z = -4200 .. -13500)
-  for (let k = 0; k < 1500 && hbn < HBOX; k++) {
-    const x = -4200 + rnd() * 5800, z = -4200 - rnd() * 9000;
-    const skyscraper = rnd() < 0.45;
-    const bh = skyscraper ? 95 + rnd() * 165 : 35 + rnd() * 55;
-    const bw = 26 + rnd() * 44, bd = 26 + rnd() * 44;
+  // (b) 横浜都心〜川崎〜東京湾岸(z = -9000 .. -24000, x = -4500 .. +5200) の遠景ビル・摩天楼シルエット (東京側の陸地にもしっかりビルを建てる)
+  for (let k = 0; k < 1650 && hbn < HBOX; k++) {
+    const z = -9000 - rnd() * 15000;
+    // 北へ行くほど東京湾岸に沿って東(+x)へも市街地が広がる
+    const eastSpread = (-z - 9000) * 0.35;
+    const x = -4200 + rnd() * (5200 + eastSpread);
+    const skyscraper = rnd() < 0.5;
+    const bh = skyscraper ? 110 + rnd() * 190 : 45 + rnd() * 65;
+    const bw = 36 + rnd() * 55, bd = 36 + rnd() * 55;
+    m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
+    hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
+  }
+  // (c) 千葉側(東の水平線 x = 19500 .. 23000) の沿岸プラント・街並みシルエット
+  for (let k = 0; k < 300 && hbn < HBOX; k++) {
+    const x = 19500 + rnd() * 3000, z = -14000 + rnd() * 22000;
+    const bh = 35 + rnd() * 85, bw = 40 + rnd() * 60, bd = 40 + rnd() * 60;
     m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
     hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
   }
   hBoxes.count = hbn; metro.add(hBoxes);
   root.add(metro);
 
-  // 遠景: 対岸の房総半島(東の水平線) & 観音崎・猿島方面(南東の緑の岬、町並みなし)
-  distantLand(root, 15000, 1000, 3800, 18000, 170, 0.05);
-  distantLand(root, 1800, 5800, 2600, 2200, 135, -0.3);
+  // 遠景陸地: 東京側奥の陸地(北〜北東 z = -22000)、千葉・房総半島(かなり遠く東 x = 22000 に下げてうっすら見える程度に)、観音崎・猿島方面(南東)
+  distantLand(root, 2200, -21000, 8500, 6500, 65, 0.15);   // 東京側奥の陸地 (上にビル群が立ち並ぶ)
+  distantLand(root, 22500, -1000, 3600, 22000, 110, 0.04); // 千葉・房総側 (遠方にうっすら見える低い稜線)
+  distantLand(root, 1800, 5800, 2600, 2200, 135, -0.3);    // 観音崎・横須賀南東の緑の岬
 }
+
 
 
