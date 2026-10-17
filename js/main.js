@@ -35,8 +35,9 @@ const defaults = { venue: 'enoshima', penaltyMode: 'off', helm: 'human_m', crew:
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
-if (cfg.helm === 'human') cfg.helm = 'human_m';
-if (cfg.crew === 'human') cfg.crew = 'human_m';
+// デフォルト選択は常にヘルムスマン＝男性(human_m)、クルー＝ネコ(cat)で初期化
+cfg.helm = 'human_m';
+cfg.crew = 'cat';
 if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
 if (!PENALTY_MODES.find((m) => m.id === cfg.penaltyMode)) cfg.penaltyMode = 'off';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
@@ -804,7 +805,7 @@ function initPreview() {
   r.setSize(300, 220, false); r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   const sc = new THREE.Scene();
   sc.add(new THREE.HemisphereLight(0xffffff, 0x446677, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 2); dl.position.set(2, 4, 3); sc.add(dl);
-  const cm = new THREE.PerspectiveCamera(35, 300 / 220, 0.1, 50); cm.position.set(0, 0.9, 2.9); cm.lookAt(0, 0.55, 0);
+  const cm = new THREE.PerspectiveCamera(35, 300 / 220, 0.1, 50); cm.position.set(0, 0.85, 3.05); cm.lookAt(0, 0.45, 0);
   pv = { r, sc, cm, g: new THREE.Group() }; sc.add(pv.g);
   updatePreview();
   const spin = () => { requestAnimationFrame(spin); if (state.phase !== 'menu') return; pv.g.rotation.y += 0.012; r.render(sc, cm); };
@@ -814,8 +815,8 @@ function updatePreview() {
   if (!pv) return;
   pv.g.clear();
   const st = { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat), jacket: 0xff7a1a };
-  const a = buildFigure(cfg.helm, st); a.position.x = -0.5; pv.g.add(a);
-  const b = buildFigure(cfg.crew, st); b.position.x = 0.5; pv.g.add(b);
+  const a = buildFigure(cfg.helm, st); a.position.set(-0.5, a.userData.upper ? 0.16 : 0, 0); pv.g.add(a);
+  const b = buildFigure(cfg.crew, st); b.position.set(0.5, b.userData.upper ? 0.16 : 0, 0); pv.g.add(b);
 }
 function initMenu() {
   applyVenue();
