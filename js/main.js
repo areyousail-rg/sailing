@@ -26,9 +26,10 @@ const VENUES = [
   { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN' },
   { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA' },
 ];
-const defaults = { venue: 'enoshima', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31415' };
+const defaults = { venue: 'enoshima', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '30804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
+if (cfg.sailNo === '31415') cfg.sailNo = '30804';
 if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
@@ -122,7 +123,7 @@ function miniLog(text, ms = 3500) {
   setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, ms);
 }
 const nameOf = (b) => (b.isPlayer ? 'あなた' : `${b.nat} ${b.sailNo}`);
-const fmt = (t) => { const s = Math.abs(t), m = Math.floor(s / 60), r = Math.floor(s % 60); return (t < 0 ? '−' : '') + m + ':' + String(r).padStart(2, '0'); };
+const fmt = (t) => { const s = t < 0 ? Math.ceil(-t) : Math.floor(t), m = Math.floor(s / 60), r = s % 60; return (t < 0 ? '−' : '') + m + ':' + String(r).padStart(2, '0'); };
 const fmtMs = (t) => { const m = Math.floor(t / 60), r = t - m * 60; return m + ':' + r.toFixed(1).padStart(4, '0'); };
 
 let lastLeaders = 0;
@@ -181,8 +182,10 @@ function drawMinimap() {
 
 function updateHUD(sorted) {
   const b = player, t = state.t;
-  hud.clock.textContent = t < 0 ? fmt(t) : fmt(t);
-  hud.phase.textContent = t < 0 ? '1分前 ― P旗降下' : b.finished ? 'フィニッシュ!' : 'レース中';
+  const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
+  const nextMarkTxt = L.type === 'finish' ? 'フィニッシュ' : L.type === 'gate' ? '4ゲート(4S/4P)' : `${L.name}マーク`;
+  hud.clock.textContent = fmt(t);
+  hud.phase.textContent = t < 0 ? `1分前 ― 次: スタート → 1マーク` : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
   const wd = ((b.windFrom * 180) / Math.PI + 360) % 360;
   hud.wdir.textContent = Math.round(wd) + '°';
@@ -193,14 +196,13 @@ function updateHUD(sorted) {
   if (hud.tack) { hud.tack.textContent = b.tack > 0 ? '右舷' : '左舷'; hud.tack.className = b.tack > 0 ? 'stbd' : 'port'; }
   hud.sheet.style.width = Math.round(b.sheet * 100) + '%';
   hud.sheetOpt.style.left = Math.round(b.sOpt * 100) + '%';
-  hud.autoLbl.textContent = autoTrim ? 'AUTO' : 'MANUAL'; hud.autoLbl.className = autoTrim ? '' : 'off';
+  hud.autoLbl.textContent = autoTrim ? 'セールAUTO' : 'MANUAL'; hud.autoLbl.className = autoTrim ? '' : 'off';
   if (hud.pole) {
     const st = b.pole ? (b.poleK < 1 ? 'UP…' : 'UP') : b.poleK > 0 ? 'DOWN…' : 'DOWN';
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
   if (b.cover > 0.3) { hud.blk.style.display = 'block'; hud.blk.textContent = `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`; } else hud.blk.style.display = 'none';
-  const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   hud.leg.textContent = b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
@@ -272,9 +274,8 @@ function startRace() {
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
   document.body.classList.add('hintOn'); clearTimeout(window.__hintT); window.__hintT = setTimeout(() => document.body.classList.remove('hintOn'), 5000);
-  toast('スタート1分前。ライン手前で待機し、号砲に合わせて加速しよう(カメラ切替で船内視点も)', 'info', 7000);
   const deg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(0);
-  setTimeout(() => toast(`ラインチェック: ${FAVORED === 'pin' ? 'ピン(左端)' : '本部船(右端)'}側が約${deg}°風上で有利`, 'info', 6000), 1500);
+  toast(`スタート1分前、${FAVORED === 'pin' ? 'ピン(左端)' : '本部船(右端)'}側が${deg}度有利`, 'info', 6500);
 }
 const SIGS = [[-60, 'down'], [0, 'gun']];
 function signals(prevT, t) {
@@ -563,7 +564,7 @@ function initMenu() {
     el.oninput = () => { cfg[key] = el.value; saveCfg(); updatePreview(); };
   }
   const sn = $('sailNo'); sn.value = cfg.sailNo;
-  sn.oninput = () => { cfg.sailNo = sn.value.replace(/\D/g, '').slice(0, 5) || '31415'; saveCfg(); };
+  sn.oninput = () => { cfg.sailNo = sn.value.replace(/\D/g, '').slice(0, 5) || '30804'; saveCfg(); };
   $('startBtn').onclick = startRace;
   $('againBtn').onclick = () => { $('result').classList.add('hidden'); $('hud').classList.add('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; makeFleet(); };
   initPreview();
