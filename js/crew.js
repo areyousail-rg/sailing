@@ -156,8 +156,20 @@ export function buildFigure(type, style = {}) {
   }
   const A = ANIMAL[type];
   const body = sph(g, A.body, 0.23, 0.27, 0.21, 0, 0.30, 0);
-  const band = new THREE.Mesh(cylG, mat(jacket)); band.scale.set(0.235, 0.1, 0.215); band.position.set(0, 0.31, 0); g.add(band);
   sph(g, A.belly, 0.15, 0.17, 0.08, 0, 0.30, -0.15);
+  if (type === 'cat') {
+    // ネコ用の赤いライフジャケット(PFDベスト: 赤い身頃・肩ストラップ・黒ベルト・バックル)
+    const redPfd = 0xdc2626, beltCol = 0x1e293b;
+    sph(g, redPfd, 0.245, 0.19, 0.22, 0, 0.32, 0.01);
+    for (const s of [-1, 1]) {
+      sph(g, redPfd, 0.115, 0.18, 0.14, s * 0.10, 0.32, -0.09); // 前面左右パネル
+      cap(g, redPfd, 0.036, 0.10, s * 0.11, 0.46, -0.02, 0.2, 0, 0); // 肩ストラップ
+    }
+    const belt = new THREE.Mesh(cylG, mat(beltCol)); belt.scale.set(0.252, 0.035, 0.232); belt.position.set(0, 0.27, 0.0); g.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.02), mat(0xe2e8f0)); buckle.position.set(0, 0.27, -0.225); g.add(buckle);
+  } else {
+    const band = new THREE.Mesh(cylG, mat(jacket)); band.scale.set(0.235, 0.1, 0.215); band.position.set(0, 0.31, 0); g.add(band);
+  }
   const head = new THREE.Group(); head.position.set(0, 0.70, -0.01); g.add(head);
   const hs = type === 'capybara' ? [0.22, 0.2, 0.26] : [0.24, 0.21, 0.22];
   sph(head, A.body, hs[0], hs[1], hs[2], 0, 0, 0);
