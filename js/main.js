@@ -30,13 +30,18 @@ const WIND_MODES = [
   { id: 'standard', label: '標準 (動的ブロー)', icon: '💨' },
   { id: 'real', label: '現在のリアル気象', icon: '🌐' },
 ];
+const PENALTY_MODES = [
+  { id: 'off', label: 'ペナルティ無 (違反表示のみ・続行)', icon: '🟢' },
+  { id: 'on', label: 'ペナルティ有 (360°/720°・DSQ)', icon: '⚖️' },
+];
 const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
-const defaults = { venue: 'enoshima', windMode: 'standard', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
+const defaults = { venue: 'enoshima', windMode: 'standard', penaltyMode: 'off', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
 if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
 if (!WIND_MODES.find((m) => m.id === cfg.windMode)) cfg.windMode = 'standard';
+if (!PENALTY_MODES.find((m) => m.id === cfg.penaltyMode)) cfg.penaltyMode = 'off';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
 
@@ -221,10 +226,12 @@ function updateHUD(sorted) {
   hud.legArrow.style.transform = `rotate(${wrap(brg - b.h)}rad)`;
   if (b.penalty && !b.finished && !b.dsq) {
     hud.pen.style.display = 'block';
-    const pct = Math.min(99, Math.round((b.penalty.turned / (2 * Math.PI)) * 100));
+    const deg = b.penalty.reqDeg || 360;
+    const turns = deg === 720 ? '720°(2回転)' : '360°(1回転)';
+    const pct = Math.min(99, Math.round((b.penalty.turned / (b.penalty.reqRad || 2 * Math.PI)) * 100));
     const sec = Math.ceil(b.penalty.timer);
     const cw = !b.penalty.clearWater ? ' [クリアウオーター確保中]' : '';
-    hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に360°ターンせよ (${pct}%)${cw}`;
+    hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に${turns}ターンせよ (${pct}%)${cw}`;
   } else hud.pen.style.display = 'none';
   hud.ocs.style.display = b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
   hud.cam.textContent = '📷 ' + CAM_MODES[cam.mode] + ' [C]';
@@ -244,7 +251,7 @@ function handleProgress(b, evs) {
       // 違反(ペナルティ未消化 または OCS未解消)がある状態でフィニッシュした場合はプロテスト成立によりDSQ(失格)
       if (b.penalty || b.ocs) {
         b.dsq = true;
-        b.dsqReason = b.ocs ? 'OCS未解消' : `ルール${b.penalty.rule}違反・ペナルティ未消化`;
+        b.dsqReason = b.ocs ? 'OCS未解消' : `ルール${b.penalty.rule}違反・${b.penalty.reqDeg || 360}°ペナルティ未消化`;
         if (b.isPlayer) {
           toast(`プロテスト成立 → DSQ (失格)!\n${b.dsqReason}のままフィニッシュしたため失格となりました`, 'bad', 9000);
           state.pFinish = state.t;
@@ -276,21 +283,38 @@ function handleProgress(b, evs) {
 const soundVol = (x, z) => clamp(1 - Math.hypot(x - player.x, z - player.z) / 90, 0, 1);
 function handleCollision(e) {
   const quiet = state.ff;
+  const penOn = cfg.penaltyMode === 'on';
   if (e.type === 'contact') {
     const { gw, row } = e;
     if (!quiet) thud(soundVol(gw.x, gw.z));
+    if (!penOn) {
+      if (quiet) return;
+      if (gw.isPlayer) toast(`【違反判定】${nameOf(row)} と接触 (${e.text})\n本来は ルール${e.rule}違反 → 720°(2回転)ペナルティ ですが、ペナルティ無モードのためそのままレース続行`, 'warn', 6500);
+      else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}・本来720°ターン) ※ペナルティ無のため続行`);
+      return;
+    }
     const issued = gw.startPenalty(e.rule === 18 ? 18 : e.rule);
     if (quiet) return;
-    if (gw.isPlayer) toast(`ペナルティ! ${nameOf(row)} と接触\n${e.text}\n→ 速やかに(20秒以内に)360°ターンで消化せよ!`, 'bad', 7000);
-    else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}) → 360°ターン`);
-    else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) miniLog(`${nameOf(gw)} 違反(R${e.rule}) → 360°`);
+    if (gw.isPlayer) toast(`ペナルティ! ${nameOf(row)} と接触\n${e.text}\n→ 速やかに(25秒以内に) 720°(2回転)ターン で消化せよ!`, 'bad', 7500);
+    else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}) → 720°(2回転)ターン`);
+    else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) miniLog(`${nameOf(gw)} 違反(R${e.rule}) → 720°`);
     if (!issued) return;
   } else if (e.type === 'touch') {
-    const b = e.boat; const ok = b.startPenalty(31);
+    const b = e.boat;
+    if (!quiet) {
+      const v = soundVol(b.x, b.z);
+      if (e.mark === 'com') thud(v); else markHit(v);
+    }
+    if (!penOn) {
+      if (!quiet && b.isPlayer) toast('【違反判定】マークに接触! (ルール31)\n本来は 360°(1回転)ペナルティ ですが、ペナルティ無モードのためそのままレース続行', 'warn', 5500);
+      return;
+    }
+    const ok = b.startPenalty(31);
     if (quiet) return;
-    const v = soundVol(b.x, b.z);
-    if (e.mark === 'com') thud(v); else markHit(v);
-    if (b.isPlayer && ok) toast('マークに接触!(ルール31) → 速やかに(20秒以内に)360°ターンで消化せよ!', 'bad', 6000);
+    if (b.isPlayer && ok) {
+      const isUpgraded = b.penalty && b.penalty.reqDeg === 720;
+      toast(isUpgraded ? 'ペナルティ中の追加接触!(ルール31) → 720°(2回転)ターン へ格上げ!' : 'マークに接触!(ルール31) → 速やかに(20秒以内に) 360°(1回転)ターン で消化せよ!', 'bad', 6500);
+    }
   }
 }
 
@@ -380,12 +404,20 @@ function simStep(dt) {
   for (const b of boats) b.update(dt, t, boats);
   for (const e of resolveCollisions(boats, t)) handleCollision(e);
   for (const b of boats) {
+    if (b.penaltyUpgraded !== null) {
+      const r = b.penaltyUpgraded;
+      b.penaltyUpgraded = null;
+      if (b.isPlayer && !state.ff) {
+        if (!state.ff) horn(0.4, 380);
+        toast(`ペナルティ格上げ! (ルール${r})\n20秒以内に360°ターンが完了しなかったため 720°(2回転)ターン へ格上げされました!`, 'bad', 7000);
+      }
+    }
     if (b.penaltyExpired !== null) {
       const r = b.penaltyExpired;
       b.penaltyExpired = null;
       if (b.isPlayer) {
         if (!state.ff) horn(0.6, 320);
-        toast(`プロテスト成立 → DSQ (失格)!\nルール${r}違反後、速やかに(20秒以内に)360°ターンを行わなかったため失格(RRS 44.2)`, 'bad', 9000);
+        toast(`プロテスト成立 → DSQ (失格)!\n${b.dsqReason} のため失格となりました`, 'bad', 9000);
         if (state.pFinish === null) { state.pFinish = state.t; state.pAI = new AI(b, rng); }
       } else if (!state.ff) {
         miniLog(`${nameOf(b)} ペナルティ未履行によりDSQ`);
@@ -688,6 +720,17 @@ function buildWindModeChoices() {
     box.appendChild(btn);
   }
 }
+function buildPenaltyChoices() {
+  const box = $('penaltyChoices'); if (!box) return;
+  box.innerHTML = '';
+  for (const m of PENALTY_MODES) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'choice' + (cfg.penaltyMode === m.id ? ' sel' : ''); btn.id = `penaltyMode-${m.id}`;
+    btn.innerHTML = `<span class="ic">${m.icon}</span><span class="lb">${m.label}</span>`;
+    btn.onclick = () => { cfg.penaltyMode = m.id; saveCfg(); buildPenaltyChoices(); };
+    box.appendChild(btn);
+  }
+}
 function buildChoices(containerId, key) {
   const box = $(containerId); box.innerHTML = '';
   for (const c of crewOptions) {
@@ -722,6 +765,7 @@ function initMenu() {
   applyVenue();
   buildVenueChoices();
   buildWindModeChoices();
+  buildPenaltyChoices();
   buildChoices('helmChoices', 'helm'); buildChoices('crewChoices', 'crew');
   for (const [id, key] of [['skinColor', 'skin'], ['shirtColor', 'shirt'], ['hatColor', 'hat']]) {
     const el = $(id); el.value = cfg[key];
