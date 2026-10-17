@@ -88,13 +88,13 @@ void main(){
     float foam=smoothstep(0.62,0.95,length(g)*3.2+vn(p*2.3+uTime*0.5)*0.35)*exp(-dist*0.002);
     col=mix(col,vec3(0.92,0.96,0.98),foam*0.5);
   }
-  // ブロー(風の強い海面の黒い筋): さざ波で光が散乱し濃紺の筋状に暗く見える現象を再現
+  // ブロー(風の強い海面のさざ波): あからさまな黒い塊ではなく、実際の海面のように注意して見ると少し濃くざわついて見える程度に抑える
   float catpaw=0.55+0.45*vn(vec2(wu*0.48,wv*0.07-uTime*1.35));
-  col*=mix(1.08,0.68,smoothstep(0.76,1.22,wf));
-  col=mix(col,col*vec3(0.56,0.63,0.72),blow*(0.55+0.45*catpaw)*exp(-dist*0.0006));
+  col*=mix(1.03,0.90,smoothstep(0.76,1.22,wf));
+  col=mix(col,col*vec3(0.84,0.87,0.91),blow*(0.20+0.20*catpaw)*exp(-dist*0.0006));
   if(dist<5000.0){
     float streak=smoothstep(0.72,0.92,vn(vec2(wu*0.32,wv*0.03-uTime*1.1)));
-    col+=vec3(0.55,0.62,0.66)*streak*0.14*(0.4+gust)*exp(-dist*0.0012);
+    col+=vec3(0.55,0.62,0.66)*streak*0.11*(0.4+gust)*exp(-dist*0.0012);
   }
   float fogF=1.0-exp(-pow(dist*${FOG_DENSITY.toFixed(7)},2.0));
   col=mix(col,vec3(0.741,0.835,0.902),fogF);
@@ -557,13 +557,16 @@ export function createWorld(scene) {
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
 
-  // ---------- 次向かうマークの控えめな矢印 (マークの上に少し矢印がある程度、4ゲートは4S/4P両方に表示) ----------
+  // ---------- 次向かうマークの矢印 (艇内・ドローン双方から見やすいサイズ、4ゲートは4S/4P両方に表示) ----------
   const makeTargetArrow = () => {
     const g = new THREE.Group();
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9 });
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.25, 2.4, 4), coneMat);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.94 });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2, 3.8, 12), coneMat);
     cone.rotation.x = Math.PI;
-    g.add(cone);
+    cone.position.y = -1.2;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 3.2, 12), coneMat);
+    shaft.position.y = 2.0;
+    g.add(cone, shaft);
     g.userData.mat = coneMat;
     g.visible = false;
     scene.add(g);
@@ -679,22 +682,22 @@ export function createWorld(scene) {
       sea.position.set(camera.position.x, 0, camera.position.z);
       for (const o of bob) { o.position.y = 0.12 * Math.sin(t * 1.4 + o.position.x) + 0.05; o.rotation.z = 0.05 * Math.sin(t * 1.1 + o.position.z); }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
-      // マーク上の控えめな矢印アニメーション（カメラ接近時は透過して視界を邪魔しない）
+      // マーク上の矢印アニメーション（カメラ接近時は透過して視界を邪魔しない）
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
         const dCam = Math.hypot(camera.position.x - ar.position.x, camera.position.z - ar.position.z);
-        ar.position.y = 6.8 + 0.55 * Math.sin(t * 3.2);
+        ar.position.y = 8.8 + 0.7 * Math.sin(t * 3.2);
         ar.rotation.y = t * 1.6;
-        ar.userData.mat.opacity = clampN((dCam - 10) / 24, 0.15, 0.9);
+        ar.userData.mat.opacity = clampN((dCam - 10) / 24, 0.15, 0.94);
       }
       // マーク番号ラベル: ドローンカメラと重なった時に自艇が隠れないよう、カメラ距離に応じて透過させる
       for (const [k, sp] of Object.entries(markSprites)) {
         const isAct = activeMarkKeys.includes(k);
-        const s = isAct ? 7.2 : 6.0;
+        const s = isAct ? 8.2 : 6.2;
         sp.scale.set(s, s, 1);
         const mo = markObjs[k];
         const dCam = Math.hypot(camera.position.x - mo.position.x, camera.position.z - mo.position.z);
-        sp.material.opacity = clampN((dCam - 12) / 26, 0.12, 0.88);
+        sp.material.opacity = clampN((dCam - 12) / 26, 0.12, 0.92);
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
@@ -1009,14 +1012,14 @@ function buildHakkeijima(root, surfStrip) {
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(60.5, 3.2, 55.5), hospWinMat);
     stripe.position.set(6, wy, -4); tthGroup.add(stripe);
   }
-  // イラストでテクノタワーホテルのすぐ海側(右隣)に描かれている青緑色の中高層ビル(屋上にオレンジ色の丸型設備)
-  const subBld = new THREE.Mesh(new THREE.BoxGeometry(66, 82, 62), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
-  subBld.position.set(95, 43, 18); tthGroup.add(subBld);
-  const subRoof = new THREE.Mesh(new THREE.BoxGeometry(68, 4, 64), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }));
-  subRoof.position.set(95, 85, 18); tthGroup.add(subRoof);
-  for (const ox of [78, 95, 112]) {
-    const unit = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 6, 10), new THREE.MeshLambertMaterial({ color: 0xea580c }));
-    unit.position.set(ox, 89, 18); tthGroup.add(unit);
+  // テクノタワーホテルのすぐ海側(右隣)の青緑色のビル(テクノタワーが際立つよう周辺建物は小さめに調整)
+  const subBld = new THREE.Mesh(new THREE.BoxGeometry(44, 38, 42), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+  subBld.position.set(78, 21, 14); tthGroup.add(subBld);
+  const subRoof = new THREE.Mesh(new THREE.BoxGeometry(46, 2.5, 44), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }));
+  subRoof.position.set(78, 41, 14); tthGroup.add(subRoof);
+  for (const ox of [68, 78, 88]) {
+    const unit = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 4, 10), new THREE.MeshLambertMaterial({ color: 0xea580c }));
+    unit.position.set(ox, 44, 14); tthGroup.add(unit);
   }
   tthGroup.position.set(tthX, 0, tthZ);
   fukuura.add(tthGroup);
@@ -1061,20 +1064,43 @@ function buildHakkeijima(root, surfStrip) {
     roof.position.set(hx, 38, hz); roof.scale.set(1, 1, 0.45); fukuura.add(roof);
   }
 
-  // 海岸線の並木の背後(市大病院とテクノタワーホテルの間)に並ぶ白い低層工場・倉庫群 (イラスト通り白い四角い建物を配置)
+  // テクノタワーホテル周辺の白い低層建屋群 (圧迫感が出ないよう小さめ・低めに配置)
   for (const [bx, bz, bw, bh, bd] of [
-    [-655, -1040, 75, 22, 65],
-    [-755, -1100, 80, 26, 70],
-    [-660, -1190, 72, 20, 62],
-    [-770, -1250, 85, 24, 68],
-    [-655, -1320, 70, 22, 60],
-    [-665, -1620, 78, 22, 68],
-    [-775, -1690, 82, 25, 72],
-    [-670, -1810, 80, 20, 70],
-    [-780, -1920, 88, 24, 75],
+    [-645, -1040, 48, 14, 42],
+    [-735, -1100, 52, 16, 46],
+    [-650, -1190, 46, 13, 40],
+    [-745, -1250, 54, 15, 44],
+    [-645, -1320, 45, 14, 40],
+    [-655, -1620, 50, 14, 44],
+    [-745, -1690, 52, 16, 46],
+    [-660, -1810, 48, 13, 44],
+    [-750, -1920, 55, 15, 48],
   ]) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
     m.position.set(bx, bh / 2 + 3, bz); fukuura.add(m);
+  }
+
+  // 八景大橋(x≈-1670)と横浜市大医学部病院(x=-635, z=-800)の間の海岸・キャンパス・駅周辺の建物群
+  const midBldColors = [0xf8fafc, 0xe2e8f0, 0xf1f5f9, 0xdbeafe, 0xe7e5e4];
+  for (const [bx, bz, bw, bh, bd, ci] of [
+    [-820, -760, 68, 28, 54, 0],   // 医学部研究棟(東)
+    [-925, -790, 74, 32, 58, 1],   // 医学部研究棟(西)
+    [-1040, -740, 62, 22, 48, 2],  // 看護学部・キャンパス棟
+    [-1150, -780, 58, 20, 52, 0],
+    [-1260, -730, 64, 24, 46, 3],  // シーサイドライン駅舎・周辺ビル
+    [-1370, -760, 56, 18, 48, 1],
+    [-1480, -710, 60, 22, 50, 4],  // 八景大橋たもと周辺の建物
+    [-1560, -770, 52, 18, 44, 0],
+    [-880, -910, 58, 18, 48, 2],
+    [-1010, -900, 64, 20, 52, 1],
+    [-1160, -920, 56, 16, 46, 4],
+    [-1310, -890, 60, 18, 50, 0],
+    [-1450, -880, 54, 16, 44, 2],
+  ]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), new THREE.MeshLambertMaterial({ color: midBldColors[ci] }));
+    m.position.set(bx, bh / 2 + 3, bz); fukuura.add(m);
+    const rf = new THREE.Mesh(new THREE.BoxGeometry(bw + 2, 1.8, bd + 2), new THREE.MeshLambertMaterial({ color: 0x64748b }));
+    rf.position.set(bx, bh + 3.8, bz); fukuura.add(rf);
   }
   root.add(fukuura);
 
