@@ -12,7 +12,7 @@ import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearby
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 10;
+const N_BOATS = 12;
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -22,16 +22,21 @@ let rs = Date.now() % 2147483647 || 7;
 const rng = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
 
 // ---------- 設定(保存) ----------
-const defaults = { helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31415' };
+const VENUES = [
+  { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN' },
+  { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA' },
+];
+const defaults = { venue: 'enoshima', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31415' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
+if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
 
 // ---------- Three ----------
 const canvas = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE, powerPreference: 'high-performance' });
-let pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.25 : 2);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+let pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.25 : 1.5);
 renderer.setPixelRatio(pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.NoToneMapping;
@@ -68,9 +73,10 @@ function makeFleet() {
   clearFleet();
   const slots = [];
   // 1分前はCP艇がラインの40〜60m手前。右舷クローズホールドで少しずつ左へ流れながら近づくので、やや右寄りに配置
-  for (let i = 0; i < N_BOATS - 1; i++) slots.push({ a: -38 - (i % 3) * 9, c: -12 + i * (88 / (N_BOATS - 2)) });
+  // CP艇はライン全体(ピン側〜本部船側)に散らばって配置し、上(風上エンド)からも下からもスタートする
+  for (let i = 0; i < N_BOATS - 1; i++) slots.push({ a: -38 - (i % 3) * 9, c: -55 + i * (123 / (N_BOATS - 2)) });
   // 自艇は本部船(c=LINE_HALF)のやや右後方からスタート
-  const pslot = { a: -70, c: LINE_HALF + 15 };
+  const pslot = { a: -95, c: LINE_HALF + 15 };
   for (let i = slots.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0;[slots[i], slots[j]] = [slots[j], slots[i]]; }
   const used = new Set([cfg.sailNo]);
   for (let k = 0; k < N_BOATS; k++) {
@@ -100,7 +106,7 @@ function makeFleet() {
 const hud = {
   clock: $('clock'), phase: $('phase'), big: $('bigCount'), wkt: $('windKt'), wdir: $('windDir'), needle: $('needle'), spd: $('spd'), hdg: $('hdg'), twa: $('twa'),
   tack: $('tackLbl'), sheet: $('sheetFill'), pen: $('penBadge'), leg: $('legLbl'), legDist: $('legDist'), legArrow: $('legArrow'), leaders: $('leaders'), rank: $('rank'),
-  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'),
+  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'),
 };
 function toast(text, kind = 'info', ms = 5200) {
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = text;
@@ -180,12 +186,11 @@ function updateHUD(sorted) {
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
   const wd = ((b.windFrom * 180) / Math.PI + 360) % 360;
   hud.wdir.textContent = Math.round(wd) + '°';
-  hud.needle.style.transform = `rotate(${b.rel}rad)`;
+  if (hud.needle) hud.needle.style.transform = `rotate(${b.rel}rad)`;
   hud.spd.textContent = (b.v / SPEED_SCALE / KT).toFixed(1);
   hud.hdg.textContent = Math.round(((b.h * 180) / Math.PI + 360) % 360) + '°';
   hud.twa.textContent = Math.round((b.twa * 180) / Math.PI) + '°';
-  hud.tack.textContent = b.tack > 0 ? '右舷' : '左舷';
-  hud.tack.className = b.tack > 0 ? 'stbd' : 'port';
+  if (hud.tack) { hud.tack.textContent = b.tack > 0 ? '右舷' : '左舷'; hud.tack.className = b.tack > 0 ? 'stbd' : 'port'; }
   hud.sheet.style.width = Math.round(b.sheet * 100) + '%';
   hud.sheetOpt.style.left = Math.round(b.sOpt * 100) + '%';
   hud.autoLbl.textContent = autoTrim ? 'AUTO' : 'MANUAL'; hud.autoLbl.className = autoTrim ? '' : 'off';
@@ -199,13 +204,12 @@ function updateHUD(sorted) {
   hud.leg.textContent = b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
-  const dist = Math.hypot(tw.x - b.x, tw.z - b.z);
-  hud.legDist.textContent = Math.round(dist) + ' m';
   const brg = Math.atan2(tw.x - b.x, -(tw.z - b.z));
   hud.legArrow.style.transform = `rotate(${wrap(brg - b.h)}rad)`;
   if (b.penalty) { hud.pen.style.display = 'block'; hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 360°ターン ${Math.min(99, Math.round((b.penalty.turned / (2 * Math.PI)) * 100))}% ― Spaceでタック/ジャイブ`; } else hud.pen.style.display = 'none';
   hud.ocs.style.display = b.ocs && t >= 0 ? 'block' : 'none';
   hud.cam.textContent = '📷 ' + CAM_MODES[cam.mode] + ' [C]';
+  if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== '📷 ' + nx) hud.tCam.textContent = '📷 ' + nx; }
   const c = Math.ceil(-t);
   if (t < 0 && t > -11) { hud.big.textContent = c; hud.big.style.opacity = 1; hud.big.classList.toggle('flash', t > -1); }
   else if (t >= 0 && t < 2.5) { hud.big.textContent = 'START!'; hud.big.style.opacity = 1 - t / 2.5; }
@@ -261,11 +265,13 @@ function handleCollision(e) {
 // ---------- レース進行 ----------
 function startRace() {
   initAudio();
+  applyVenue();
   makeFleet();
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
+  document.body.classList.add('hintOn'); clearTimeout(window.__hintT); window.__hintT = setTimeout(() => document.body.classList.remove('hintOn'), 5000);
   toast('スタート1分前。ライン手前で待機し、号砲に合わせて加速しよう(カメラ切替で船内視点も)', 'info', 7000);
   const deg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(0);
   setTimeout(() => toast(`ラインチェック: ${FAVORED === 'pin' ? 'ピン(左端)' : '本部船(右端)'}側が約${deg}°風上で有利`, 'info', 6000), 1500);
@@ -312,10 +318,10 @@ function playerControl(dt) {
     } else steerHold[k] = 0;
   }
   let err = wrap(hTarget - b.h);
-  if (Math.abs(err) > 0.6) { hTarget = wrap(b.h + Math.sign(err) * 0.6); err = wrap(hTarget - b.h); }
+  if (Math.abs(err) > 0.12) { hTarget = wrap(b.h + Math.sign(err) * 0.12); err = wrap(hTarget - b.h); } // 目標針路の先行を約7°に制限(舵の慣性を抑える)
   // ランチャー制限などで目標針路へ向けない状態が続いたら目標を現在の針路に合わせる
   if (!L && !R && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
-  if (!b.maneuver) b.steer = clamp(err * 7, -1, 1);
+  if (!b.maneuver) b.steer = clamp(err * 10, -1, 1);
   const up = keys.has('ArrowUp') || keys.has('KeyW'), dn = keys.has('ArrowDown') || keys.has('KeyS');
   if (autoTrim) {
     let tg = b.sOpt;
@@ -372,7 +378,7 @@ function showResult() {
 
 // ---------- メインループ ----------
 const clock = new THREE.Clock();
-let frameAvg = 16, lowTime = 0;
+let frameAvg = 16, lowTime = 0, hudAcc = 0;
 function togglePause(p) {
   state.paused = p !== undefined ? p : !state.paused;
   const modal = $('pauseModal');
@@ -420,9 +426,13 @@ function loop() {
   }
   
   if (state.phase === 'race' && player) {
-    const sorted = computeRanks();
-    updateHUD(sorted);
-    drawMinimap();
+    hudAcc += raw;
+    if (hudAcc >= 1 / 12) {
+      hudAcc = 0;
+      const sorted = computeRanks();
+      updateHUD(sorted);
+      drawMinimap();
+    }
     if (!state.resultShown) {
       if (state.pFinish !== null && state.t - state.pFinish > 4) { fastForwardFinishers(); showResult(); }
       else if (state.t > RACE_LIMIT || (state.firstFinish !== null && state.t > state.firstFinish + FINISH_WINDOW)) showResult();
@@ -496,6 +506,23 @@ function initTouch() {
 }
 
 // ---------- メニューUI ----------
+function applyVenue() {
+  world.setVenue(cfg.venue);
+  const v = VENUES.find((x) => x.id === cfg.venue) || VENUES[0];
+  const eb = $('menuEyebrow');
+  if (eb) eb.textContent = v.eyebrow;
+}
+function buildVenueChoices() {
+  const box = $('venueChoices'); if (!box) return;
+  box.innerHTML = '';
+  for (const v of VENUES) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'choice' + (cfg.venue === v.id ? ' sel' : ''); btn.id = `venue-${v.id}`;
+    btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
+    btn.onclick = () => { cfg.venue = v.id; saveCfg(); applyVenue(); buildVenueChoices(); };
+    box.appendChild(btn);
+  }
+}
 function buildChoices(containerId, key) {
   const box = $(containerId); box.innerHTML = '';
   for (const c of crewOptions) {
@@ -527,6 +554,8 @@ function updatePreview() {
   const b = buildFigure(cfg.crew, st); b.position.x = 0.5; pv.g.add(b);
 }
 function initMenu() {
+  applyVenue();
+  buildVenueChoices();
   buildChoices('helmChoices', 'helm'); buildChoices('crewChoices', 'crew');
   for (const [id, key] of [['skinColor', 'skin'], ['shirtColor', 'shirt'], ['hatColor', 'hat']]) {
     const el = $(id); el.value = cfg[key];
@@ -552,6 +581,11 @@ function initMenu() {
   setTimeout(() => $('loading').classList.add('hidden'), 250);
   loop();
   const q = new URLSearchParams(location.search);
+  if (q.has('venue') && VENUES.find((v) => v.id === q.get('venue'))) {
+    cfg.venue = q.get('venue');
+    applyVenue();
+    buildVenueChoices();
+  }
   window.__game = { state, get boats() { return boats; }, get player() { return player; }, simStep, cam };
   if (q.has('auto')) {
     startRace();
