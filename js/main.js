@@ -1,7 +1,7 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, wrap, clamp, rebuildObstacles } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles } from './sim.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
@@ -23,14 +23,20 @@ const rng = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
 
 // ---------- 設定(保存) ----------
 const VENUES = [
-  { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN' },
-  { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA' },
+  { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
+  { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
 ];
-const defaults = { venue: 'enoshima', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
+const WIND_MODES = [
+  { id: 'standard', label: '標準 (動的ブロー)', icon: '💨' },
+  { id: 'real', label: '現在のリアル気象', icon: '🌐' },
+];
+const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
+const defaults = { venue: 'enoshima', windMode: 'standard', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
 if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
+if (!WIND_MODES.find((m) => m.id === cfg.windMode)) cfg.windMode = 'standard';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
 
@@ -322,7 +328,7 @@ function setPlayerPole(on) {
   if (on === player.pole) return;
   if (on && !player.setPole(true)) { toast('ランチャーは下レグ(真風角100°以上)でのみ上げられます', 'warn', 2500); return; }
   if (!on) player.setPole(false);
-  toast(on ? 'ランチャーアップ — 下レグで少し速くなる(風上には向けない)' : 'ランチャーダウン', 'info', 2200);
+  toast(on ? 'ランチャーアップ' : 'ランチャーダウン', 'info', 1600);
 }
 function tryManeuver(kind) {
   if ((player.finished || player.dsq) && state.pAI) return;
@@ -560,13 +566,105 @@ function initTouch() {
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
+// ---------- 気象モード・Open-Meteo連携・海面有利傾向 ----------
+const COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+function compassDir(deg) {
+  const d = ((deg % 360) + 360) % 360;
+  return COMPASS_16[Math.round(d / 22.5) % 16];
+}
+// 実際のレース海面(江の島・八景島)の風向別有利サイド傾向 (-1=左海面伸び, +1=右海面伸び)
+function computeSideBias(venueId, windDeg) {
+  const d = ((windDeg % 360) + 360) % 360;
+  if (venueId === 'hakkeijima') {
+    // 八景島: 北〜北東風(340°〜65°)は住友・八景島水道側(左海面)にブローとリフトが入りやすく、南〜南東の東京湾シーブリーズは沖(右海面)が伸びる傾向
+    if (d >= 330 || d <= 75) return { bias: -0.70, desc: '左海面(八景島・住友岸寄り)リフト・ブロー優勢傾向' };
+    if (d >= 130 && d <= 230) return { bias: 0.65, desc: '右海面(東京湾沖出し)風速・伸び優勢傾向' };
+    return { bias: -0.45, desc: 'やや左海面ブロー優勢傾向' };
+  }
+  // 江の島: 南南西〜南西シーブリーズ(195°〜245°)は沖・西側(左海面)が江の島ブランケットを避けて伸び、北〜北東の陸風や南東風は岸・鎌倉側(右海面)がリフトする傾向
+  if (d >= 195 && d <= 250) return { bias: -0.65, desc: '左海面(沖・西側)ブロー安定傾向' };
+  if (d >= 330 || d <= 75) return { bias: 0.75, desc: '右海面(片瀬・鎌倉岸側)陸風リフト優勢傾向' };
+  if (d >= 120 && d < 195) return { bias: 0.60, desc: '右海面(鎌倉・逗子側)リフト傾向' };
+  return { bias: -0.50, desc: 'やや左海面ブロー優勢傾向' };
+}
+
+async function fetchRealWeather(venueId) {
+  if (weatherCache[venueId]) return weatherCache[venueId];
+  const v = VENUES.find((x) => x.id === venueId) || VENUES[0];
+  const infoEl = $('realWeatherInfo');
+  if (infoEl) {
+    infoEl.classList.remove('hidden');
+    infoEl.textContent = `🌐 ${v.label} の現在の実況気象(Open-Meteo 気象庁MSM)を取得中...`;
+  }
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${v.lat}&longitude=${v.lon}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const cur = data.current || {};
+    const rawKt = typeof cur.wind_speed_10m === 'number' ? cur.wind_speed_10m : v.defaultWindKt;
+    const gustKt = typeof cur.wind_gusts_10m === 'number' ? cur.wind_gusts_10m : rawKt * 1.25;
+    const windDeg = typeof cur.wind_direction_10m === 'number' ? Math.round(cur.wind_direction_10m) : v.defaultWindDeg;
+    // 微風すぎてレースにならない場合のみ最低5ktを保証しつつ実測風速を反映
+    const effKt = clamp(Math.round(rawKt * 10) / 10, 5, 22);
+    weatherCache[venueId] = { rawKt: Math.round(rawKt * 10) / 10, gustKt: Math.round(gustKt * 10) / 10, effKt, windDeg };
+  } catch (e) {
+    weatherCache[venueId] = { rawKt: v.defaultWindKt, gustKt: v.defaultWindKt + 3, effKt: v.defaultWindKt, windDeg: v.defaultWindDeg, fallback: true };
+  }
+  return weatherCache[venueId];
+}
+
 // ---------- メニューUI ----------
+function updateWeatherInfoUI(windDeg, kt, gustKt, desc, isReal, fallback) {
+  const infoEl = $('realWeatherInfo');
+  if (!infoEl) return;
+  infoEl.classList.remove('hidden');
+  const dirStr = `${compassDir(windDeg)} (${windDeg}°)`;
+  if (isReal) {
+    const note = fallback ? '(オフラインのため標準値を適用)' : `(ガスト ${gustKt}kt)`;
+    infoEl.textContent = `🌐 現地リアル気象: 風向 ${dirStr} / 風速 ${kt}kt ${note} ｜ 海面傾向: ${desc}`;
+  } else {
+    infoEl.textContent = `💨 標準レース気象: 風向 ${dirStr} / 風速 ${kt}kt (黒い筋のブロー・シフトあり) ｜ 海面傾向: ${desc}`;
+  }
+}
+
 function applyVenue() {
-  world.setVenue(cfg.venue);
-  rebuildObstacles();
   const v = VENUES.find((x) => x.id === cfg.venue) || VENUES[0];
   const eb = $('menuEyebrow');
   if (eb) eb.textContent = v.eyebrow;
+
+  if (cfg.windMode === 'real') {
+    const cached = weatherCache[cfg.venue];
+    if (cached) {
+      const { bias, desc } = computeSideBias(cfg.venue, cached.windDeg);
+      setWindParams(cached.effKt, bias);
+      world.setVenue(cfg.venue, cached.windDeg, bias);
+      rebuildObstacles();
+      updateWeatherInfoUI(cached.windDeg, cached.rawKt, cached.gustKt, desc, true, cached.fallback);
+    } else {
+      // 初回取得: まずデフォルトで初期化し、非同期で1回だけ取得して反映
+      const { bias, desc } = computeSideBias(cfg.venue, v.defaultWindDeg);
+      setWindParams(v.defaultWindKt, bias);
+      world.setVenue(cfg.venue, v.defaultWindDeg, bias);
+      rebuildObstacles();
+      fetchRealWeather(cfg.venue).then((w) => {
+        if (cfg.windMode !== 'real' || state.phase !== 'menu') return;
+        const bInfo = computeSideBias(cfg.venue, w.windDeg);
+        setWindParams(w.effKt, bInfo.bias);
+        world.setVenue(cfg.venue, w.windDeg, bInfo.bias);
+        rebuildObstacles();
+        makeFleet();
+        cam.inited = false;
+        updateWeatherInfoUI(w.windDeg, w.rawKt, w.gustKt, bInfo.desc, true, w.fallback);
+      });
+    }
+  } else {
+    const { bias, desc } = computeSideBias(cfg.venue, v.defaultWindDeg);
+    setWindParams(v.defaultWindKt, bias);
+    world.setVenue(cfg.venue, v.defaultWindDeg, bias);
+    rebuildObstacles();
+    updateWeatherInfoUI(v.defaultWindDeg, v.defaultWindKt, v.defaultWindKt + 3, desc, false, false);
+  }
 }
 function buildVenueChoices() {
   const box = $('venueChoices'); if (!box) return;
@@ -576,6 +674,17 @@ function buildVenueChoices() {
     btn.type = 'button'; btn.className = 'choice' + (cfg.venue === v.id ? ' sel' : ''); btn.id = `venue-${v.id}`;
     btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
     btn.onclick = () => { cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildVenueChoices(); };
+    box.appendChild(btn);
+  }
+}
+function buildWindModeChoices() {
+  const box = $('windModeChoices'); if (!box) return;
+  box.innerHTML = '';
+  for (const m of WIND_MODES) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'choice' + (cfg.windMode === m.id ? ' sel' : ''); btn.id = `windMode-${m.id}`;
+    btn.innerHTML = `<span class="ic">${m.icon}</span><span class="lb">${m.label}</span>`;
+    btn.onclick = () => { cfg.windMode = m.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildWindModeChoices(); };
     box.appendChild(btn);
   }
 }
@@ -612,6 +721,7 @@ function updatePreview() {
 function initMenu() {
   applyVenue();
   buildVenueChoices();
+  buildWindModeChoices();
   buildChoices('helmChoices', 'helm'); buildChoices('crewChoices', 'crew');
   for (const [id, key] of [['skinColor', 'skin'], ['shirtColor', 'shirt'], ['hatColor', 'hat']]) {
     const el = $(id); el.value = cfg[key];
