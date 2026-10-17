@@ -23,22 +23,22 @@ const rng = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
 
 // ---------- 設定(保存) ----------
 const VENUES = [
-  { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
   { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
+  { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
 ];
 const PENALTY_MODES = [
   { id: 'off', label: 'ペナルティ無 (違反表示のみ・レース続行)', icon: '🟢' },
   { id: 'on', label: 'ペナルティ有 (360°/720°回転・DSQ有)', icon: '⚖️' },
 ];
 const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
-const defaults = { venue: 'enoshima', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
+const defaults = { venue: 'hakkeijima', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
-// デフォルト選択は常にヘルムスマン＝男性(human_m)、クルー＝ネコ(cat)で初期化
+// デフォルト選択は常にレース海面＝八景島(hakkeijima)、ヘルムスマン＝男性(human_m)、クルー＝ネコ(cat)で初期化
+cfg.venue = 'hakkeijima';
 cfg.helm = 'human_m';
 cfg.crew = 'cat';
-if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
 if (!PENALTY_MODES.find((m) => m.id === cfg.penaltyMode)) cfg.penaltyMode = 'off';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
@@ -206,7 +206,7 @@ function drawMinimap() {
   mctx.fillStyle = '#9ad8ff'; mctx.font = '10px sans-serif'; mctx.fillText('風', W - 33, 52);
 }
 
-const markPtr = { box: $('markPointer'), arrow: $('markPointerArrow'), label: $('markPointerLabel'), v3: new THREE.Vector3() };
+const markPtr = { box: $('markPointer'), arrow: $('mpArrow'), label: $('mpText'), v3: new THREE.Vector3() };
 function updateMarkPointer(b) {
   if (!markPtr.box || !b || b.finished || b.dsq) {
     if (markPtr.box) markPtr.box.classList.add('hidden');
@@ -258,16 +258,16 @@ function updateMarkPointer(b) {
 
 function updateHUD(sorted) {
   const b = player, t = state.t;
-  const isMenu = state.phase === 'menu';
+  const isPrac = state.phase === 'menu' || state.phase === 'practice';
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const nextMarkTxt = L.type === 'finish' ? 'フィニッシュ' : L.type === 'gate' ? '4ゲート(4S/4P)' : `${L.name}マーク`;
-  hud.clock.textContent = isMenu ? '練習中' : fmt(t);
-  hud.phase.textContent = isMenu ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `1分前 ― 次: スタート → 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
+  hud.clock.textContent = isPrac ? '練習中' : fmt(t);
+  hud.phase.textContent = isPrac ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `1分前 ― 次: スタート → 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
   const wd = ((b.windFrom * 180) / Math.PI + 360) % 360;
   hud.wdir.textContent = Math.round(wd) + '°';
   if (hud.needle) hud.needle.style.transform = `rotate(${b.rel}rad)`;
-  hud.spd.textContent = (Math.abs(b.v) / SPEED_SCALE / KT).toFixed(1) + (b.v < -0.03 ? ' (後退)' : '');
+  hud.spd.textContent = (Math.abs(b.v) / SPEED_SCALE / KT).toFixed(1);
   hud.hdg.textContent = Math.round(((b.h * 180) / Math.PI + 360) % 360) + '°';
   hud.twa.textContent = Math.round((b.twa * 180) / Math.PI) + '°';
   if (hud.tack) { hud.tack.textContent = b.tack > 0 ? '右舷' : '左舷'; hud.tack.className = b.tack > 0 ? 'stbd' : 'port'; }
@@ -280,12 +280,12 @@ function updateHUD(sorted) {
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
   if (b.cover > 0.3) { hud.blk.style.display = 'block'; hud.blk.textContent = `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`; } else hud.blk.style.display = 'none';
-  hud.leg.textContent = isMenu ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
+  hud.leg.textContent = isPrac ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
   const brg = Math.atan2(tw.x - b.x, -(tw.z - b.z));
   hud.legArrow.style.transform = `rotate(${wrap(brg - b.h)}rad)`;
-  if (b.penalty && !b.finished && !b.dsq && !isMenu) {
+  if (b.penalty && !b.finished && !b.dsq && !isPrac) {
     hud.pen.style.display = 'block';
     const deg = b.penalty.reqDeg || 360;
     const turns = deg === 720 ? '720°(2回転)' : '360°(1回転)';
@@ -294,10 +294,10 @@ function updateHUD(sorted) {
     const cw = !b.penalty.clearWater ? ' [クリアウオーター確保中]' : '';
     hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に${turns}ターンせよ (${pct}%)${cw}`;
   } else hud.pen.style.display = 'none';
-  hud.ocs.style.display = !isMenu && b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
+  hud.ocs.style.display = !isPrac && b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
   hud.cam.textContent = '📷 ' + CAM_MODES[cam.mode] + ' [C]';
   if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== '📷 ' + nx) hud.tCam.textContent = '📷 ' + nx; }
-  if (!isMenu) {
+  if (!isPrac) {
     const c = Math.ceil(-t);
     if (t < 0 && t > -11) { hud.big.textContent = c; hud.big.style.opacity = 1; hud.big.classList.toggle('flash', t > -1); }
     else if (t >= 0 && t < 2.5) { hud.big.textContent = 'START!'; hud.big.style.opacity = 1 - t / 2.5; }
@@ -396,6 +396,15 @@ function startRace() {
   const deg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(0);
   toast(`スタート1分前、${FAVORED === 'pin' ? 'ピン(左端)' : '本部船(右端)'}側が${deg}度有利`, 'info', 6500);
 }
+function startPractice() {
+  initAudio();
+  applyVenue();
+  makeFleet();
+  state.phase = 'practice'; state.t = 0; state.paused = false; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.ff = false; state.pAI = null;
+  state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
+  $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
+  toast('練習モード開始 ― 自由にコースを航行できます（右上「⏸ 中断」からいつでもスタート画面へ戻れます）', 'info', 5500);
+}
 const SIGS = [[-60, 'down'], [0, 'gun']];
 function signals(prevT, t) {
   for (const [st, k] of SIGS) if (prevT < st && t >= st) {
@@ -413,7 +422,7 @@ function atGun() {
 
 function setAuto(v) { autoTrim = v; toast(v ? 'オートトリムON(↑絞る/↓緩める は押している間だけ)' : 'マニュアルトリム(↑絞る/↓緩める で調整・黄色の印が最適)', 'info', 2500); const ta = $('tAuto'); if (ta) ta.classList.toggle('on', v); }
 function setPlayerPole(on) {
-  if (!player || (state.phase !== 'race' && state.phase !== 'menu') || player.finished || player.dsq) return;
+  if (!player || (state.phase !== 'race' && state.phase !== 'menu' && state.phase !== 'practice') || player.finished || player.dsq) return;
   if (on === player.pole) return;
   if (on && !player.setPole(true)) { toast('ランチャーは下レグ(真風角100°以上)でのみ上げられます', 'warn', 2500); return; }
   if (!on) player.setPole(false);
@@ -453,7 +462,7 @@ function playerControl(dt) {
   }
 }
 
-// スタート画面(メニュー)表示中の裏での練習航行ステップ
+// スタート画面(メニュー)表示中または練習モード中の航行ステップ
 function practiceStep(dt, time) {
   if (!player) return;
   playerControl(dt);
@@ -461,6 +470,13 @@ function practiceStep(dt, time) {
   if (player.tack !== state.lastTack) { if (state.lastTack !== undefined) sailFlog(0.85); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
   player.update(dt, time, boats);
+  if (state.phase === 'practice') {
+    for (const e of updateProgress(player, 10)) {
+      if (e.type === 'rounded') toast(`${e.leg.name}マーク回航 ✓`, 'good', 2500);
+      else if (e.type === 'gate') toast('4ゲート通過 ✓ ― 風上の1マークへ', 'good', 3000);
+      else if (e.type === 'finish') { player.finished = false; player.leg = 0; toast('フィニッシュ通過 ✓ ― 1マークへ戻って練習を続けられます', 'good', 3500); }
+    }
+  }
 }
 
 function simStep(dt) {
@@ -533,15 +549,16 @@ function showResult() {
 const clock = new THREE.Clock();
 let frameAvg = 16, lowTime = 0, hudAcc = 0;
 function togglePause(p) {
-  if (state.phase !== 'race') return;
+  if (state.phase === 'menu') { startPractice(); return; }
+  if (state.phase !== 'race' && state.phase !== 'practice') return;
   state.paused = p !== undefined ? p : !state.paused;
   const modal = $('pauseModal');
   if (state.paused) {
     modal.classList.remove('hidden');
-    toast('レースを一時中断中', 'info', 2000);
+    toast('一時中断中', 'info', 2000);
   } else {
     modal.classList.add('hidden');
-    toast('レース再開', 'info', 1500);
+    toast('再開', 'info', 1500);
   }
 }
 
@@ -557,7 +574,7 @@ function loop() {
   if (state.phase === 'race' && !state.paused) {
     let rem = dt;
     while (rem > 1e-6) { const s = Math.min(rem, 1 / 60); simStep(s); rem -= s; }
-  } else if (state.phase === 'menu') {
+  } else if ((state.phase === 'menu' || state.phase === 'practice') && !state.paused) {
     let rem = dt;
     while (rem > 1e-6) { const s = Math.min(rem, 1 / 60); practiceStep(s, time); rem -= s; }
   }
@@ -570,7 +587,7 @@ function loop() {
     cam.update(dt, time, player, boats);
     world.update(time, camera, dt, state.phase === 'race' ? state.t : time);
     setWind(clamp(Math.abs(player.v) / 6, 0, 1));
-    const active = (state.phase === 'race' || state.phase === 'menu') && !state.paused;
+    const active = (state.phase === 'race' || state.phase === 'menu' || state.phase === 'practice') && !state.paused;
     if (active) updateSailingAudio(dt, player, active);
     setCameraAudio(cam.mode === COCKPIT);
     updateNearbyBoatSound(player, boats, active);
@@ -603,7 +620,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys.add(e.code);
-  if (state.phase !== 'race' && state.phase !== 'menu') return;
+  if (state.phase !== 'race' && state.phase !== 'menu' && state.phase !== 'practice') return;
   
   if (e.code === 'Space' && !e.repeat) tryManeuver();
   if (e.code === 'KeyT' && !e.repeat) tryManeuver('tack');
@@ -618,7 +635,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyW' && !keys.has('ArrowUp')) cam.lookAhead();
   if (e.code === 'KeyS' && !keys.has('ArrowDown')) cam.lookStern();
 
-  if (state.phase === 'race' && (e.code === 'KeyP' || e.code === 'Escape')) togglePause();
+  if ((state.phase === 'race' || state.phase === 'practice') && (e.code === 'KeyP' || e.code === 'Escape')) togglePause();
   if (e.code === 'KeyM') toast(toggleMute() ? 'ミュート' : 'サウンドON', 'info', 1200);
   if (e.code === 'KeyH') $('help').classList.toggle('hidden');
 });
@@ -669,7 +686,7 @@ function initTouch() {
   };
   hold('tLeft', 'ArrowLeft'); hold('tRight', 'ArrowRight'); hold('tUp', 'ArrowUp'); hold('tDown', 'ArrowDown');
   
-  const tapTouch = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); if (state.phase === 'race' || state.phase === 'menu') fn(); });
+  const tapTouch = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); if (state.phase === 'race' || state.phase === 'menu' || state.phase === 'practice') fn(); });
   tapTouch('tPole', () => setPlayerPole(!player.pole));
   tapTouch('tCam', () => setCamera(cam.mode + 1)); tapTouch('tAuto', () => setAuto(!autoTrim));
   $('tAuto').classList.add('on');
@@ -829,6 +846,7 @@ function initMenu() {
     sn.oninput = () => { cfg.sailNo = sn.value.replace(/\D/g, '').slice(0, 5) || '31804'; saveCfg(); rebuildPlayerModel(); };
   }
   $('startBtn').onclick = startRace;
+  if ($('practiceBtn')) $('practiceBtn').onclick = startPractice;
   $('againBtn').onclick = () => { $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; makeFleet(); };
   initPreview();
 }
