@@ -164,7 +164,7 @@ export class Boat {
       if (twaP < POLE_MIN && steer * up > 0) steer = 0;
       if (twaP < POLE_MIN - 0.12) steer = -up * 0.6; // 風の振れで上り過ぎたら自動で落とす
     }
-    const rateMax = 0.85 * (0.35 + 0.65 * clamp(this.v / 2.5, 0, 1));
+    const rateMax = 0.85 * (0.35 + 0.65 * clamp(Math.abs(this.v) / 2.5, 0, 1));
     const dh = steer * rateMax * dt;
     this.h = wrap(this.h + dh);
     this.turned += Math.abs(dh);
@@ -231,16 +231,30 @@ export class Boat {
     const al = Math.hypot(ax, az) || 1e-6;
     this.awx = ax / al; this.awz = az / al; this.aws = al;
     this.awa = wrap(Math.atan2(-ax, az) - this.h);
-    const polarV = polar((twa * 180) / Math.PI) * SPEED_SCALE;
+    const twaDeg = (twa * 180) / Math.PI;
+    const polarV = polar(twaDeg) * SPEED_SCALE;
     // ランチャー: 下レグ(深い角度)でジブが開いて若干速くなる。リーチより上では逆効果
     const poleF = 1 + this.poleK * (0.065 * smoothstep(1.85, 2.6, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
     const turning = this.tacking || (this.maneuver && this.maneuver.kind === 'tack');
-    const target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.06 : 0.2) * Math.abs(steer)) * this.throttle;
+    let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.06 : 0.2) * Math.abs(steer)) * this.throttle;
+    // 完全風上(0°〜5° / 355°〜360°付近)に向くと風圧で少しずつバック(後退)する
+    if (twaDeg < 12 && !turning) {
+      const irons = clamp((10 - twaDeg) / 5, 0, 1); // 0°〜5°で最大1.0
+      target -= irons * 0.42 * SPEED_SCALE * w.f;
+    }
     const tau = target > this.v ? 2.4 : turning ? 5.0 : 1.5; // タック中は減速を緩やかに
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
-    this.x += Math.sin(this.h) * this.v * dt;
-    this.z -= Math.cos(this.h) * this.v * dt;
-    const heelT = nt * clamp((0.03 + 0.13 * Math.sin(twa) * w.f * this.sheet) * (0.4 + 0.6 * clamp(this.v / 2, 0, 1)), 0, 0.32);
+
+    // 風下側への流され(リーウェイ＆風圧ドリフト): 停止・微速時ほど風下側(スタボなら左側)および風下方向へ少しずつ流される
+    const slowF = 1 - clamp(Math.abs(this.v) / (2.2 * SPEED_SCALE), 0, 0.78);
+    const leewayV = (0.12 + 0.32 * slowF) * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向(-nt)への横流れ
+    const windageV = (0.07 + 0.20 * slowF) * SPEED_SCALE * w.f;                // 風下方向への吹き流され
+    const leeX = -nt * Math.cos(this.h) * leewayV - Math.sin(w.from) * windageV;
+    const leeZ = -nt * Math.sin(this.h) * leewayV + Math.cos(w.from) * windageV;
+
+    this.x += (Math.sin(this.h) * this.v + leeX) * dt;
+    this.z += (-Math.cos(this.h) * this.v + leeZ) * dt;
+    const heelT = nt * clamp((0.03 + 0.13 * Math.sin(twa) * w.f * this.sheet) * (0.4 + 0.6 * clamp(Math.abs(this.v) / 2, 0, 1)), 0, 0.32);
     this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 1.5));
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
