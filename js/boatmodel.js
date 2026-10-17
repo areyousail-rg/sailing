@@ -117,7 +117,7 @@ function mainSailTexture(no, color) {
   x.fillStyle = '#1b3b8a'; x.font = 'bold 54px Arial';
   x.fillText('JPN', 128, 220);
   x.font = 'bold 60px Arial';
-  const numText = no.length >= 4 ? no : '30804';
+  const numText = no.length >= 4 ? no : '31804';
   x.fillText(numText, 128, 285);
   
   // 視認用クリアウィンドウ(透明窓)
@@ -234,9 +234,9 @@ export class BoatModel {
     for (const zz of [0.45, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.04), M.black); clip.position.set(0.05, 1.01, zz); this.mainPivot.add(clip); }
     this.jibRot = 0;
 
-    // 船内カメラ用マウント(スキッパーの目線／デッキ後方カメラ)
+    // 船内カメラ用マウント(スキッパーの目線／少し高めのデッキ後方視点)
     this.mount = new THREE.Object3D();
-    this.mount.position.set(0.35, 1.15, 0.95);
+    this.mount.position.set(0.35, 1.42, 0.98);
     this.body.add(this.mount);
 
     if (boat.isPlayer) {
