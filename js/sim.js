@@ -69,7 +69,7 @@ export class Boat {
     this.steer = 0; this.sheet = 1; this.throttle = 1;
     this.tack = 1; this.tacking = false; this.tackTimer = 0;
     this.rel = 0; this.twa = 0; this.windFrom = W0; this.windF = 1;
-    this.maneuver = null; this.penalty = null; this.penaltyDone = false;
+    this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null;
     this.leg = 0; this.ocs = false; this.finished = false; this.finishTime = 0;
     this.a = undefined; this.c = 0; this.visit = null;
     this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.turned = 0;
@@ -101,9 +101,14 @@ export class Boat {
     if (on && (this.twa < POLE_MIN || this.maneuver || this.penalty)) return false;
     this.pole = on; return true;
   }
-  startPenalty(rule) { if (this.penalty) return false; this.penalty = { turned: 0, rule }; this.pole = false; return true; }
+  startPenalty(rule) {
+    if (this.penalty || this.dsq) return false;
+    this.penalty = { turned: 0, rule, timer: 20.0, clearWater: true };
+    this.pole = false;
+    return true;
+  }
 
-  update(dt, t) {
+  update(dt, t, boats) {
     const w = windAt(this.x, this.z, t);
     this.cover += (this.coverT - this.cover) * (1 - Math.exp(-dt / 1.2));
     w.f *= 1 - 0.5 * this.cover;
@@ -132,7 +137,30 @@ export class Boat {
     this.turned += Math.abs(dh);
     if (this.penalty) {
       this.penalty.turned += Math.abs(dh);
-      if (this.penalty.turned >= 2 * Math.PI * 0.98) { this.penalty = null; this.penaltyDone = true; }
+      // 他艇が2艇身(約9.5m)以内にいる間は「クリアウオーター確保中」としてタイマー減少を0.25倍に緩和、回頭中も0.2倍に緩和
+      let clearWater = true;
+      if (boats) {
+        for (const o of boats) {
+          if (o !== this && !o.finished && !o.dsq && Math.hypot(o.x - this.x, o.z - this.z) < BOAT_LEN * 2) {
+            clearWater = false;
+            break;
+          }
+        }
+      }
+      this.penalty.clearWater = clearWater;
+      const activelyTurning = Math.abs(steer) > 0.45 || this.maneuver !== null;
+      const decayRate = !clearWater ? 0.25 : activelyTurning ? 0.2 : 1.0;
+      this.penalty.timer = Math.max(0, this.penalty.timer - dt * decayRate);
+      if (this.penalty.turned >= 2 * Math.PI * 0.98) {
+        this.penalty = null;
+        this.penaltyDone = true;
+      } else if (this.penalty.timer <= 0) {
+        const r = this.penalty.rule;
+        this.penalty = null;
+        this.dsq = true;
+        this.dsqReason = `ルール${r}違反・20秒以内にペナルティ未履行(RRS 44.2)`;
+        this.penaltyExpired = r;
+      }
     }
     const rel = wrap(w.from - this.h);
     const twa = Math.abs(rel);
