@@ -75,9 +75,9 @@ export function initAudio() {
     rushGain = ctx.createGain(); rushGain.gain.value = 0;
     rsrc.connect(rushFilter); rushFilter.connect(rushGain); rushGain.connect(boatBus);
 
-    // セールのシバー(連続したバタバタ): 鋸波LFOで「パッ・パッ」と立ち上がる
-    const ssrc = loopSource(noiseBuf, 1.15);
-    const sbp = ctx.createBiquadFilter(); sbp.type = 'bandpass'; sbp.frequency.value = 1250; sbp.Q.value = 0.7;
+    // セールのシバー(連続したバサバサ・バタバタ): 中低域の厚みを持たせたバンドパスと鋸波LFO
+    const ssrc = loopSource(noiseBuf, 0.95);
+    const sbp = ctx.createBiquadFilter(); sbp.type = 'bandpass'; sbp.frequency.value = 520; sbp.Q.value = 0.65;
     shiverGain = ctx.createGain(); shiverGain.gain.value = 0;
     shiverLfo = ctx.createOscillator(); shiverLfo.type = 'sawtooth'; shiverLfo.frequency.value = 10;
     const shiverAmp = ctx.createGain(); shiverAmp.gain.value = 0; shiverAmp._base = shiverGain;
@@ -96,7 +96,7 @@ export function initAudio() {
 }
 
 export function setWind(speedNorm) { if (windGain && ctx) windGain.gain.setTargetAtTime(0.10 + 0.22 * speedNorm, ctx.currentTime, 0.3); }
-export function setCameraAudio(cockpit) { camMul = cockpit ? 1.0 : 0.38; }
+export function setCameraAudio(cockpit) { camMul = cockpit ? 1.0 : 0.45; }
 export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.62; return muted; }
 
 // ---- 艇の連続音(毎フレーム) ----
@@ -119,6 +119,37 @@ function waveSlap(sp, heel) {
   og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.16 * sp, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
   o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.35);
 }
+// シバー時の「バサバサッ」というセールクロスの連続はためきパルス
+function shiverFlap(lv) {
+  if (!ctx || !noiseBuf) return;
+  const t = ctx.currentTime;
+  const dur = 0.08 + Math.random() * 0.06;
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  s.playbackRate.value = 0.75 + Math.random() * 0.4;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(520 + Math.random() * 380, t);
+  bp.frequency.exponentialRampToValueAtTime(240 + Math.random() * 140, t + dur);
+  bp.Q.value = 0.75;
+  const g = ctx.createGain();
+  const peak = (0.28 + 0.52 * lv) * (0.85 + Math.random() * 0.3);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.014);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(bp); bp.connect(g); g.connect(master);
+  s.start(t, Math.random() * 1.2); s.stop(t + dur + 0.02);
+
+  // 布が風を叩く低音の「ボワッ/バサッ」成分
+  const o = ctx.createOscillator(), og = ctx.createGain();
+  o.type = 'triangle';
+  const f0 = 115 + Math.random() * 45;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(52, t + dur * 0.9);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.linearRampToValueAtTime(0.22 * lv, t + 0.01);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(og); og.connect(master);
+  o.start(t); o.stop(t + dur + 0.02);
+}
 // active=false(一時停止/メニュー)で無音。b は自艇。
 export function updateSailingAudio(dt, b, active = true) {
   if (!ctx || !hissGain) return;
@@ -130,13 +161,17 @@ export function updateSailingAudio(dt, b, active = true) {
   hissGain.gain.setTargetAtTime((0.01 + 0.34 * Math.pow(sp, 1.4)) * (1 + heel * 2.4), now, 0.12);
   rushGain.gain.setTargetAtTime(0.02 + 0.30 * sp, now, 0.2);
   rushFilter.frequency.setTargetAtTime(320 + sp * 900, now, 0.2);
-  // シバー
+  // シバー (バサバサ音を大きく・はっきりと再生)
   const luff = active && b ? clamp01(b.luff) : 0;
-  const lv = luff > 0.12 ? luff : 0;
-  shiverGain.gain.setTargetAtTime(0.5 * lv * 0.34, now, 0.05);
-  shiverGain._amp.gain.setTargetAtTime(0.5 * lv * 0.34, now, 0.05);
+  const lv = luff > 0.08 ? luff : 0;
+  shiverGain.gain.setTargetAtTime(lv * 0.58, now, 0.04);
+  shiverGain._amp.gain.setTargetAtTime(lv * 0.52, now, 0.04);
   tShiver -= dt;
-  if (tShiver <= 0) { tShiver = 0.11; shiverLfo.frequency.setValueAtTime(7 + Math.random() * 8, now); }
+  if (tShiver <= 0) {
+    tShiver = 0.075 + Math.random() * 0.055;
+    shiverLfo.frequency.setValueAtTime(8 + Math.random() * 7, now);
+    if (active && lv > 0.08) shiverFlap(lv);
+  }
   if (!active) return;
   tBubble -= dt;
   if (tBubble <= 0 && sp > 0.08) { tBubble = (0.06 + Math.random() * 0.16) / (0.4 + sp * 1.8); bubble(sp); }
