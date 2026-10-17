@@ -213,8 +213,14 @@ function updateHUD(sorted) {
   const tw = toWorld(tg.a, tg.c);
   const brg = Math.atan2(tw.x - b.x, -(tw.z - b.z));
   hud.legArrow.style.transform = `rotate(${wrap(brg - b.h)}rad)`;
-  if (b.penalty && !b.finished) { hud.pen.style.display = 'block'; hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 360°ターン ${Math.min(99, Math.round((b.penalty.turned / (2 * Math.PI)) * 100))}% ― フィニッシュ前に消化必須!`; } else hud.pen.style.display = 'none';
-  hud.ocs.style.display = b.ocs && t >= 0 && !b.finished ? 'block' : 'none';
+  if (b.penalty && !b.finished && !b.dsq) {
+    hud.pen.style.display = 'block';
+    const pct = Math.min(99, Math.round((b.penalty.turned / (2 * Math.PI)) * 100));
+    const sec = Math.ceil(b.penalty.timer);
+    const cw = !b.penalty.clearWater ? ' [クリアウオーター確保中]' : '';
+    hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に360°ターンせよ (${pct}%)${cw}`;
+  } else hud.pen.style.display = 'none';
+  hud.ocs.style.display = b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
   hud.cam.textContent = '📷 ' + CAM_MODES[cam.mode] + ' [C]';
   if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== '📷 ' + nx) hud.tCam.textContent = '📷 ' + nx; }
   const c = Math.ceil(-t);
@@ -269,7 +275,7 @@ function handleCollision(e) {
     if (!quiet) thud(soundVol(gw.x, gw.z));
     const issued = gw.startPenalty(e.rule === 18 ? 18 : e.rule);
     if (quiet) return;
-    if (gw.isPlayer) toast(`ペナルティ! ${nameOf(row)} と接触\n${e.text}\n→ 360°ターン(タック+ジャイブ)で消化`, 'bad', 7000);
+    if (gw.isPlayer) toast(`ペナルティ! ${nameOf(row)} と接触\n${e.text}\n→ 速やかに(20秒以内に)360°ターンで消化せよ!`, 'bad', 7000);
     else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}) → 360°ターン`);
     else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) miniLog(`${nameOf(gw)} 違反(R${e.rule}) → 360°`);
     if (!issued) return;
@@ -278,7 +284,7 @@ function handleCollision(e) {
     if (quiet) return;
     const v = soundVol(b.x, b.z);
     if (e.mark === 'com') thud(v); else markHit(v);
-    if (b.isPlayer && ok) toast('マークに接触!(ルール31) → 360°ターンで消化', 'bad', 6000);
+    if (b.isPlayer && ok) toast('マークに接触!(ルール31) → 速やかに(20秒以内に)360°ターンで消化せよ!', 'bad', 6000);
   }
 }
 
@@ -312,14 +318,14 @@ function atGun() {
 
 function setAuto(v) { autoTrim = v; toast(v ? 'オートトリムON(↑絞る/↓緩める は押している間だけ)' : 'マニュアルトリム(↑絞る/↓緩める で調整・黄色の印が最適)', 'info', 2500); const ta = $('tAuto'); if (ta) ta.classList.toggle('on', v); }
 function setPlayerPole(on) {
-  if (!player || state.phase !== 'race' || player.finished) return;
+  if (!player || state.phase !== 'race' || player.finished || player.dsq) return;
   if (on === player.pole) return;
   if (on && !player.setPole(true)) { toast('ランチャーは下レグ(真風角100°以上)でのみ上げられます', 'warn', 2500); return; }
   if (!on) player.setPole(false);
   toast(on ? 'ランチャーアップ — 下レグで少し速くなる(風上には向けない)' : 'ランチャーダウン', 'info', 2200);
 }
 function tryManeuver(kind) {
-  if (player.finished && state.pAI) return;
+  if ((player.finished || player.dsq) && state.pAI) return;
   if (!player.startManeuver(kind) && player.pole && !player.maneuver) toast('ランチャーを下ろしてからタックしてください', 'warn', 2500);
 }
 // 舵: 矢印を短く押すと針路が1°ずつ変わる。押し続けると徐々に速く回頭(タック/ジャイブも舵で風をまたぐ)
@@ -358,17 +364,28 @@ function simStep(dt) {
   const t = state.t;
   signals(prev, t);
   for (const a of ais) a.update(dt, t, boats);
-  if (player.finished && state.pAI) state.pAI.update(dt, t, boats);
+  if ((player.finished || player.dsq) && state.pAI) state.pAI.update(dt, t, boats);
   else if (window.__ap) window.__ap.update(dt, t, boats); else playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
   // タック/ジャイブ(風をまたいだ瞬間)にセールの「バサッ」、ランチャー上下で「シャキン」
-  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished) sailFlog(0.85); state.lastTack = player.tack; }
-  if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished) poleClank(player.pole); state.lastPole = player.pole; }
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished && !player.dsq) sailFlog(0.85); state.lastTack = player.tack; }
+  if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished && !player.dsq) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
-  for (const b of boats) b.update(dt, t);
+  for (const b of boats) b.update(dt, t, boats);
   for (const e of resolveCollisions(boats, t)) handleCollision(e);
   for (const b of boats) {
-    handleProgress(b, updateProgress(b, t));
+    if (b.penaltyExpired !== null) {
+      const r = b.penaltyExpired;
+      b.penaltyExpired = null;
+      if (b.isPlayer) {
+        if (!state.ff) horn(0.6, 320);
+        toast(`プロテスト成立 → DSQ (失格)!\nルール${r}違反後、速やかに(20秒以内に)360°ターンを行わなかったため失格(RRS 44.2)`, 'bad', 9000);
+        if (state.pFinish === null) { state.pFinish = state.t; state.pAI = new AI(b, rng); }
+      } else if (!state.ff) {
+        miniLog(`${nameOf(b)} ペナルティ未履行によりDSQ`);
+      }
+    }
+    if (!b.dsq) handleProgress(b, updateProgress(b, t));
     if (b.ocs && t >= 0 && b.a < lineA(b.c) - 2) { b.ocs = false; if (b.isPlayer) toast('OCS解消 ✓ 再スタート!', 'good', 3000); }
     if (b.penaltyDone) { b.penaltyDone = false; if (b.isPlayer && !state.ff) toast('ペナルティ消化 ✓', 'good', 3000); }
   }
