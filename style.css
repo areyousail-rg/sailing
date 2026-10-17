@@ -129,11 +129,11 @@ body.touch .cell.pole{display:none}
 #touch button:active,#touch button.on{background:rgba(53,224,193,.55);transform:scale(.95)}
 .tgrp{position:absolute;display:flex;gap:10px}
 .tgrp.left{left:14px;bottom:14px}.tgrp.left button{width:84px;height:84px;font-size:1.8rem}
-.tgrp.mid{left:14px;top:46%;flex-direction:column}.tgrp.mid button{width:54px;height:44px;font-size:.8rem;border-radius:12px}
+.tgrp.mid{left:14px;top:46%;flex-direction:column}.tgrp.mid button{width:68px;height:44px;font-size:.75rem;border-radius:12px}
 .tgrp.right{right:14px;bottom:14px;width:190px;flex-wrap:wrap;justify-content:flex-end}.tgrp.right button{width:90px;height:60px;font-size:.9rem}
 body.touch #help,body.touch #leaders{display:none}
 body.touch .top-left{top:8px;left:8px;padding:6px 12px;min-width:150px}
-body.touch #clock{font-size:1.8rem}body.touch #phase{font-size:.62rem}body.touch .sub{display:none}
+body.touch #clock{font-size:1.8rem}body.touch #phase{font-size:.62rem;white-space:nowrap}body.touch .sub{display:none}
 body.touch .top-left2{top:76px;left:8px;padding:6px 10px}
 body.touch .compass{width:44px;height:44px}body.touch .compass .needle{margin:-19px 0 0 -5px;transform-origin:5px 19px;border-width:0 5px;border-top-width:18px;border-left:5px solid transparent;border-right:5px solid transparent}
 body.touch .wtxt b{font-size:1.2rem}
@@ -148,23 +148,31 @@ body.touch .badge{top:62px;font-size:.78rem;padding:6px 12px}body.touch .badge.w
 @media(max-height:480px){.card{padding:14px 18px}h1{font-size:1.6rem}.lead{margin-bottom:8px}.menuGrid{gap:12px}#preview{width:200px;height:140px}.cta{margin-top:10px;padding:10px}}
 @media(pointer:coarse) and (orientation:portrait){body.hintOn::after{content:"横向きにするとプレイしやすくなります";position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:5px 12px;border-radius:10px;font-size:.7rem;z-index:20;pointer-events:none;white-space:nowrap}}
 
-/* スマホ縦画面: 文字・パネルを全体的に小さくして画面を広く使う */
+/* スマホ縦画面: 上部パネルが重ならないよう2段に整列し、文字・パネルをコンパクトに配置 */
 @media(orientation:portrait) and (max-width:600px){
   html{font-size:12px}
-  body.touch .top-left{top:6px;left:6px;padding:4px 10px;min-width:0;border-radius:12px}
-  body.touch #clock{font-size:1.5rem}body.touch #phase{font-size:.55rem}
-  body.touch .top-right{top:6px;right:6px;padding:4px 10px;border-radius:12px}
-  body.touch .top-right h2{margin:0;font-size:.6rem}body.touch .top-right h2 span{font-size:.85rem;margin-left:6px}
-  body.touch .pauseBtn{top:50px;right:6px;padding:4px 10px;font-size:.62rem;border-radius:10px}
-  body.touch .bottom-center{top:50px;left:6px;transform:none;transform-origin:top left;gap:8px;padding:4px 8px;border-radius:12px}
+  body.touch .top-left{top:6px;left:6px;padding:4px 9px;min-width:0;max-width:52vw;border-radius:10px}
+  body.touch #clock{font-size:1.35rem;line-height:1.05}
+  body.touch #phase{font-size:.54rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body.touch .top-right{top:6px;right:6px;padding:4px 9px;border-radius:10px}
+  body.touch .top-right h2{margin:0;font-size:.58rem;align-items:center}
+  body.touch .top-right h2 span{font-size:.82rem;margin-left:5px}
+  body.touch .pauseBtn{top:6px;right:88px;padding:4px 8px;font-size:.58rem;border-radius:9px}
+  body.touch .bottom-center{top:46px;left:6px;right:auto;transform:none;gap:8px;padding:4px 8px;border-radius:10px;max-width:calc(100vw - 110px);justify-content:flex-start}
   body.touch .cell{min-width:0}
-  body.touch .cell label{font-size:.5rem}body.touch .cell b{font-size:1.05rem}body.touch .cell small,body.touch .cell .wsm{font-size:.55rem}
-  body.touch .cell.sheet{min-width:84px}body.touch .cell.sheet .bar{width:80px;height:6px;margin-top:6px}
-  body.touch #minimap{width:96px;height:96px;right:6px;top:80px}
-  body.touch #toasts{top:132px;width:92vw}body.touch .toast{font-size:.62rem;padding:4px 10px}
-  body.touch #miniLog{top:182px;max-width:44vw}body.touch #miniLog div{font-size:.5rem}
-  body.touch .badge{top:100px;font-size:.62rem;padding:4px 10px}body.touch .badge.warn{top:124px}
-  body.touch #bigCount{font-size:3.6rem}
+  body.touch .cell label{font-size:.48rem;white-space:nowrap}
+  body.touch .cell b{font-size:.98rem}
+  body.touch .cell small,body.touch .cell .wsm{font-size:.5rem}
+  body.touch .cell.sheet{min-width:78px}
+  body.touch .cell.sheet .bar{width:74px;height:5px;margin-top:4px}
+  body.touch #minimap{width:92px;height:92px;right:6px;top:38px}
+  body.touch .badge{top:96px;left:6px;transform:none;font-size:.6rem;padding:4px 9px;max-width:calc(100vw - 110px)}
+  body.touch .badge.warn{top:120px}
+  body.touch #toasts{top:136px;width:92vw}
+  body.touch .toast{font-size:.62rem;padding:4px 10px}
+  body.touch #miniLog{top:182px;max-width:44vw}
+  body.touch #miniLog div{font-size:.5rem}
+  body.touch #bigCount{font-size:3.6rem;top:40%}
   .tgrp.left{left:8px;bottom:10px;gap:6px}.tgrp.left button{width:62px;height:62px;font-size:1.3rem;border-radius:14px}
   .tgrp.mid{left:8px;top:auto;bottom:84px;flex-direction:row}.tgrp.mid button{width:auto;min-width:50px;height:34px;padding:0 8px;font-size:.62rem}
   .tgrp.right{right:8px;bottom:10px;width:150px;gap:6px}.tgrp.right button{width:72px;height:48px;font-size:.62rem;border-radius:14px}
