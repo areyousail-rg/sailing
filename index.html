@@ -63,7 +63,7 @@
       <div class="cell mark"><label>次のマーク</label><div class="arrowWrap"><div id="legArrow" class="legArrow">▲</div></div></div>
     </section>
 
-    <div id="markPointer" class="markPointer" style="display:none"><span id="mpArrow" class="mpArrow">▲</span><span id="mpText">1</span></div>
+    <div id="markPointer" class="markPointer hidden"><span id="mpArrow" class="mpArrow">▲</span><span id="mpText">1</span></div>
     <div id="penBadge" class="badge bad" style="display:none"></div>
     <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
     <div id="blkBadge" class="badge warn" style="display:none">ブランケット(風影)中</div>
@@ -113,9 +113,9 @@
       <h1>レース中断中</h1>
       <p class="lead">レースを中断しています。再開するか、最初からやり直せます。</p>
       <div class="pauseActions">
-        <button id="resumeBtn" class="cta" type="button">▶ レース再開</button>
-        <button id="restartBtn" class="btnSec" type="button">🔄 最初からやり直す</button>
-        <button id="exitMenuBtn" class="btnSec danger" type="button">🏠 メインメニューへ</button>
+        <button id="resumeBtn" class="cta" type="button">▶ 再開</button>
+        <button id="restartBtn" class="btnSec" type="button">🔄 レースを最初から始める</button>
+        <button id="exitMenuBtn" class="btnSec danger" type="button">🏠 スタート画面へ戻る</button>
       </div>
     </div>
   </section>
@@ -151,8 +151,11 @@
           <canvas id="preview" width="240" height="176"></canvas>
         </div>
       </div>
-      <button id="startBtn" class="cta" type="button">レーススタート</button>
-      <p class="keys">💡 この画面のまま裏で練習操作できます（<kbd>←→</kbd>舵 <kbd>↑↓</kbd>セール <kbd>C</kbd>カメラ）</p>
+      <div class="startActions">
+        <button id="startBtn" class="cta" type="button">レーススタート</button>
+        <button id="practiceBtn" class="btnPractice" type="button">⛵ 練習モード</button>
+      </div>
+      <p class="keys">💡 この画面のままでも裏で操作できます。「練習モード」で画面を閉じて自由に練習できます</p>
     </div>
   </section>
 
