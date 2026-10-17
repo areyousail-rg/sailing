@@ -69,6 +69,7 @@ for (const L of LEGS) {
 export const TOTAL = cum;
 
 export function progressOf(b) {
+  if (b.dsq) return -1e6;
   if (b.finished) return 1e6 - b.finishTime;
   const L = LEGS[b.leg];
   const tgt = L.type === 'mark' ? L.mark : L.center;
