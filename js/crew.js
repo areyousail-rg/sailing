@@ -282,7 +282,7 @@ export function buildFigure(type, style = {}) {
       cone(head, A.body, 0.07, 0.14, -0.14, 0.2, 0, 0, 0.35); cone(head, A.body, 0.07, 0.14, 0.14, 0.2, 0, 0, -0.35);
       cone(head, 0xff8fa3, 0.04, 0.09, -0.14, 0.19, -0.03, 0, 0.35); cone(head, 0xff8fa3, 0.04, 0.09, 0.14, 0.19, -0.03, 0, -0.35);
       cap(g, A.body, 0.032, 0.09, 0.0, 0.22, 0.22, 0.85, 0, 0);
-      g.scale.setScalar(0.74); // ネコは人間より小さめにスケール調整
+      g.scale.setScalar(0.90); // ネコは人間より少しだけ小さめのほどよいサイズ感に調整
       break;
     case 'shiba':
       cone(head, A.body, 0.075, 0.13, -0.14, 0.19, 0, 0, 0.3); cone(head, A.body, 0.075, 0.13, 0.14, 0.19, 0, 0, -0.3);
