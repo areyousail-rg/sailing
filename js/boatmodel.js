@@ -270,15 +270,12 @@ export class BoatModel {
       }
 
 
-      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.4, 4), new THREE.MeshBasicMaterial({ color: 0xffd23f }));
-      arrow.rotation.x = Math.PI; arrow.position.y = 9; this.root.add(arrow); this.arrow = arrow;
     }
   }
 
   setFirstPerson(on) {
     if (this.fp === on) return; this.fp = on;
     // 艇内カメラ時はヘルメット/スキッパーモデルを隠す(クルーは表示したままにする)
-    if (this.arrow) this.arrow.visible = !on;
     if (this.helmRig) this.helmRig.visible = !on; // スキッパーを非表示
     // if (this.crewRig) this.crewRig.visible = !on;
   }
@@ -374,7 +371,6 @@ export class BoatModel {
     
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
     this.mount.position.set(this.side * (0.45 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
-    if (this.arrow) { this.arrow.position.y = 9 + Math.sin(t * 3) * 0.4; this.arrow.rotation.y = t * 2; }
     if (this.rj) this.syncRopes(sgn);
   }
 
