@@ -18,18 +18,27 @@ export class DroneCam {
     this.tmp = new THREE.Vector3(); this.want = new THREE.Vector3(); this.wantLook = new THREE.Vector3();
     this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
     
-    let drag = false, lx = 0, ly = 0;
+    let drag = false, lx = 0, ly = 0, lt = 0;
+    this.vYaw = 0; this.vPitch = 0; this.dragging = false;
     dom.style.touchAction = 'none';
-    dom.addEventListener('pointerdown', (e) => { drag = true; lx = e.clientX; ly = e.clientY; });
-    window.addEventListener('pointerup', () => { drag = false; });
+    dom.addEventListener('pointerdown', (e) => { drag = true; this.dragging = true; this.vYaw = 0; this.vPitch = 0; lx = e.clientX; ly = e.clientY; lt = e.timeStamp; });
+    const release = (e) => {
+      drag = false; this.dragging = false;
+      if (e && e.timeStamp - lt > 90) { this.vYaw = 0; this.vPitch = 0; } // 止めてから離した場合は慣性なし
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
     window.addEventListener('pointermove', (e) => {
       if (!drag) return;
       const dyaw = (e.clientX - lx) * 0.005;
       const dpitch = (e.clientY - ly) * 0.004;
+      const dtm = Math.max(1, e.timeStamp - lt);
+      this.vYaw = clamp(this.vYaw * 0.6 + (-dyaw / dtm * 1000) * 0.4, -5, 5);
+      this.vPitch = clamp(this.vPitch * 0.6 + (dpitch / dtm * 1000) * 0.4, -3, 3);
       this.targetYaw -= dyaw;
       this.targetPitch = clamp(this.targetPitch + dpitch, -0.5, 0.9);
       if (this.mode === COCKPIT) this.targetYaw = clamp(this.targetYaw, -2.5, 2.5);
-      lx = e.clientX; ly = e.clientY;
+      lx = e.clientX; ly = e.clientY; lt = e.timeStamp;
     });
     dom.addEventListener('wheel', (e) => { this.zoom = clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.4, 3); e.preventDefault(); }, { passive: false });
   }
@@ -70,9 +79,19 @@ export class DroneCam {
   }
 
   update(dt, t, boat, boats) {
+    // フリック後の慣性(指を離しても滑らかに減衰しながら回り続ける)
+    if (!this.dragging && (this.vYaw || this.vPitch)) {
+      this.targetYaw += this.vYaw * dt;
+      this.targetPitch = clamp(this.targetPitch + this.vPitch * dt, -0.5, 0.9);
+      if (this.mode === COCKPIT) this.targetYaw = clamp(this.targetYaw, -2.5, 2.5);
+      const k = Math.exp(-dt * 3.2);
+      this.vYaw *= k; this.vPitch *= k;
+      if (Math.abs(this.vYaw) < 0.01) this.vYaw = 0;
+      if (Math.abs(this.vPitch) < 0.01) this.vPitch = 0;
+    }
     // スムーズなカメラ回転補間
-    this.yaw += (this.targetYaw - this.yaw) * (1 - Math.exp(-dt * 12));
-    this.pitch += (this.targetPitch - this.pitch) * (1 - Math.exp(-dt * 12));
+    this.yaw += (this.targetYaw - this.yaw) * (1 - Math.exp(-dt * 7));
+    this.pitch += (this.targetPitch - this.pitch) * (1 - Math.exp(-dt * 7));
 
     if (this.mode === COCKPIT && this.mount) {
       this.mount.updateWorldMatrix(true, false);
@@ -81,7 +100,7 @@ export class DroneCam {
       this.cam.rotateY(this.yaw); this.cam.rotateX(0.13 - this.pitch * 0.6); this.cam.rotateZ(-boat.heel * 0.45);
       
       if (this.cam.near !== 0.08) { this.cam.near = 0.08; this.cam.updateProjectionMatrix(); }
-      if (Math.abs(this.cam.fov - 80) > 0.05) { this.cam.fov += (80 - this.cam.fov) * 0.2; this.cam.updateProjectionMatrix(); }
+      if (Math.abs(this.cam.fov - 100) > 0.05) { this.cam.fov += (100 - this.cam.fov) * 0.2; this.cam.updateProjectionMatrix(); }
       return;
     }
 
