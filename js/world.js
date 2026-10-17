@@ -544,15 +544,15 @@ export function createWorld(scene) {
     finLabel.position.set(flcx, 12, flcz);
   };
   syncCourseObjects();
-  // マークの番号ラベル (カメラが近づいた時は半透明化して視界を遮らないようにする)
+  // マークの番号ラベル (ドローンカメラ高度 y=8〜11m と重ならないようブイ直上の低い位置 y=4.2m に配置し、カメラ接近時は完全非表示化)
   const markSprites = {};
-  const label = (txt, key, y = 10.5) => {
+  const label = (txt, key, y = 4.2) => {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
     x.fillStyle = 'rgba(10,20,40,0.72)'; x.beginPath(); x.arc(64, 64, 56, 0, 7); x.fill();
     x.strokeStyle = '#ffd23f'; x.lineWidth = 6; x.stroke();
     x.fillStyle = '#fff'; x.font = 'bold 62px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 64, 68);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: true, transparent: true, opacity: 0.88 }));
-    s.scale.set(6.5, 6.5, 1); s.position.y = y; markObjs[key].add(s);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: true, depthWrite: false, transparent: true, opacity: 0.88 }));
+    s.scale.set(3.8, 3.8, 1); s.position.y = y; markObjs[key].add(s);
     markSprites[key] = s;
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
@@ -560,12 +560,12 @@ export function createWorld(scene) {
   // ---------- 次向かうマークの矢印 (艇内・ドローン双方から見やすいサイズ、4ゲートは4S/4P両方に表示) ----------
   const makeTargetArrow = () => {
     const g = new THREE.Group();
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.94 });
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2, 3.8, 12), coneMat);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.94, depthWrite: false });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.0, 3.4, 12), coneMat);
     cone.rotation.x = Math.PI;
-    cone.position.y = -1.2;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 3.2, 12), coneMat);
-    shaft.position.y = 2.0;
+    cone.position.y = -1.1;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.68, 2.8, 12), coneMat);
+    shaft.position.y = 1.8;
     g.add(cone, shaft);
     g.userData.mat = coneMat;
     g.visible = false;
@@ -574,6 +574,7 @@ export function createWorld(scene) {
   };
   const targetArrows = [makeTargetArrow(), makeTargetArrow()];
   let activeMarkKeys = ['m1'];
+  const camDir = new THREE.Vector3();
 
   // ---------- 航跡 ----------
   // 艇尾直後の薄い乱流帯(中央)と、左右に広がる細いケルビン波(八の字)。小型ディンギーなので短く淡く消える
@@ -682,22 +683,49 @@ export function createWorld(scene) {
       sea.position.set(camera.position.x, 0, camera.position.z);
       for (const o of bob) { o.position.y = 0.12 * Math.sin(t * 1.4 + o.position.x) + 0.05; o.rotation.z = 0.05 * Math.sin(t * 1.1 + o.position.z); }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
-      // マーク上の矢印アニメーション（カメラ接近時は透過して視界を邪魔しない）
+
+      camera.getWorldDirection(camDir);
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      // ドローンカメラと自艇の視線上(0 < along < 44m)にマークが入った場合やカメラ接近時は完全に非表示(0)にして視界を遮らない
+      const calcVis = (wx, wy, wz, minDist, fadeRange) => {
+        const dx = wx - cx, dy = wy - cy, dz = wz - cz;
+        const dCam = Math.hypot(dx, dz);
+        const distFade = clampN((dCam - minDist) / fadeRange, 0, 1);
+        if (distFade <= 0.01) return 0;
+        const along = dx * camDir.x + dy * camDir.y + dz * camDir.z;
+        if (along > -4 && along < 44) {
+          const px = dx - camDir.x * along, py = dy - camDir.y * along, pz = dz - camDir.z * along;
+          const perp = Math.hypot(px, py, pz);
+          const losFade = clampN((perp - 8) / 9, 0, 1);
+          return distFade * losFade;
+        }
+        return distFade;
+      };
+
+      // マーク上の矢印アニメーション（カメラ接近・視線重複時は完全透過して視界を邪魔しない）
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
-        const dCam = Math.hypot(camera.position.x - ar.position.x, camera.position.z - ar.position.z);
-        ar.position.y = 8.8 + 0.7 * Math.sin(t * 3.2);
+        ar.position.y = 7.2 + 0.6 * Math.sin(t * 3.2);
         ar.rotation.y = t * 1.6;
-        ar.userData.mat.opacity = clampN((dCam - 10) / 24, 0.15, 0.94);
+        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18);
+        ar.userData.mat.opacity = 0.94 * v;
       }
-      // マーク番号ラベル: ドローンカメラと重なった時に自艇が隠れないよう、カメラ距離に応じて透過させる
+      // マーク番号ラベル: 回航済みマークやカメラと自艇の間に入ったマーク番号は完全に消す
       for (const [k, sp] of Object.entries(markSprites)) {
         const isAct = activeMarkKeys.includes(k);
-        const s = isAct ? 8.2 : 6.2;
+        const s = isAct ? 4.5 : 3.6;
         sp.scale.set(s, s, 1);
         const mo = markObjs[k];
-        const dCam = Math.hypot(camera.position.x - mo.position.x, camera.position.z - mo.position.z);
-        sp.material.opacity = clampN((dCam - 12) / 26, 0.12, 0.92);
+        // 次に向かうマーク以外は55m以内で完全に消すことで、上マーク回航後に1番・1a番ラベルがカメラと被るのを防ぐ
+        const v = calcVis(mo.position.x, 4.2, mo.position.z, isAct ? 26 : 55, 22);
+        sp.material.opacity = 0.90 * v;
+        sp.visible = v > 0.02;
+      }
+      for (const lb of [startLabel, finLabel]) {
+        if (!lb) continue;
+        const v = calcVis(lb.position.x, lb.position.y, lb.position.z, 32, 24);
+        lb.material.opacity = 0.88 * v;
+        lb.visible = v > 0.02;
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
