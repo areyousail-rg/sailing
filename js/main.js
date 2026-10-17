@@ -26,10 +26,10 @@ const VENUES = [
   { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN' },
   { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA' },
 ];
-const defaults = { venue: 'enoshima', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '30804' };
+const defaults = { venue: 'enoshima', helm: 'human', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
-if (cfg.sailNo === '31415') cfg.sailNo = '30804';
+if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
 if (!VENUES.find((v) => v.id === cfg.venue)) cfg.venue = 'enoshima';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
@@ -73,21 +73,26 @@ function clearFleet() {
 function makeFleet() {
   clearFleet();
   const slots = [];
-  // 1分前はCP艇がラインの40〜60m手前。右舷クローズホールドで少しずつ左へ流れながら近づくので、やや右寄りに配置
-  // CP艇はライン全体(ピン側〜本部船側)に散らばって配置し、上(風上エンド)からも下からもスタートする
-  for (let i = 0; i < N_BOATS - 1; i++) slots.push({ a: -38 - (i % 3) * 9, c: -55 + i * (123 / (N_BOATS - 2)) });
+  // CP艇の号砲時ターゲット横位置(targetC)をピン側(-54)〜本部船側(+59)まで均一に割り当て、
+  // 右舷タックで左(-c)へ進む分だけ1分前の初期位置(c)を風上(右/+c)側へオフセットして配置する
+  for (let i = 0; i < N_BOATS - 1; i++) {
+    const targetC = -54 + i * (113 / (N_BOATS - 2)); // -54 .. +59 (本部船 c=65 のすぐ内側まで均一)
+    const a0 = -32 - (i % 3) * 8;
+    const c0 = targetC + Math.abs(a0) * 0.78;
+    slots.push({ a: a0, c: c0, targetC });
+  }
   // 自艇は本部船(c=LINE_HALF)のやや右後方からスタート
-  const pslot = { a: -95, c: LINE_HALF + 15 };
+  const pslot = { a: -95, c: LINE_HALF + 15, targetC: LINE_HALF - 10 };
   for (let i = slots.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0;[slots[i], slots[j]] = [slots[j], slots[i]]; }
   const used = new Set([cfg.sailNo]);
   for (let k = 0; k < N_BOATS; k++) {
     const isP = k === 0;
     let no; do { no = String(1000 + ((rng() * 30999) | 0)); } while (used.has(no)); used.add(no);
     const color = new THREE.Color().setHSL((k * 0.618) % 1, 0.65, 0.5).getHex();
-    const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : 1.04 + rng() * 0.05 });
     const s = isP ? pslot : slots.pop();
+    const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : 1.04 + rng() * 0.05, startTargetC: s.targetC });
     const p = toWorld(s.a + lineA(s.c), s.c);
-    b.place(p.x, p.z, W0 - 0.82 + (rng() - 0.5) * 0.05);
+    b.place(p.x, p.z, W0 - 0.75 + (rng() - 0.5) * 0.05);
     b.v = 0.4; b.sheet = sheetOpt(b.twa);
     boats.push(b);
     let helm, crew;
@@ -424,6 +429,7 @@ function loop() {
   
   if (state.phase === 'race' && player) {
     world.setLine(state.t >= 0 ? 'finish' : 'start', player.finished ? 0 : player.leg === 6 ? 1 : state.t >= 0 ? 0.15 : 0);
+    if (world.setTargetMark) world.setTargetMark(player.leg, state.t, player.finished);
   }
   
   if (state.phase === 'race' && player) {
@@ -564,7 +570,7 @@ function initMenu() {
     el.oninput = () => { cfg[key] = el.value; saveCfg(); updatePreview(); };
   }
   const sn = $('sailNo'); sn.value = cfg.sailNo;
-  sn.oninput = () => { cfg.sailNo = sn.value.replace(/\D/g, '').slice(0, 5) || '30804'; saveCfg(); };
+  sn.oninput = () => { cfg.sailNo = sn.value.replace(/\D/g, '').slice(0, 5) || '31804'; saveCfg(); };
   $('startBtn').onclick = startRace;
   $('againBtn').onclick = () => { $('result').classList.add('hidden'); $('hud').classList.add('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; makeFleet(); };
   initPreview();
