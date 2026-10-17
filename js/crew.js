@@ -76,132 +76,153 @@ function buildHuman(g, style, jacket, isFemale = false) {
   const lipColor = isFemale ? 0xd9777f : new THREE.Color(skin).multiplyScalar(0.82).getHex();
   const lip = smat(lipColor, 0.42), hairM = smat(hairC, 0.85);
   const eyeW = smat(0xf8fafc, 0.3), iris = smat(0x291d12, 0.2);
+  const frameM = smat(0x111318, 0.3, 0.2), lensM = smat(0x0f172a, 0.08, 0.78);
 
-  const shScale = isFemale ? 0.89 : 1.0;
-  // 1) 骨盤・体幹・ラッシュガード(自然な人体の厚みと肩〜腰のテーパー)
-  ell(g, suit, 0.142 * (isFemale ? 0.96 : 1), 0.095, 0.108, 0, 0.075, 0.0);
-  limb(g, suit, 0.108 * shScale, [0, 0.10, 0.005], [0, 0.28, 0.0], 0.78);
-  limb(g, top_, 0.120 * shScale, [0, 0.25, 0.0], [0, 0.54, 0.0], 0.74);
-  ell(g, top_, 0.185 * shScale, 0.128, 0.102, 0, 0.53, 0.005); // 胸郭・肩ライン
+  const shScale = isFemale ? 0.88 : 1.0;
+
+  // 1) 骨盤・下半身 (サイドデッキに座り、太ももが船内へ伸びて膝から下がコクピット床へ降りるリアルなヨット座位姿勢)
+  ell(g, suit, 0.138 * (isFemale ? 0.96 : 1), 0.088, 0.106, 0, 0.055, 0.01);
   for (const s of [-1, 1]) {
-    const tr = ell(g, top_, 0.076 * shScale, 0.040, 0.066, s * 0.092 * shScale, 0.622, 0.008);
-    tr.rotation.z = s * 0.32;
+    const legS = isFemale ? 0.93 : 1.0;
+    const hip = [s * 0.086 * shScale, 0.055, 0.01];
+    const midThigh = [s * 0.095 * shScale, 0.052, -0.15];
+    const knee = [s * 0.100 * shScale, 0.042, -0.30];
+    const midCalf = [s * 0.094 * shScale, -0.085, -0.355];
+    const ank = [s * 0.088 * shScale, -0.210, -0.395];
+    // 太もも (サイドデッキ上からコーミング縁へ)
+    limb(g, suit, 0.072 * legS, hip, midThigh, 0.94);
+    limb(g, suit, 0.060 * legS, midThigh, knee, 0.94);
+    // 膝関節 & ハイキングニーパッド
+    ell(g, pad, 0.055 * legS, 0.054 * legS, 0.060 * legS, knee[0], knee[1] + 0.008, knee[2] - 0.010);
+    // すね・ふくらはぎ (膝からコクピット内へ下向きに曲がる)
+    limb(g, suit, 0.052 * legS, knee, midCalf, 0.94);
+    limb(g, suit, 0.041 * legS, midCalf, ank, 0.94);
+    // ディンギーブーツ (コクピット内のハイクアウトストラップ下に足先を入れる形)
+    limb(g, boot, 0.044 * legS, [ank[0], ank[1] + 0.035, ank[2]], [ank[0], ank[1] - 0.020, ank[2] - 0.095]);
+    const so = new THREE.Mesh(new THREE.BoxGeometry(0.080 * legS, 0.015, 0.19), sole);
+    so.position.set(ank[0], ank[1] - 0.036, ank[2] - 0.038);
+    so.rotation.x = 0.08;
+    g.add(so);
   }
 
-  // 2) レーシングPFD(ディンギー用スリムライフジャケット: Zhik/Musto風のフラットな立体パネル構造)
-  const pw = 0.285 * shScale;
-  const pfdFront = new THREE.Mesh(new THREE.BoxGeometry(pw, 0.255, 0.042), pfd);
-  pfdFront.position.set(0, 0.455, -0.090); pfdFront.rotation.x = 0.05; g.add(pfdFront);
-  const pfdBack = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.005, 0.265, 0.038), pfd);
-  pfdBack.position.set(0, 0.465, 0.093); pfdBack.rotation.x = -0.04; g.add(pfdBack);
-  // PFDサイドネオプレーンパネル & 胸部ポケット・アクセントライン
-  for (const s of [-1, 1]) {
-    const sideP = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.215, 0.186), pfdSub);
-    sideP.position.set(s * 0.140 * shScale, 0.44, 0.0); g.add(sideP);
-    // ショルダーストラップ
-    const shStrap = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.07, 0.186), pfd);
-    shStrap.position.set(s * 0.102 * shScale, 0.616, 0.0); g.add(shStrap);
-    // サイド調整ベルト
-    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.028, 0.04), smat(0x94a3b8, 0.35, 0.6));
-    buckle.position.set(s * 0.155 * shScale, 0.39, -0.02); g.add(buckle);
+  // 2) 上半身グループ (腰を軸にハイクアウトで外へ反り、タック時はブームの下をくぐる)
+  const upper = new THREE.Group();
+  upper.position.set(0, 0.08, 0.01);
+  g.add(upper);
+  g.userData.upper = upper;
+
+  // 腰〜腹〜胸郭〜肩の自然な人体ライン
+  limb(upper, suit, 0.104 * shScale, [0, 0.01, -0.005], [0, 0.19, -0.01], 0.76);
+  limb(upper, top_, 0.118 * shScale, [0, 0.16, -0.01], [0, 0.45, -0.005], 0.72);
+  ell(upper, top_, 0.178 * shScale, 0.122, 0.098, 0, 0.44, -0.005); // 胸郭・肩ライン
+  if (isFemale) {
+    ell(upper, top_, 0.112, 0.068, 0.072, 0, 0.39, -0.042);
   }
-  // フロントポケット & カラーアクセント帯 + 反射パイピング
-  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.175 * shScale, 0.108, 0.016), pfdSub);
-  pocket.position.set(0, 0.42, -0.112); pocket.rotation.x = 0.05; g.add(pocket);
-  const accBand = new THREE.Mesh(new THREE.BoxGeometry(pw - 0.015, 0.032, 0.014), accent);
-  accBand.position.set(0, 0.54, -0.110); accBand.rotation.x = 0.05; g.add(accBand);
-  const backBand = new THREE.Mesh(new THREE.BoxGeometry(pw - 0.02, 0.032, 0.012), accent);
-  backBand.position.set(0, 0.55, 0.110); backBand.rotation.x = -0.04; g.add(backBand);
-  const waistBelt = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.01, 0.024, 0.200), smat(0x111318, 0.9));
-  waistBelt.position.set(0, 0.355, 0.0); g.add(waistBelt);
-
-  // 3) 首・頭部・自然な顔立ち・スポーツサングラス・キャップ
-  limb(g, skinM, isFemale ? 0.037 : 0.042, [0, 0.61, 0.005], [0, 0.725, -0.006], 0.92);
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.048 * shScale, 0.054 * shScale, 0.032, 18), top_);
-  collar.position.set(0, 0.642, 0.003); g.add(collar);
-
-  const head = new THREE.Group(); head.position.set(0, 0.795, -0.012); g.add(head);
-  // 滑らかな頭蓋〜輪郭・顎ライン
-  ell(head, skinM, isFemale ? 0.073 : 0.076, 0.092, 0.086, 0, 0.012, 0.002);
-  ell(head, skinM, isFemale ? 0.059 : 0.064, 0.056, 0.070, 0, -0.036, -0.018);
-  ell(head, skinM, isFemale ? 0.031 : 0.036, 0.026, 0.040, 0, -0.067, -0.042); // 自然な顎先
-  // 鼻筋・唇・耳
-  limb(head, skinM, 0.0095, [0, 0.010, -0.079], [0, -0.023, -0.092], 0.85);
-  ell(head, skinM, 0.013, 0.0095, 0.011, 0, -0.026, -0.089);
-  ell(head, lip, 0.019, 0.0055, 0.008, 0, -0.049, -0.079);
   for (const s of [-1, 1]) {
-    const ear = ell(head, skinM, 0.011, 0.024, 0.016, s * (isFemale ? 0.073 : 0.076), -0.006, 0.002);
+    const tr = ell(upper, top_, 0.072 * shScale, 0.038, 0.062, s * 0.090 * shScale, 0.535, 0.0);
+    tr.rotation.z = s * 0.30;
+  }
+
+  // 3) レーシングPFD (身体に沿う丸みのあるスリムライフジャケット)
+  const pw = 0.268 * shScale;
+  ell(upper, pfd, pw * 0.52, 0.135, 0.098, 0, 0.365, -0.012);
+  const pfdFront = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.88, 0.23, 0.034), pfd);
+  pfdFront.position.set(0, 0.365, -0.086); pfdFront.rotation.x = 0.04; upper.add(pfdFront);
+  const pfdBack = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.90, 0.24, 0.032), pfd);
+  pfdBack.position.set(0, 0.375, 0.078); pfdBack.rotation.x = -0.04; upper.add(pfdBack);
+  for (const s of [-1, 1]) {
+    const sideP = new THREE.Mesh(new THREE.BoxGeometry(0.030, 0.195, 0.165), pfdSub);
+    sideP.position.set(s * 0.130 * shScale, 0.355, -0.004); upper.add(sideP);
+    const shStrap = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.065, 0.168), pfd);
+    shStrap.position.set(s * 0.096 * shScale, 0.525, -0.004); upper.add(shStrap);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.025, 0.036), smat(0x94a3b8, 0.35, 0.6));
+    buckle.position.set(s * 0.144 * shScale, 0.305, -0.02); upper.add(buckle);
+  }
+  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.16 * shScale, 0.098, 0.014), pfdSub);
+  pocket.position.set(0, 0.335, -0.105); pocket.rotation.x = 0.04; upper.add(pocket);
+  const accBand = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.86, 0.028, 0.012), accent);
+  accBand.position.set(0, 0.445, -0.103); accBand.rotation.x = 0.04; upper.add(accBand);
+  const backBand = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.86, 0.028, 0.010), accent);
+  backBand.position.set(0, 0.455, 0.094); backBand.rotation.x = -0.04; upper.add(backBand);
+  const waistBelt = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.94, 0.022, 0.178), smat(0x111318, 0.9));
+  waistBelt.position.set(0, 0.270, -0.004); upper.add(waistBelt);
+
+  // 4) 腕・前腕・グローブ (シートやティラーを自然に構える非対称のリアルな腕角度)
+  for (const s of [-1, 1]) {
+    const sh = [s * 0.182 * shScale, 0.475, -0.005];
+    const el = [s * 0.202 * shScale, 0.295, -0.085];
+    const wr = [s * 0.115, 0.255 + (s > 0 ? 0.02 : 0), -0.255];
+    const ha = [s * 0.095, 0.250 + (s > 0 ? 0.02 : 0), -0.295];
+    ell(upper, top_, 0.052 * shScale, 0.056 * shScale, 0.052 * shScale, sh[0], sh[1], sh[2]);
+    limb(upper, top_, 0.042 * shScale, sh, el);
+    ell(upper, skinM, 0.036 * shScale, 0.036 * shScale, 0.036 * shScale, el[0], el[1], el[2]);
+    limb(upper, skinM, 0.032 * shScale, el, wr);
+    if (s === -1) {
+      const watch = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.016, 12), frameM);
+      watch.position.set(wr[0], wr[1], wr[2] + 0.018); watch.rotation.x = Math.PI / 2; upper.add(watch);
+    }
+    ell(upper, glove, 0.027, 0.021, 0.036, ha[0], ha[1], ha[2]);
+    ell(upper, gloveGrip, 0.025, 0.016, 0.032, ha[0], ha[1] - 0.007, ha[2] - 0.004);
+    for (let f = 0; f < 4; f++) {
+      limb(upper, glove, 0.0075, [ha[0] + (f - 1.5) * 0.011, ha[1] + 0.005, ha[2] - 0.026], [ha[0] + (f - 1.5) * 0.010, ha[1] - 0.014, ha[2] - 0.040]);
+    }
+    limb(upper, glove, 0.0085, [ha[0] - s * 0.021, ha[1] + 0.004, ha[2] - 0.006], [ha[0] - s * 0.014, ha[1] + 0.010, ha[2] - 0.035]);
+  }
+
+  // 5) 首・頭部 (進行方向・セール側へ自然に顔を向けられるよう独立グループ化)
+  limb(upper, skinM, isFemale ? 0.036 : 0.041, [0, 0.525, -0.005], [0, 0.640, -0.014], 0.92);
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.046 * shScale, 0.052 * shScale, 0.030, 18), top_);
+  collar.position.set(0, 0.558, -0.006); upper.add(collar);
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.710, -0.018);
+  upper.add(head);
+  g.userData.head = head;
+
+  ell(head, skinM, isFemale ? 0.072 : 0.075, 0.090, 0.084, 0, 0.012, 0.002);
+  ell(head, skinM, isFemale ? 0.058 : 0.063, 0.055, 0.068, 0, -0.035, -0.018);
+  ell(head, skinM, isFemale ? 0.030 : 0.035, 0.025, 0.038, 0, -0.065, -0.040);
+  limb(head, skinM, 0.009, [0, 0.010, -0.077], [0, -0.022, -0.090], 0.85);
+  ell(head, skinM, 0.012, 0.009, 0.010, 0, -0.025, -0.087);
+  ell(head, lip, 0.018, 0.0055, 0.008, 0, -0.048, -0.077);
+  for (const s of [-1, 1]) {
+    const ear = ell(head, skinM, 0.011, 0.023, 0.015, s * (isFemale ? 0.072 : 0.075), -0.006, 0.002);
     ear.rotation.y = s * 0.25;
-    ell(head, eyeW, 0.012, 0.007, 0.006, s * 0.027, 0.012, -0.077);
-    ell(head, iris, 0.006, 0.006, 0.004, s * 0.027, 0.012, -0.081);
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.023, 0.0038, 0.006), hairM);
-    brow.position.set(s * 0.027, 0.024, -0.079); brow.rotation.z = -s * 0.06; head.add(brow);
+    ell(head, eyeW, 0.012, 0.007, 0.006, s * 0.026, 0.012, -0.075);
+    ell(head, iris, 0.006, 0.006, 0.004, s * 0.026, 0.012, -0.079);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.0036, 0.006), hairM);
+    brow.position.set(s * 0.026, 0.024, -0.077); brow.rotation.z = -s * 0.06; head.add(brow);
   }
-  // 後ろ髪・襟足・もみあげ (女性はポニーテールとサイドの髪を追加)
-  ell(head, hairM, 0.079, 0.068, 0.086, 0, 0.014, 0.014);
-  ell(head, hairM, 0.064, 0.042, 0.045, 0, -0.032, 0.052);
+  ell(head, hairM, 0.077, 0.066, 0.084, 0, 0.014, 0.014);
+  ell(head, hairM, 0.062, 0.040, 0.044, 0, -0.030, 0.050);
   for (const s of [-1, 1]) {
-    ell(head, hairM, 0.014, isFemale ? 0.052 : 0.032, 0.028, s * 0.070, isFemale ? -0.008 : 0.008, -0.016);
+    ell(head, hairM, 0.014, isFemale ? 0.050 : 0.030, 0.026, s * 0.068, isFemale ? -0.008 : 0.008, -0.015);
   }
   if (isFemale) {
-    // キャップ後ろから出るポニーテール
-    ell(head, smat(0xec4899, 0.5), 0.018, 0.018, 0.016, 0, -0.005, 0.086); // ヘアゴム
-    limb(head, hairM, 0.026, [0, -0.008, 0.092], [0, -0.075, 0.135], 0.85);
-    limb(head, hairM, 0.019, [0, -0.070, 0.132], [0, -0.135, 0.120], 0.75);
+    ell(head, smat(0xec4899, 0.5), 0.017, 0.017, 0.015, 0, -0.005, 0.084);
+    limb(head, hairM, 0.025, [0, -0.008, 0.090], [0, -0.072, 0.132], 0.85);
+    limb(head, hairM, 0.018, [0, -0.068, 0.128], [0, -0.130, 0.115], 0.75);
   }
 
-  // スポーティな偏光サングラス(左右独立カーブレンズ＋ノーズブリッジ＋フレーム)
-  const frameM = smat(0x111318, 0.3, 0.2), lensM = smat(0x0f172a, 0.08, 0.78);
-  const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.124, 0.005, 0.012), frameM);
-  topBar.position.set(0, 0.024, -0.080); head.add(topBar);
+  // 偏光スポーツサングラス
+  const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.120, 0.005, 0.011), frameM);
+  topBar.position.set(0, 0.024, -0.078); head.add(topBar);
   for (const s of [-1, 1]) {
-    const lns = ell(head, lensM, 0.027, 0.016, 0.010, s * 0.030, 0.011, -0.080);
+    const lns = ell(head, lensM, 0.026, 0.015, 0.010, s * 0.029, 0.011, -0.078);
     lns.rotation.y = s * 0.22; lns.rotation.z = -s * 0.05;
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.006, 0.080), frameM);
-    arm.position.set(s * 0.072, 0.016, -0.038); arm.rotation.y = s * 0.08; head.add(arm);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.006, 0.078), frameM);
+    arm.position.set(s * 0.070, 0.016, -0.036); arm.rotation.y = s * 0.08; head.add(arm);
   }
 
-  // セーリングキャップ(立体的なクラウン＋カーブしたバイザー)
+  // セーリングキャップ
   const capMat = smat(hat, 0.78);
-  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.083, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.54), capMat);
-  crown.scale.set(0.97, 0.92, 1.06); crown.position.set(0, 0.026, 0.003); crown.rotation.x = -0.06; head.add(crown);
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.067, 0.077, 0.006, 20, 1, false, -Math.PI * 0.52, Math.PI * 1.04), capMat);
+  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.081, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.54), capMat);
+  crown.scale.set(0.97, 0.92, 1.06); crown.position.set(0, 0.025, 0.003); crown.rotation.x = -0.06; head.add(crown);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.006, 20, 1, false, -Math.PI * 0.52, Math.PI * 1.04), capMat);
   brim.rotation.y = Math.PI; brim.rotation.x = -0.16; brim.scale.set(1.02, 1, 1.12);
-  brim.position.set(0, 0.034, -0.095); head.add(brim);
-  ell(head, capMat, 0.009, 0.005, 0.009, 0, 0.103, 0.008);
+  brim.position.set(0, 0.033, -0.093); head.add(brim);
+  ell(head, capMat, 0.009, 0.005, 0.009, 0, 0.100, 0.008);
 
-  // 4) 下半身(ハイキングパンツ + ニーパッド + ネオプレーンセーリングブーツ) & 腕・グローブ
-  for (const s of [-1, 1]) {
-    const hip = [s * 0.086 * shScale, 0.075, 0.0], knee = [s * 0.106, 0.26, -0.38], ank = [s * 0.102, 0.03, -0.74];
-    limb(g, suit, 0.074 * (isFemale ? 0.94 : 1), hip, [hip[0] * 0.35 + knee[0] * 0.65, hip[1] * 0.35 + knee[1] * 0.65, hip[2] * 0.35 + knee[2] * 0.65], 0.95);
-    limb(g, suit, 0.060 * (isFemale ? 0.94 : 1), hip, knee, 0.95);
-    // 膝当てパッド
-    ell(g, pad, 0.058, 0.060, 0.066, knee[0], knee[1] + 0.006, knee[2] - 0.008);
-    limb(g, suit, 0.050 * (isFemale ? 0.93 : 1), knee, [knee[0], knee[1] * 0.45 + ank[1] * 0.55, knee[2] * 0.45 + ank[2] * 0.55 + 0.015], 0.95);
-    limb(g, suit, 0.040 * (isFemale ? 0.93 : 1), knee, ank, 0.95);
-    // ディンギーブーツ(足首〜甲〜白いラバーソール)
-    limb(g, boot, 0.046, [ank[0], ank[1] + 0.04, ank[2]], [ank[0], ank[1] - 0.015, ank[2] - 0.11]);
-    const so = new THREE.Mesh(new THREE.BoxGeometry(0.084, 0.016, 0.22), sole);
-    so.position.set(ank[0], ank[1] - 0.042, ank[2] - 0.045); g.add(so);
-
-    // 腕: 肩→上腕(半袖〜七分袖ラッシュ)→前腕(日焼け肌)→手首→セーリンググローブ
-    const sh = [s * 0.192 * shScale, 0.562, 0.005], el = [s * 0.218 * shScale, 0.385, -0.12], wr = [s * 0.132, 0.395, -0.34], ha = [s * 0.112, 0.39, -0.385];
-    ell(g, top_, 0.056 * shScale, 0.060 * shScale, 0.056 * shScale, sh[0], sh[1], sh[2]);
-    limb(g, top_, 0.044 * shScale, sh, el);
-    ell(g, skinM, 0.038 * shScale, 0.038 * shScale, 0.038 * shScale, el[0], el[1], el[2]);
-    limb(g, skinM, 0.034 * shScale, el, wr);
-    if (s === -1) {
-      const watch = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.018, 12), frameM);
-      watch.position.set(wr[0], wr[1], wr[2] + 0.02); watch.rotation.x = Math.PI / 2; g.add(watch);
-    }
-    // 5本指セーリンググローブ
-    ell(g, glove, 0.029, 0.023, 0.040, ha[0], ha[1], ha[2]);
-    ell(g, gloveGrip, 0.027, 0.017, 0.035, ha[0], ha[1] - 0.008, ha[2] - 0.005);
-    for (let f = 0; f < 4; f++) {
-      limb(g, glove, 0.008, [ha[0] + (f - 1.5) * 0.012, ha[1] + 0.006, ha[2] - 0.030], [ha[0] + (f - 1.5) * 0.011, ha[1] - 0.015, ha[2] - 0.046]);
-    }
-    limb(g, glove, 0.009, [ha[0] - s * 0.023, ha[1] + 0.004, ha[2] - 0.008], [ha[0] - s * 0.015, ha[1] + 0.012, ha[2] - 0.040]);
-  }
   if (isFemale) g.scale.setScalar(0.95);
   return g;
 }
@@ -240,6 +261,7 @@ export function buildFigure(type, style = {}) {
     const band = new THREE.Mesh(cylG, mat(jacket)); band.scale.set(0.235, 0.1, 0.215); band.position.set(0, 0.31, 0); g.add(band);
   }
   const head = new THREE.Group(); head.position.set(0, 0.70, -0.01); g.add(head);
+  g.userData.head = head;
   const hs = type === 'capybara' ? [0.22, 0.2, 0.26] : [0.24, 0.21, 0.22];
   sph(head, A.body, hs[0], hs[1], hs[2], 0, 0, 0);
   // 目
@@ -250,11 +272,11 @@ export function buildFigure(type, style = {}) {
   if (type !== 'penguin') sph(head, A.nose, 0.032, 0.024, 0.026, 0, -0.04, -hs[2] - 0.005);
   sph(head, 0xff9db0, 0.04, 0.025, 0.01, -0.15, -0.03, -hs[2] + 0.06); // ほっぺ
   sph(head, 0xff9db0, 0.04, 0.025, 0.01, 0.15, -0.03, -hs[2] + 0.06);
-  // 手足
+  // 手足 (足先は船内側に収まるコンパクトな位置に)
   cap(g, A.body, 0.05, 0.14, -0.24, 0.36, -0.12, Math.PI / 2.4, 0, -0.5);
   cap(g, A.body, 0.05, 0.14, 0.24, 0.36, -0.12, Math.PI / 2.4, 0, 0.5);
-  sph(g, A.body, 0.07, 0.06, 0.12, -0.1, 0.06, -0.36);
-  sph(g, A.body, 0.07, 0.06, 0.12, 0.1, 0.06, -0.36);
+  sph(g, A.body, 0.07, 0.06, 0.10, -0.10, 0.04, -0.25);
+  sph(g, A.body, 0.07, 0.06, 0.10, 0.10, 0.04, -0.25);
   switch (type) {
     case 'cat':
       cone(head, A.body, 0.07, 0.14, -0.14, 0.2, 0, 0, 0.35); cone(head, A.body, 0.07, 0.14, 0.14, 0.2, 0, 0, -0.35);
