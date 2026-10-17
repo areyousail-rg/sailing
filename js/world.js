@@ -532,15 +532,53 @@ export function createWorld(scene) {
   };
   syncCourseObjects();
   // マークの番号ラベル
+  const markSprites = {};
   const label = (txt, key, y = 11) => {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(10,20,40,0.7)'; x.beginPath(); x.arc(64, 64, 58, 0, 7); x.fill();
+    x.fillStyle = 'rgba(10,20,40,0.75)'; x.beginPath(); x.arc(64, 64, 58, 0, 7); x.fill();
     x.strokeStyle = '#ffd23f'; x.lineWidth = 6; x.stroke();
     x.fillStyle = '#fff'; x.font = 'bold 64px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 64, 68);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
     s.scale.set(9, 9, 1); s.position.y = y; s.renderOrder = 5; markObjs[key].add(s);
+    markSprites[key] = s;
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
+
+  // ---------- 次向かうマークの目立つ3Dターゲット印 (光の柱 + 巨大下向き矢印シェブロン + 水面パルスリング + NEXTバッジ) ----------
+  const nextBeacon = new THREE.Group();
+  nextBeacon.renderOrder = 6;
+  // 水面の光る二重リング
+  const nbRingMat = new THREE.MeshBasicMaterial({ color: 0x35e0c1, side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+  const nbRing = new THREE.Mesh(new THREE.RingGeometry(5.5, 8.2, 36), nbRingMat);
+  nbRing.rotation.x = -Math.PI / 2; nbRing.position.y = 0.28; nextBeacon.add(nbRing);
+  const nbRing2 = new THREE.Mesh(new THREE.RingGeometry(10.0, 11.8, 36), new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide, transparent: true, opacity: 0.65, depthWrite: false, blending: THREE.AdditiveBlending }));
+  nbRing2.rotation.x = -Math.PI / 2; nbRing2.position.y = 0.26; nextBeacon.add(nbRing2);
+  // 空へ伸びる半透明の光の柱(遠くからでも位置が一目で分かる)
+  const nbPillarMat = new THREE.MeshBasicMaterial({ color: 0x35e0c1, transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const nbPillar = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 3.2, 48, 16, 1, true), nbPillarMat);
+  nbPillar.position.y = 24; nextBeacon.add(nbPillar);
+  // 浮遊して上下に動く黄金×シアンの巨大下向きポインター (シェブロン)
+  const nbHead = new THREE.Group();
+  const nbCone = new THREE.Mesh(new THREE.ConeGeometry(4.2, 8.5, 4), new THREE.MeshBasicMaterial({ color: 0xffd23f }));
+  nbCone.rotation.x = Math.PI; nbHead.add(nbCone);
+  const nbEdge = new THREE.Mesh(new THREE.ConeGeometry(4.6, 8.9, 4), new THREE.MeshBasicMaterial({ color: 0x35e0c1, wireframe: true }));
+  nbEdge.rotation.x = Math.PI; nbHead.add(nbEdge);
+  // 「▼ NEXT MARK」スプライト
+  const nbBadge = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 96; const x = c.getContext('2d');
+    x.fillStyle = 'rgba(6, 28, 44, 0.88)'; x.beginPath(); x.roundRect(6, 6, 244, 84, 18); x.fill();
+    x.strokeStyle = '#35e0c1'; x.lineWidth = 6; x.stroke();
+    x.fillStyle = '#ffd23f'; x.font = 'bold 42px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('▼ NEXT', 128, 48);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+    s.scale.set(16, 6, 1); s.position.y = 8.5; s.renderOrder = 8; return s;
+  })();
+  nbHead.add(nbBadge);
+  nbHead.position.y = 22;
+  nextBeacon.add(nbHead);
+  scene.add(nextBeacon);
+
+  let activeMarkKeys = ['m1'];
 
   // ---------- 航跡 ----------
   // 艇尾直後の薄い乱流帯(中央)と、左右に広がる細いケルビン波(八の字)。小型ディンギーなので短く淡く消える
@@ -608,6 +646,23 @@ export function createWorld(scene) {
       waterMat.uniforms.uW0.value = W0;
       syncCourseObjects();
     },
+    setTargetMark(legIndex, wt, finished) {
+      if (finished) { nextBeacon.visible = false; return; }
+      nextBeacon.visible = true;
+      const legMap = [
+        { a: MARKS.m1.a, c: MARKS.m1.c, keys: ['m1'] },
+        { a: MARKS.m1a.a, c: MARKS.m1a.c, keys: ['m1a'] },
+        { a: 40, c: 0, keys: ['gL', 'gR'] },
+        { a: MARKS.m1.a, c: MARKS.m1.c, keys: ['m1'] },
+        { a: MARKS.m2.a, c: MARKS.m2.c, keys: ['m2'] },
+        { a: MARKS.m3.a, c: MARKS.m3.c, keys: ['m3'] },
+        { a: (MARKS.fcom.a + MARKS.fm.a) / 2, c: (MARKS.fcom.c + MARKS.fm.c) / 2, keys: [] },
+      ];
+      const info = legMap[Math.min(Math.max(0, legIndex || 0), legMap.length - 1)];
+      const p = toWorld(info.a, info.c);
+      nextBeacon.position.set(p.x, 0, p.z);
+      activeMarkKeys = info.keys;
+    },
     // mode: 'start' | 'finish'  emph: 0..1 (\u30d7\u30ec\u30a4\u30e4\u30fc\u304c\u6700\u7d42\u30ec\u30b0\u3067\u5f37\u8abf)
     setLine(mode, emph) {
       finCurtainMat.opacity = 0.25 + 0.3 * emph + (emph > 0.5 ? 0.12 * Math.sin(performance.now() / 250) : 0);
@@ -618,6 +673,22 @@ export function createWorld(scene) {
       sea.position.set(camera.position.x, 0, camera.position.z);
       for (const o of bob) { o.position.y = 0.12 * Math.sin(t * 1.4 + o.position.x) + 0.05; o.rotation.z = 0.05 * Math.sin(t * 1.1 + o.position.z); }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
+      // 次向かうマークの3Dターゲット印アニメーション (距離に応じて少し拡大し遠くからでも見やすくする)
+      if (nextBeacon.visible) {
+        const dist = Math.hypot(camera.position.x - nextBeacon.position.x, camera.position.z - nextBeacon.position.z);
+        const sc = clampN(dist / 120, 1.0, 2.8);
+        nbHead.position.y = 21 + 3.2 * Math.sin(t * 3.2);
+        nbHead.rotation.y = t * 1.8;
+        nbHead.scale.setScalar(sc);
+        const pulse = 1 + 0.22 * Math.sin(t * 4.0);
+        nbRing.scale.setScalar(pulse);
+        nbRing2.scale.setScalar(1.15 - 0.15 * Math.sin(t * 4.0));
+      }
+      for (const [k, sp] of Object.entries(markSprites)) {
+        const isAct = activeMarkKeys.includes(k);
+        const s = isAct ? 13.5 + 1.8 * Math.sin(t * 4.5) : 8.5;
+        sp.scale.set(s, s, 1);
+      }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
       surfMat.opacity = 0.62 + 0.22 * Math.sin(t * 0.7 + 1.2);
@@ -663,7 +734,7 @@ function buildHakkeijima(root, surfStrip) {
   });
   root.add(new THREE.Mesh(islGeo, new THREE.MeshLambertMaterial({ vertexColors: true })));
 
-  // 1) アクアミュージアム (島の北側・白いピラミッド型の屋根を持つ大水族館)
+  // 1) アクアミュージアム (島の北側・白いピラミッド型の屋根を持つ大水族館) & その手前(東側海面)の防波堤(堤防)
   const aqx = H_ISLAND.x + 40, aqz = H_ISLAND.z - 190;
   const aq = new THREE.Group();
   const aqBase = new THREE.Mesh(new THREE.BoxGeometry(115, 18, 95), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
@@ -674,6 +745,34 @@ function buildHakkeijima(root, surfStrip) {
   aqSubRoof.rotation.y = Math.PI / 4; aqSubRoof.position.set(38, 27, 25); aq.add(aqSubRoof);
   aq.position.set(aqx, Math.max(3.5, hakkeiIslandH(aqx, aqz) - 0.5), aqz);
   root.add(aq);
+
+  // アクアミュージアム手前(東・北東側海面)に突き出るコンクリートの堤防(防波堤)と桟橋棟
+  const aqBrkGroup = new THREE.Group();
+  const aqBrkMat = new THREE.MeshLambertMaterial({ color: 0xcbd5e1 });
+  const aqBrkTopMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
+  // 北側から東へ伸びる堤防と、水族館正面を囲むように南へ折れ曲がる外堤防・内桟橋
+  for (const [bx, bz, bw, bd, rotY] of [
+    [H_ISLAND.x + 310, aqz - 95, 230, 14, 0.08],   // 北側〜沖へ突き出る堤防
+    [H_ISLAND.x + 425, aqz + 5, 15, 215, -0.10],   // 水族館の手前正面(東側沖)を南北に走る堤防
+    [H_ISLAND.x + 355, aqz + 115, 140, 14, 0.25],  // 南端の折れ曲がり堤防
+    [H_ISLAND.x + 255, aqz + 90, 145, 16, 0.0]     // 水族館南東側から伸びる桟橋護岸
+  ]) {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(bw, 4.6, bd), aqBrkMat);
+    wall.position.set(bx, 1.4, bz); wall.rotation.y = rotY;
+    aqBrkGroup.add(wall);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(bw - 1, 0.8, bd + 1.2), aqBrkTopMat);
+    cap.position.set(bx, 3.8, bz); cap.rotation.y = rotY;
+    aqBrkGroup.add(cap);
+  }
+  // 堤防先端の赤・白灯台標識と内側の白い2階建て桟橋ハウス(うみファーム/客船ターミナル棟)
+  const lhPole = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.4, 8.5, 10), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+  lhPole.position.set(H_ISLAND.x + 415, 7.5, aqz - 98); aqBrkGroup.add(lhPole);
+  const pierBldg = new THREE.Mesh(new THREE.BoxGeometry(34, 8.5, 16), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+  pierBldg.position.set(H_ISLAND.x + 275, 6.2, aqz + 90); aqBrkGroup.add(pierBldg);
+  const pierRoof = new THREE.Mesh(new THREE.ConeGeometry(22, 4.2, 4), new THREE.MeshLambertMaterial({ color: 0x94a3b8 }));
+  pierRoof.rotation.y = Math.PI / 4; pierRoof.scale.set(1.2, 1, 0.7);
+  pierRoof.position.set(H_ISLAND.x + 275, 12.4, aqz + 90); aqBrkGroup.add(pierRoof);
+  root.add(aqBrkGroup);
 
   // 2) フリーフォール / ブルーフォール (アクアミュージアムの西側＝奥側にある高さ107mの垂直タワー)
   const bfx = H_ISLAND.x - 175, bfz = H_ISLAND.z - 210;
@@ -735,12 +834,14 @@ function buildHakkeijima(root, surfStrip) {
   const hotelRoof = new THREE.Mesh(new THREE.BoxGeometry(45, 3, 98), new THREE.MeshLambertMaterial({ color: 0xb45309 }));
   hotelRoof.position.set(htx, 34, htz); root.add(hotelRoof);
 
-  // 八景島マリーナ (ホテル棟のすぐ手前＝コース側)
+  // 八景島マリーナ (ホテル棟のすぐ手前＝コース側、屋根は赤ではなく白〜明るいシルバーグレーのクラブハウス)
   const mhx = H_ISLAND.x + 290, mhz = H_ISLAND.z + 310;
   const conc = new THREE.MeshLambertMaterial({ color: 0xcbd5e1 });
   const yard = new THREE.Mesh(new THREE.BoxGeometry(150, 3.2, 230), conc); yard.position.set(mhx, 0.6, mhz); root.add(yard);
-  const club = new THREE.Mesh(new THREE.BoxGeometry(36, 9, 24), new THREE.MeshLambertMaterial({ color: 0xf8fafc })); club.position.set(mhx - 30, 6.5, mhz - 50); root.add(club);
-  const clubRoof = new THREE.Mesh(new THREE.ConeGeometry(24, 5, 4), new THREE.MeshLambertMaterial({ color: 0xc2410c })); clubRoof.rotation.y = Math.PI / 4; clubRoof.position.set(mhx - 30, 13.5, mhz - 50); root.add(clubRoof);
+  const club = new THREE.Mesh(new THREE.BoxGeometry(42, 9.5, 26), new THREE.MeshLambertMaterial({ color: 0xf8fafc })); club.position.set(mhx - 28, 6.8, mhz - 50); root.add(club);
+  const clubRotunda = new THREE.Mesh(new THREE.CylinderGeometry(9.5, 9.5, 10.5, 16), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 })); clubRotunda.position.set(mhx - 7, 7.2, mhz - 50); root.add(clubRotunda);
+  const clubRoof = new THREE.Mesh(new THREE.ConeGeometry(26, 4.5, 4), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 })); clubRoof.rotation.y = Math.PI / 4; clubRoof.scale.set(1.15, 1, 0.8); clubRoof.position.set(mhx - 28, 13.8, mhz - 50); root.add(clubRoof);
+  const clubRotRoof = new THREE.Mesh(new THREE.ConeGeometry(10.5, 3.2, 16), new THREE.MeshLambertMaterial({ color: 0x94a3b8 })); clubRotRoof.position.set(mhx - 7, 14.0, mhz - 50); root.add(clubRotRoof);
   const brk = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
   for (const [x, z, w, d] of [[mhx + 240, mhz, 10, 250], [mhx + 150, mhz - 125, 190, 10], [mhx + 130, mhz + 125, 150, 10]]) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, 4.2, d), brk); b.position.set(x, 1.0, z); root.add(b);
@@ -769,29 +870,38 @@ function buildHakkeijima(root, surfStrip) {
   }
   q.identity(); hTrees.count = tn; root.add(hTrees);
 
-  // 6) 八景大橋 (金沢八景大橋) & マリンゲート橋 (ヘリポートと八景島の奥側＝西側水道に架かる青いアーチ橋と高架橋)
+  // 6) 八景島大橋 & シーサイドライン高架橋 (福浦・海の公園側から水道を大きく跨いで八景島へ伸びる非常に長い橋と中央主塔)
   const ohGroup = new THREE.Group();
-  const ohX = H_ISLAND.x - 410, ohZ = H_ISLAND.z - 390; // ヘリポート奥側〜八景島北西を結ぶ
-  const ohDeck = new THREE.Mesh(new THREE.BoxGeometry(18, 3.2, 460), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
-  ohDeck.position.set(ohX, 14, ohZ); ohDeck.rotation.y = 0.28; ohGroup.add(ohDeck);
-  // 八景大橋の中央アーチ (青い鋼製ローゼ橋アーチ)
-  for (const s of [-6.5, 6.5]) {
-    const archRib = new THREE.Mesh(new THREE.TorusGeometry(68, 2.0, 8, 28, Math.PI), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
-    archRib.rotation.y = Math.PI / 2 + 0.28;
-    archRib.position.set(ohX + s * Math.cos(0.28), 14.5, ohZ - s * Math.sin(0.28));
+  const ohX = H_ISLAND.x - 420, ohZ = H_ISLAND.z - 480;
+  const ohRot = 0.22;
+  // 長大な連続高架橋デッキ (全長約1,150m)
+  const ohDeck = new THREE.Mesh(new THREE.BoxGeometry(20, 3.6, 1150), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  ohDeck.position.set(ohX, 15.5, ohZ); ohDeck.rotation.y = ohRot; ohGroup.add(ohDeck);
+  // 特徴的な中央の白い主塔 (斜張橋・エクストラドーズド風の白い1本主塔とケーブル、および青いアーチ桁)
+  const pylon = new THREE.Mesh(new THREE.BoxGeometry(5.5, 56, 7.5), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+  pylon.position.set(ohX, 34, ohZ); pylon.rotation.y = ohRot; ohGroup.add(pylon);
+  for (const s of [-7.5, 7.5]) {
+    const archRib = new THREE.Mesh(new THREE.TorusGeometry(95, 2.2, 8, 32, Math.PI), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+    archRib.rotation.y = Math.PI / 2 + ohRot;
+    archRib.scale.set(1.2, 0.55, 1);
+    archRib.position.set(ohX + s * Math.cos(ohRot), 16.0, ohZ - s * Math.sin(ohRot));
     ohGroup.add(archRib);
   }
-  // 橋脚
-  for (const dz of [-140, -65, 65, 140]) {
-    const pier = new THREE.Mesh(new THREE.BoxGeometry(20, 16, 6), new THREE.MeshLambertMaterial({ color: 0x94a3b8 }));
-    pier.position.set(ohX + dz * Math.sin(0.28), 6, ohZ + dz * Math.cos(0.28));
-    pier.rotation.y = 0.28; ohGroup.add(pier);
+  // 長い橋を支える多数の橋脚列
+  for (let dz = -520; dz <= 520; dz += 80) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(22, 18, 6.5), new THREE.MeshLambertMaterial({ color: 0x94a3b8 }));
+    pier.position.set(ohX + dz * Math.sin(ohRot), 7, ohZ + dz * Math.cos(ohRot));
+    pier.rotation.y = ohRot; ohGroup.add(pier);
   }
-  // マリンゲート橋 (八景島西側〜海の公園側)
-  const brMesh = new THREE.Mesh(new THREE.BoxGeometry(460, 2.5, 11), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
-  brMesh.position.set(H_ISLAND.x - 520, 9.5, H_ISLAND.z - 160); ohGroup.add(brMesh);
-  const mgArch = new THREE.Mesh(new THREE.TorusGeometry(32, 1.6, 8, 24, Math.PI), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
-  mgArch.position.set(H_ISLAND.x - 430, 10.5, H_ISLAND.z - 160); ohGroup.add(mgArch);
+  // マリンゲート橋 (八景島西側〜海の公園側を結ぶ長い連絡橋)
+  const brMesh = new THREE.Mesh(new THREE.BoxGeometry(780, 3.0, 13), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+  brMesh.position.set(H_ISLAND.x - 660, 12.0, H_ISLAND.z - 160); ohGroup.add(brMesh);
+  for (let dx = -340; dx <= 340; dx += 85) {
+    const mp = new THREE.Mesh(new THREE.BoxGeometry(6, 14, 15), new THREE.MeshLambertMaterial({ color: 0x94a3b8 }));
+    mp.position.set(H_ISLAND.x - 660 + dx, 5.5, H_ISLAND.z - 160); ohGroup.add(mp);
+  }
+  const mgArch = new THREE.Mesh(new THREE.TorusGeometry(48, 1.8, 8, 24, Math.PI), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
+  mgArch.position.set(H_ISLAND.x - 510, 13.0, H_ISLAND.z - 160); ohGroup.add(mgArch);
   root.add(ohGroup);
 
   // 7) 八景島の北側: 福浦エリア・セーリングガイド記載の名物ランドマーク群と海岸線の並木
@@ -1247,11 +1357,10 @@ function buildHakkeijima(root, surfStrip) {
   hBoxes.count = hbn; metro.add(hBoxes);
   root.add(metro);
 
-  // 遠景陸地: 磯子・根岸の緑の丘陵(クレーン奥西側)、東京側奥の陸地(北〜北東)、千葉・房総半島(東の遠方)、観音崎方面(南東)
+  // 遠景陸地: 磯子・根岸の緑の丘陵(クレーン奥西側)、東京側奥の陸地(北〜北東)、千葉・房総半島(東〜南東の遠方にうっすら見える稜線)
   distantLand(root, -2800, -6500, 1400, 2800, 82, 0.08);    // クレーン奥の穏やかな緑の丘陵
   distantLand(root, 2200, -21000, 8500, 6500, 65, 0.15);   // 東京側奥の陸地
-  distantLand(root, 22500, -1000, 3600, 22000, 110, 0.04); // 千葉・房総側 (遠方にうっすら見える低い稜線)
-  distantLand(root, 1800, 5800, 2600, 2200, 135, -0.3);    // 観音崎・横須賀南東の緑の岬
+  distantLand(root, 21500, 2500, 3800, 26000, 120, 0.05);  // 千葉・房総半島 (東〜南東の遠方にうっすら見える稜線)
 }
 
 
