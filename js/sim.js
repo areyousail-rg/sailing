@@ -87,7 +87,7 @@ export class Boat {
     this.steer = 0; this.sheet = 1; this.throttle = 1;
     this.tack = 1; this.tacking = false; this.tackTimer = 0;
     this.rel = 0; this.twa = 0; this.windFrom = W0; this.windF = 1;
-    this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null;
+    this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null; this.penaltyUpgraded = null;
     this.leg = 0; this.ocs = false; this.finished = false; this.finishTime = 0;
     this.a = undefined; this.c = 0; this.visit = null;
     this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.turned = 0;
@@ -120,8 +120,23 @@ export class Boat {
     this.pole = on; return true;
   }
   startPenalty(rule) {
-    if (this.penalty || this.dsq) return false;
-    this.penalty = { turned: 0, rule, timer: 20.0, clearWater: true };
+    if (this.dsq) return false;
+    const isTwoTurns = rule !== 31; // RRS 44.1: 第2章(ルール10〜18)は2回転(720°)、ルール31(マーク接触)は1回転(360°)
+    if (this.penalty) {
+      if (this.penalty.reqDeg === 360) {
+        this.penalty.reqDeg = 720;
+        this.penalty.reqRad = 4 * Math.PI * 0.96;
+        this.penalty.rule = rule;
+        this.penalty.timer = Math.max(this.penalty.timer, 25.0);
+        this.penalty.upgraded = true;
+        return true;
+      }
+      return false;
+    }
+    const reqDeg = isTwoTurns ? 720 : 360;
+    const reqRad = (isTwoTurns ? 4 : 2) * Math.PI * 0.96;
+    const timer = isTwoTurns ? 25.0 : 20.0;
+    this.penalty = { turned: 0, rule, reqDeg, reqRad, timer, clearWater: true, upgraded: false };
     this.pole = false;
     return true;
   }
@@ -169,15 +184,25 @@ export class Boat {
       const activelyTurning = Math.abs(steer) > 0.45 || this.maneuver !== null;
       const decayRate = !clearWater ? 0.25 : activelyTurning ? 0.2 : 1.0;
       this.penalty.timer = Math.max(0, this.penalty.timer - dt * decayRate);
-      if (this.penalty.turned >= 2 * Math.PI * 0.98) {
+      if (this.penalty.turned >= this.penalty.reqRad) {
         this.penalty = null;
         this.penaltyDone = true;
       } else if (this.penalty.timer <= 0) {
-        const r = this.penalty.rule;
-        this.penalty = null;
-        this.dsq = true;
-        this.dsqReason = `ルール${r}違反・20秒以内にペナルティ未履行(RRS 44.2)`;
-        this.penaltyExpired = r;
+        if (this.penalty.reqDeg === 360 && !this.penalty.upgraded) {
+          // 1回転(360°)ペナルティを時間内に消化しなかった場合は720°(2回転)へ格上げ
+          this.penalty.reqDeg = 720;
+          this.penalty.reqRad = 4 * Math.PI * 0.96;
+          this.penalty.timer = 20.0;
+          this.penalty.upgraded = true;
+          this.penaltyUpgraded = this.penalty.rule;
+        } else {
+          const r = this.penalty.rule;
+          const deg = this.penalty.reqDeg;
+          this.penalty = null;
+          this.dsq = true;
+          this.dsqReason = `ルール${r}違反・${deg}°ペナルティ未履行(RRS 44.2)`;
+          this.penaltyExpired = r;
+        }
       }
     }
     const rel = wrap(w.from - this.h);
