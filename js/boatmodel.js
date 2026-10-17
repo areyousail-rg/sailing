@@ -185,11 +185,12 @@ export class BoatModel {
     const sheetMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.9 });
     const mast = new THREE.Mesh(mastGeo, spar); mast.position.set(0, 3.4, -0.9); this.body.add(mast);
 
-    // 舵 & エクステンションバー付きティラー
+    // 舵 (白ラダーブレード & 白ラダーヘッド) & アルミティラー + エクステンションバー
     const rudderGroup = new THREE.Group(); rudderGroup.position.set(0, 0.4, 2.36);
-    const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.9, 0.35), dark); rudder.position.set(0, -0.45, 0.15); rudderGroup.add(rudder);
-    const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.2, 8), carbonMat); tiller.rotation.x = Math.PI / 2; tiller.position.set(0, 0.05, -0.6); rudderGroup.add(tiller);
-    const ext = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.0, 6), carbonMat); ext.rotation.z = Math.PI / 4; ext.position.set(0.3, 0.1, -1.1); rudderGroup.add(ext);
+    const rudderHead = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.22, 0.20), M.gel); rudderHead.position.set(0, -0.05, 0.08); rudderGroup.add(rudderHead);
+    const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.88, 0.32), M.gel); rudder.position.set(0, -0.45, 0.14); rudderGroup.add(rudder);
+    const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 1.18, 10), M.alu); tiller.rotation.x = Math.PI / 2; tiller.position.set(0, 0.05, -0.58); rudderGroup.add(tiller);
+    const ext = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.95, 8), carbonMat); ext.rotation.z = Math.PI / 4; ext.position.set(0.28, 0.09, -1.06); rudderGroup.add(ext);
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
 
     const tex = mainSailTexture(String(boat.sailNo), boat.color);
@@ -200,11 +201,11 @@ export class BoatModel {
     this.mainSail = new THREE.Mesh(mainGeo, this.sailMat); this.mainPivot.add(this.mainSail);
     const boom = new THREE.Mesh(boomGeo, spar); boom.position.set(0, 1.05, 1.25); this.mainPivot.add(boom);
     // ゴースネック / ブームエンドブロック / バング(ロープタックル)
-    const gn = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.08), M.steel); gn.position.set(0, 1.05, 0.02); this.mainPivot.add(gn);
-    const bb = block(0.022); bb.position.set(0, 1.0, 2.15); this.mainPivot.add(bb);
-    const bEnd = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.04), M.black); bEnd.position.set(0, 1.05, 2.48); this.mainPivot.add(bEnd);
-    const vb1 = block(0.016); vb1.position.set(0, 0.99, 0.55); this.mainPivot.add(vb1);
-    const vb2 = block(0.016); vb2.position.set(0, 0.1, 0.04); this.mainPivot.add(vb2);
+    const gn = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.07), M.alu); gn.position.set(0, 1.05, 0.02); this.mainPivot.add(gn);
+    const bb = block(0.02); bb.position.set(0, 1.0, 2.15); this.mainPivot.add(bb);
+    const bEnd = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.035), M.alu); bEnd.position.set(0, 1.05, 2.48); this.mainPivot.add(bEnd);
+    const vb1 = block(0.015); vb1.position.set(0, 0.99, 0.55); this.mainPivot.add(vb1);
+    const vb2 = block(0.015); vb2.position.set(0, 0.1, 0.04); this.mainPivot.add(vb2);
     this.mainPivot.add(rope([[0, 0.1, 0.04], [0.012, 0.5, 0.3], [0, 0.99, 0.55]], 0xffd23a, 0.0055), rope([[0.012, 0.1, 0.04], [-0.012, 0.55, 0.28], [0.012, 0.99, 0.55]], 0xffd23a, 0.0055));
     this.mainPivot.add(rope([[0, 0.12, 0.06], [0.02, 0.07, 0.2], [0.04, 0.0, 0.4]], 0x3b82f6, 0.0055));
     // 走る索(プレイヤー艇のみ毎フレーム更新): ジブシート×2、メインシート
@@ -231,7 +232,7 @@ export class BoatModel {
     this.pole = new THREE.Mesh(poleGeo, spar); this.pole.position.copy(POLE_ROOT); this.pole.visible = false; this.body.add(this.pole);
     const stowGeo = new THREE.CylinderGeometry(0.013, 0.013, 1.9, 8); stowGeo.rotateX(Math.PI / 2);
     this.poleStow = new THREE.Mesh(stowGeo, spar); this.poleStow.position.set(0.075, 0.99, 1.2); this.mainPivot.add(this.poleStow);
-    for (const zz of [0.45, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.04), M.black); clip.position.set(0.05, 1.01, zz); this.mainPivot.add(clip); }
+    for (const zz of [0.45, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.035), M.alu); clip.position.set(0.05, 1.01, zz); this.mainPivot.add(clip); }
     this.jibRot = 0;
 
     // 船内カメラ用マウント(スキッパーの目線／少し高めのデッキ後方視点)
