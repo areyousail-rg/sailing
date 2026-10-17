@@ -1,8 +1,13 @@
 // コース幾何・レグ進行管理(three.js非依存)
 // 座標系: world x=東, z=南(北が -z)。コース座標 a=風上方向距離, c=風上を向いて右方向の距離。
-export const W0 = (200 * Math.PI) / 180; // 風向(風が吹いてくる方位) 南南西
+export let W0 = (200 * Math.PI) / 180; // 風向(風が吹いてくる方位) 江の島: 南南西(200°), 八景島: 北北東(15°)
 export const U = { x: Math.sin(W0), z: -Math.cos(W0) }; // 風上単位ベクトル
 export const Rv = { x: Math.cos(W0), z: Math.sin(W0) }; // 風上を向いた時の右
+export function setWindDir(deg) {
+  W0 = (deg * Math.PI) / 180;
+  U.x = Math.sin(W0); U.z = -Math.cos(W0);
+  Rv.x = Math.cos(W0); Rv.z = Math.sin(W0);
+}
 export const toWorld = (a, c) => ({ x: U.x * a + Rv.x * c, z: U.z * a + Rv.z * c });
 export const toCourse = (x, z) => ({ a: x * U.x + z * U.z, c: x * Rv.x + z * Rv.z });
 
