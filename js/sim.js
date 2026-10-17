@@ -5,7 +5,12 @@ import { giveWayBoat } from './rules.js';
 export const BOAT_LEN = 4.72;
 export const KT = 0.5144;
 export const SPEED_SCALE = 2.0; // 5分レースに収めるための速度スケール
-export const BASE_WIND_KT = 9;
+export let BASE_WIND_KT = 9;
+export let SIDE_BIAS = -0.6; // コース左右の地理的有利傾向 (-1=左海面伸び, +1=右海面伸び)
+export function setWindParams(kt = 9, sideBias = -0.6) {
+  BASE_WIND_KT = Math.max(4, Math.min(22, kt));
+  SIDE_BIAS = Math.max(-1.5, Math.min(1.5, sideBias));
+}
 export const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a <= -Math.PI) a += 2 * Math.PI; return a; };
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -56,10 +61,23 @@ export function computeBlanket(boats) {
   }
 }
 
+// 風上から風下へゆっくり流れるブロー(強風の黒い筋) + 周期シフト + 海面・風向ごとの片側有利バイアス
 export function windAt(x, z, t) {
-  const shift = 0.10 * Math.sin(t * 0.031 + 0.7) + 0.05 * Math.sin(t * 0.113 + 1.3) + 0.04 * Math.sin(x * 0.0042 - z * 0.0021 + t * 0.05);
-  const f = 1 + 0.10 * Math.sin(t * 0.13 + x * 0.011) + 0.08 * Math.sin(t * 0.37 - z * 0.013) + 0.05 * Math.sin(t * 0.9 + x * 0.02);
-  return { from: W0 + shift, f: clamp(f, 0.75, 1.25) };
+  const { a, c } = toCourse(x, z);
+  const adv = a + t * 4.8; // 風上(+a)から風下(-a)へ秒速4.8mで流れるブロー座標
+  const p1 = Math.sin(adv * 0.032 + c * 0.018 + Math.sin(c * 0.011 - t * 0.08) * 1.4);
+  const p2 = Math.sin(adv * 0.055 - c * 0.024 + 1.7);
+  const p3 = Math.sin(adv * 0.019 + c * 0.038 - 0.9);
+  const puffRaw = 0.50 * p1 + 0.32 * p2 + 0.18 * p3;
+  const puff = smoothstep(-0.15, 0.72, puffRaw);
+  const sideNorm = clamp(c / 160, -1.2, 1.2);
+  const geoPressure = SIDE_BIAS * sideNorm * 0.065;
+  const geoShift = SIDE_BIAS * sideNorm * 0.075;
+  const osc = 0.12 * Math.sin(t * 0.038 + 0.7) + 0.06 * Math.sin(t * 0.095 + 1.3);
+  const puffShift = 0.06 * Math.sin(adv * 0.028 - c * 0.021);
+  const shift = osc + puffShift + geoShift;
+  const f = clamp(0.86 + 0.34 * puff + geoPressure, 0.72, 1.32);
+  return { from: W0 + shift, f, puff };
 }
 
 export class Boat {
