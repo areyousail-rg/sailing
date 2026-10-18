@@ -169,11 +169,11 @@ const TT_HEIGHTS = [0.28, 0.52, 0.76], TT_V = 0.12; // 視認しやすい位置
 const SHROUD_A = [0.62, 0.375, -0.75], SHROUD_B = [0.58, 3.38, -0.92];
 const onShroud = (y) => { const t = (y - SHROUD_A[1]) / (SHROUD_B[1] - SHROUD_A[1]); return [SHROUD_A[0] + (SHROUD_B[0] - SHROUD_A[0]) * t, y, SHROUD_A[2] + (SHROUD_B[2] - SHROUD_A[2]) * t]; };
 const VANE_Y = 1.75;
-// ランチャー(ウィスカーポール): マスト前面の少し低めの取付リングからジブクリューへやや上向きに伸びる
-const POLE_ROOT = new THREE.Vector3(0, 0.80, -0.95);
-const poleGeo = new THREE.CylinderGeometry(0.013, 0.016, 1, 8); poleGeo.translate(0, 0.5, 0);
+// ランチャー(ウィスカーポール): ブーム基部(グースネック付近 y=1.38)からジブクリューへやや上向きに伸びる
+const POLE_ROOT = new THREE.Vector3(0, 1.38, -0.92);
+const poleGeo = new THREE.CylinderGeometry(0.014, 0.017, 1, 8); poleGeo.translate(0, 0.5, 0);
 const JIB_WING = 1.2; // ランチャーで風上側に張り出したジブの角度
-const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
+const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3(), _root = new THREE.Vector3();
 
 export class BoatModel {
   constructor(boat, crewHelm, crewCrew) {
@@ -342,16 +342,25 @@ export class BoatModel {
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
     const jibLuff = luff * (1 - pk);
     this.mainSail.scale.x = bulgeSign * flap; this.jibSail.scale.x = jibBulge * Math.max(0.05, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.7 * Math.sin(Math.PI * pk));
-    // ランチャー展開時はジブクリューがやや上向きに持ち上がるようにジブを少しピッチアップさせる
-    this.jibSail.rotation.x = -0.25 * pk;
-    const clewY = 0.67 + 0.47 * pk;
-    // ポール: マストの取付リング(y=0.80)から持ち上がったジブクリュー(y≈1.14)へやや上向きに伸びる
+    // ランチャー展開時はブーム付近(y=1.38)からやや上向き(y≈1.55)にジブクリューが張り出すようにピッチアップさせる
+    this.jibSail.rotation.x = -0.44 * pk;
+    const clewY = 0.67 + 0.88 * pk;
+    // ポール: ブーム脇の格納位置からブーム基部(y=1.38)を経て、持ち上がったジブクリュー(y≈1.55)へやや上向きに伸びる
     this.poleStow.visible = pk <= 0.01;
     if (pk > 0.01) {
-      _v.set(1.9 * Math.sin(jibRot), clewY, -2.0 + 1.9 * Math.cos(jibRot)).sub(POLE_ROOT);
+      const boomSlide = (1 - pk) * 0.55;
+      const pm = -sgn * this.boomA;
+      _root.set(
+        POLE_ROOT.x + Math.sin(pm) * boomSlide,
+        POLE_ROOT.y,
+        POLE_ROOT.z + Math.cos(pm) * boomSlide
+      );
+      this.pole.position.copy(_root);
+      _v.set(1.9 * Math.sin(jibRot), clewY, -2.0 + 1.9 * Math.cos(jibRot)).sub(_root);
       const len = _v.length();
       this.pole.quaternion.setFromUnitVectors(_Y, _v.normalize());
-      this.pole.scale.set(1, len * pk, 1); this.pole.visible = true;
+      this.pole.scale.set(1, len * (0.35 + 0.65 * pk), 1);
+      this.pole.visible = true;
     } else this.pole.visible = false;
     
     if (this.tells) this.syncTells(t, bulgeSign, luff, b.stall);
