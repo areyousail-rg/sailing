@@ -95,15 +95,23 @@ export function updateProgress(b, t) {
       let da = ang - b.visit.ang; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
       b.visit.sweep += da; b.visit.ang = ang;
       if (d < b.visit.min) { b.visit.min = d; b.visit.side = L.dirIn.c * dy - L.dirIn.a * dx; }
-      if (dx * L.dirIn.c + dy * L.dirIn.a > 1.5) b.visit.passed = true;
+      if (dx * L.dirIn.c + dy * L.dirIn.a > -1.2) b.visit.passed = true;
+      // ROUND_R(22m)圏から離れるのを待たず、マークの横を通過して次レグ方向へ回り込んだ瞬間に即座に回航判定
+      const swept = b.visit.sweep * -L.side;
+      const alongOut = dx * L.dirOut.c + dy * L.dirOut.a;
+      if (!b.ocs && b.visit.passed && ((swept > 0.36 && alongOut > -1.8) || swept > 0.62)) {
+        b.visit = null;
+        b.leg++;
+        ev.push({ type: 'rounded', leg: L });
+      }
     } else if (b.visit) {
       const v = b.visit; b.visit = null;
-      const sideOk = v.sweep * -L.side > 0.25;
+      const sideOk = v.sweep * -L.side > 0.22;
       if (sideOk && v.passed && !b.ocs) { b.leg++; ev.push({ type: 'rounded', leg: L }); }
       else if (!sideOk || !v.passed) ev.push({ type: 'wrongSide', leg: L });
     }
   } else if (L.type === 'gate') {
-    if (prevA > L.center.a && b.a <= L.center.a && Math.abs(b.c) < 30) { b.leg++; ev.push({ type: 'gate', leg: L }); }
+    if (prevA > L.center.a + 2.2 && b.a <= L.center.a + 2.2 && Math.abs(b.c) < 32) { b.leg++; ev.push({ type: 'gate', leg: L }); }
   } else if (L.type === 'finish') {
     const F = MARKS.fcom, G = MARKS.fm;
     const side = (a, c) => (G.a - F.a) * (c - F.c) - (G.c - F.c) * (a - F.a);
