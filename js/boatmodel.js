@@ -169,8 +169,8 @@ const TT_HEIGHTS = [0.28, 0.52, 0.76], TT_V = 0.12; // 視認しやすい位置
 const SHROUD_A = [0.62, 0.375, -0.75], SHROUD_B = [0.58, 3.38, -0.92];
 const onShroud = (y) => { const t = (y - SHROUD_A[1]) / (SHROUD_B[1] - SHROUD_A[1]); return [SHROUD_A[0] + (SHROUD_B[0] - SHROUD_A[0]) * t, y, SHROUD_A[2] + (SHROUD_B[2] - SHROUD_A[2]) * t]; };
 const VANE_Y = 1.75;
-// ランチャー(ウィスカーポール): マスト前面の取付点からジブクリューへ
-const POLE_ROOT = new THREE.Vector3(0, 1.12, -0.95);
+// ランチャー(ウィスカーポール): マスト前面の少し低めの取付リングからジブクリューへやや上向きに伸びる
+const POLE_ROOT = new THREE.Vector3(0, 0.80, -0.95);
 const poleGeo = new THREE.CylinderGeometry(0.013, 0.016, 1, 8); poleGeo.translate(0, 0.5, 0);
 const JIB_WING = 1.2; // ランチャーで風上側に張り出したジブの角度
 const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
@@ -200,17 +200,23 @@ export class BoatModel {
     this.mainPivot = new THREE.Group(); this.mainPivot.position.set(0, 0.4, -0.9); this.body.add(this.mainPivot);
     this.mainSail = new THREE.Mesh(mainGeo, this.sailMat); this.mainPivot.add(this.mainSail);
     const boom = new THREE.Mesh(boomGeo, spar); boom.position.set(0, 1.05, 1.25); this.mainPivot.add(boom);
-    // ゴースネック / ブームエンドブロック / バング(ロープタックル)
+    // ゴースネック / ブームブロック(後部・中央) / バング(ロープタックル)
     const gn = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.07), M.alu); gn.position.set(0, 1.05, 0.02); this.mainPivot.add(gn);
     const bb = block(0.02); bb.position.set(0, 1.0, 2.15); this.mainPivot.add(bb);
+    const bbMid = block(0.02); bbMid.position.set(0, 1.0, 1.38); this.mainPivot.add(bbMid);
     const bEnd = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.035), M.alu); bEnd.position.set(0, 1.05, 2.48); this.mainPivot.add(bEnd);
     const vb1 = block(0.015); vb1.position.set(0, 0.99, 0.55); this.mainPivot.add(vb1);
     const vb2 = block(0.015); vb2.position.set(0, 0.1, 0.04); this.mainPivot.add(vb2);
     this.mainPivot.add(rope([[0, 0.1, 0.04], [0.012, 0.5, 0.3], [0, 0.99, 0.55]], 0xffd23a, 0.0055), rope([[0.012, 0.1, 0.04], [-0.012, 0.55, 0.28], [0.012, 0.99, 0.55]], 0xffd23a, 0.0055));
     this.mainPivot.add(rope([[0, 0.12, 0.06], [0.02, 0.07, 0.2], [0.04, 0.0, 0.4]], 0x3b82f6, 0.0055));
-    // 走る索(プレイヤー艇のみ毎フレーム更新): ジブシート×2、メインシート
+    // コクピット床のメインシートラチェットブロック
+    const floorRatchet = block(0.022); floorRatchet.position.set(0, FLOOR_Y + 0.24, 0.88); this.body.add(floorRatchet);
+    // メインシート(全艇でスキッパーが手に持つ) & ジブシート×2(プレイヤー艇)
+    this.mainSheetMesh = new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0xf8fafc));
+    this.mainSheetMesh.frustumCulled = false;
+    this.body.add(this.mainSheetMesh);
     if (boat.isPlayer) {
-      this.rj = [new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0xf5f5f5)), new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0x3b82f6)), new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0xef4444))];
+      this.rj = [new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0xf5f5f5)), new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0x3b82f6))];
       for (const r of this.rj) { r.frustumCulled = false; this.body.add(r); }
     }
 
@@ -336,10 +342,13 @@ export class BoatModel {
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
     const jibLuff = luff * (1 - pk);
     this.mainSail.scale.x = bulgeSign * flap; this.jibSail.scale.x = jibBulge * Math.max(0.05, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.7 * Math.sin(Math.PI * pk));
-    // ポール: マストの取付点からクリュー方向へ展開度に応じて伸ばす(展開中はブーム横の格納バーを隠す)
+    // ランチャー展開時はジブクリューがやや上向きに持ち上がるようにジブを少しピッチアップさせる
+    this.jibSail.rotation.x = -0.25 * pk;
+    const clewY = 0.67 + 0.47 * pk;
+    // ポール: マストの取付リング(y=0.80)から持ち上がったジブクリュー(y≈1.14)へやや上向きに伸びる
     this.poleStow.visible = pk <= 0.01;
     if (pk > 0.01) {
-      _v.set(1.9 * Math.sin(jibRot), 0.67, -2.0 + 1.9 * Math.cos(jibRot)).sub(POLE_ROOT);
+      _v.set(1.9 * Math.sin(jibRot), clewY, -2.0 + 1.9 * Math.cos(jibRot)).sub(POLE_ROOT);
       const len = _v.length();
       this.pole.quaternion.setFromUnitVectors(_Y, _v.normalize());
       this.pole.scale.set(1, len * pk, 1); this.pole.visible = true;
@@ -354,7 +363,7 @@ export class BoatModel {
       }
     }
     // クルー・スキッパーの乗船・ハイクアウト姿勢表現
-    // サイドデッキ(ガンネル)に腰掛け、身体と脚は船内側(コクピット中央)へ向けて足をコクピット内のストラップ下に入れ、
+    // サイドデッキ(ガンネル)に腰掛け、身体と脚は船内側(コクピット中央)へ向けて足をコクピット内のハイクベルト下に入れ、
     // 上半身(腰から上)を海側へ反らせてハイクアウトし、顔は前方(バウ・セール方向)を見るリアルな姿勢にする
     this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3));
     const isDeepRun = twa >= (150 * Math.PI) / 180;
@@ -385,7 +394,7 @@ export class BoatModel {
       this.helm.userData.head.rotation.y = -this.side * 0.55; // 顔をバウ・セール側へ向ける
     }
 
-    // クルー: 前部サイドデッキ(z=-0.04, コクピット前端より後ろ)に座り、脚はコクピット内へ収める
+    // クルー(人間・ネコとも): 前部サイドデッキ(z=-0.04)に座り、足をコクピット床のハイクベルト下にかけ、風速に応じてハイクアウト
     this.crewRig.position.set(this.crewSide * (0.49 + crewLean * 0.09), 0.36 - (1 - crewSideAbs) * 0.06, -0.04);
     this.crewRig.rotation.y = this.crewSide * 1.35;
     if (this.crew.userData.upper) {
@@ -405,24 +414,41 @@ export class BoatModel {
 
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
     this.mount.position.set(this.side * (0.45 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
-    if (this.rj) this.syncRopes(sgn);
+    this.syncMainSheet(sgn, lean, sideAbs);
+    if (this.rj) this.syncRopes(sgn, clewY);
   }
 
-  // 走る索: ジブシート(風下=緊張 / 風上=たるみ)とメインシート
-  syncRopes(sgn) {
+  // メインシート: ブーム後部ブロック → トラベラー(ブライドル) → ブーム中央ブロック → コクピット床ラチェットブロック → スキッパーの手元へ
+  syncMainSheet(sgn, lean, sideAbs) {
+    if (!this.mainSheetMesh) return;
     const A = this.boomA, V = THREE.Vector3;
-    const pj = this.jibRot, clew = new V(1.9 * Math.sin(pj), 0.67, -2.0 + 1.9 * Math.cos(pj));
+    const pm = -sgn * A;
+    const bzAft = 2.15, bzMid = 1.38;
+    const bblkAft = new V(bzAft * Math.sin(pm), 1.40, -0.9 + bzAft * Math.cos(pm));
+    const trAft = new V(0, FLOOR_Y + 0.31, 1.52);
+    const bblkMid = new V(bzMid * Math.sin(pm), 1.40, -0.9 + bzMid * Math.cos(pm));
+    const ratchet = new V(0, FLOOR_Y + 0.25, 0.88);
+    // スキッパーの前手(メインシートを持つ手)の座標
+    const handX = this.side * (0.24 + lean * 0.20);
+    const handY = 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12;
+    const handZ = 0.80;
+    const hand = new V(handX, handY, handZ);
+    const tail = new V(this.side * 0.14, FLOOR_Y + 0.12, 0.85);
+    this.mainSheetMesh.geometry.dispose();
+    this.mainSheetMesh.geometry = ropeGeo([bblkAft, trAft, bblkMid, ratchet, hand, tail], 0.0085, 28);
+  }
+
+  // 走る索: ジブシート(風下=緊張 / 風上=たるみ)
+  syncRopes(sgn, clewY = 0.67) {
+    const V = THREE.Vector3;
+    const pj = this.jibRot, clew = new V(1.9 * Math.sin(pj), clewY, -2.0 + 1.9 * Math.cos(pj));
     const carY = (x) => deckY(-0.1, x) + 0.05;
     const xL = -sgn * 0.58, xW = sgn * 0.58, cl = 0.085;
-    const set = (i, pts, r) => { const m = this.rj[i]; m.geometry.dispose(); m.geometry = ropeGeo(pts, r, 28); };
+    const set = (i, pts, r) => { const m = this.rj[i]; m.geometry.dispose(); m.geometry = ropeGeo(pts, r, 24); };
     const lee = [clew, new V(xL * 0.92, carY(xL) + 0.01, -0.1), new V(xL * 0.55, FLOOR_Y + 0.55, -0.1), new V(-sgn * cl, FLOOR_Y + 0.34, -0.12), new V(-sgn * cl, FLOOR_Y + 0.2, 0.0)];
     const mid = clew.clone().lerp(new V(xW, carY(xW), -0.1), 0.5); mid.y -= 0.18; mid.x *= 0.5;
     const wnd = [clew, mid, new V(xW * 1.0, carY(xW) + 0.01, -0.1), new V(xW * 0.6, FLOOR_Y + 0.5, -0.1), new V(sgn * cl, FLOOR_Y + 0.34, -0.12), new V(sgn * cl, FLOOR_Y + 0.2, 0.0)];
     set(0, lee, 0.0065); set(1, wnd, 0.0065);
-    const pm = -sgn * A, bz = 2.15;
-    const bblk = new V(bz * Math.sin(pm), 1.4, -0.9 + bz * Math.cos(pm));
-    const tr = new V(0, FLOOR_Y + 0.31, 1.52);
-    set(2, [bblk, bblk.clone().lerp(tr, 0.5).add(new V(0.01, 0, 0)), tr, new V(0.0, FLOOR_Y + 0.2, 1.38), new V(0.02, FLOOR_Y + 0.05, 1.2), new V(0.12, FLOOR_Y + 0.02, 1.1)], 0.0075);
   }
 }
 
