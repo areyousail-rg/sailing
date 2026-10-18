@@ -90,8 +90,8 @@ function makeFleet() {
     const c0 = targetC + Math.abs(a0) * 0.78;
     slots.push({ a: a0, c: c0, targetC });
   }
-  // 自艇は風下側(左/-c)へ少しずつ流されるのを考慮し、本部船(c=LINE_HALF)のさらに右側(c=LINE_HALF+44)に配置
-  const pslot = { a: -82, c: LINE_HALF + 44, targetC: LINE_HALF - 10 };
+  // 自艇は風下側(左/-c)へ少しずつ流されるのを考慮し、本部船(c=LINE_HALF)の少し右側(c=LINE_HALF+26)に配置
+  const pslot = { a: -82, c: LINE_HALF + 26, targetC: LINE_HALF - 10 };
   for (let i = slots.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0;[slots[i], slots[j]] = [slots[j], slots[i]]; }
   const used = new Set([cfg.sailNo]);
   for (let k = 0; k < N_BOATS; k++) {
@@ -279,7 +279,18 @@ function updateHUD(sorted) {
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
-  if (b.cover > 0.3) { hud.blk.style.display = 'block'; hud.blk.textContent = `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`; } else hud.blk.style.display = 'none';
+  if (b.aeroTag === 'leebow' && b.windBend > 0.012) {
+    hud.blk.style.display = 'block';
+    hud.blk.textContent = `リーバウ効果 (風上へリフト +${((b.windBend * 180) / Math.PI).toFixed(1)}°)`;
+  } else if (b.aeroTag === 'sternlift' && b.windBend > 0.012) {
+    hud.blk.style.display = 'block';
+    hud.blk.textContent = `スターン通過リフト (一瞬のぼせ +${((b.windBend * 180) / Math.PI).toFixed(1)}°)`;
+  } else if (b.cover > 0.25) {
+    hud.blk.style.display = 'block';
+    hud.blk.textContent = b.aeroTag === 'backwind' ? `リーバウ悪風(バックウィンド) ${Math.round(b.cover * 100)}%` : `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`;
+  } else {
+    hud.blk.style.display = 'none';
+  }
   hud.leg.textContent = isPrac ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
@@ -439,6 +450,7 @@ function playerControl(dt) {
   const b = player, DEG = Math.PI / 180;
   const L = keys.has('ArrowLeft') || keys.has('KeyA'), R = keys.has('ArrowRight') || keys.has('KeyD');
   if (hTarget === null || b.maneuver) hTarget = b.h;
+  else if (b.aeroClimb && !L && !R) hTarget = wrap(hTarget + b.aeroClimb); // リーバウ・別タック後方通過リフト時の自然な風上のぼせを目標針路にも反映
   for (const [on, k, s] of [[L, 'L', -1], [R, 'R', 1]]) {
     if (on) {
       if (steerHold[k] === 0) hTarget = wrap(hTarget + s * DEG); // タップ = 1°
@@ -469,6 +481,7 @@ function practiceStep(dt, time) {
   if (player.maneuverStarted) player.maneuverStarted = null;
   if (player.tack !== state.lastTack) { if (state.lastTack !== undefined) sailFlog(0.85); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
+  computeBlanket(boats);
   player.update(dt, time, boats);
   if (state.phase === 'practice') {
     for (const e of updateProgress(player, 10)) {
