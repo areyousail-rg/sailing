@@ -19,15 +19,33 @@ export class DroneCam {
     this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
     
     let drag = false, lx = 0, ly = 0, lt = 0;
+    let downX = 0, downY = 0, downT = 0, lastTapT = 0, lastTapX = 0, lastTapY = 0;
     this.vYaw = 0; this.vPitch = 0; this.dragging = false;
     dom.style.touchAction = 'none';
-    dom.addEventListener('pointerdown', (e) => { drag = true; this.dragging = true; this.vYaw = 0; this.vPitch = 0; lx = e.clientX; ly = e.clientY; lt = e.timeStamp; });
+    dom.addEventListener('pointerdown', (e) => {
+      drag = true; this.dragging = true; this.vYaw = 0; this.vPitch = 0;
+      lx = e.clientX; ly = e.clientY; lt = e.timeStamp;
+      downX = e.clientX; downY = e.clientY; downT = performance.now();
+    });
     const release = (e) => {
+      if (drag && e) {
+        const now = performance.now();
+        const moveDist = Math.hypot(e.clientX - downX, e.clientY - downY);
+        if (moveDist < 16 && now - downT < 280) {
+          if (now - lastTapT < 350 && Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < 42) {
+            this.resetAngle();
+            lastTapT = 0;
+          } else {
+            lastTapT = now; lastTapX = e.clientX; lastTapY = e.clientY;
+          }
+        }
+      }
       drag = false; this.dragging = false;
       if (e && e.timeStamp - lt > 90) { this.vYaw = 0; this.vPitch = 0; } // 止めてから離した場合は慣性なし
     };
     window.addEventListener('pointerup', release);
     window.addEventListener('pointercancel', release);
+    dom.addEventListener('dblclick', () => this.resetAngle());
     window.addEventListener('pointermove', (e) => {
       if (!drag) return;
       const dyaw = (e.clientX - lx) * 0.005;
@@ -41,6 +59,14 @@ export class DroneCam {
       lx = e.clientX; ly = e.clientY; lt = e.timeStamp;
     });
     dom.addEventListener('wheel', (e) => { this.zoom = clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.4, 3); e.preventDefault(); }, { passive: false });
+  }
+
+  resetAngle() {
+    this.targetYaw = 0;
+    this.targetPitch = 0;
+    this.vYaw = 0;
+    this.vPitch = 0;
+    this.zoom = 1;
   }
 
   setMode(m) {
