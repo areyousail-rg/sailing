@@ -25,7 +25,16 @@ function flagMesh(w, h, color, text) {
   for (let i = 0; i < p.count; i++) { const x = p.getX(i) + w / 2; p.setZ(i, Math.sin(x * 3.2) * 0.07 * (x / w)); }
   geo.computeVertexNormals();
   let m;
-  if (text) {
+  if (text === 'S') {
+    // 国際信号旗「S旗」(RRS規則32.2 コース短縮): 白地に青い中央長方形
+    const c = document.createElement('canvas'); c.width = 128; c.height = 84; const x = c.getContext('2d');
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 84);
+    x.strokeStyle = '#cbd5e1'; x.lineWidth = 4; x.strokeRect(2, 2, 124, 80);
+    x.fillStyle = '#1d4ed8'; x.fillRect(28, 18, 72, 48);
+    x.fillStyle = '#ffffff'; x.font = 'bold 38px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('S', 64, 43);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
+  } else if (text) {
     const c = document.createElement('canvas'); c.width = 128; c.height = 80; const x = c.getContext('2d');
     x.fillStyle = color; x.fillRect(0, 0, 128, 80); x.fillStyle = '#fff'; x.font = 'bold 56px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 64, 44);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
