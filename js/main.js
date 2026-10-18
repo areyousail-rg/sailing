@@ -6,7 +6,7 @@ import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
-import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, updateProgress, progressOf, toCourse, toWorld } from './course.js';
+import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, updateProgress, progressOf, toCourse, toWorld } from './course.js';
 import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -26,12 +26,16 @@ const VENUES = [
   { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
   { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
 ];
+const COURSE_MODES = [
+  { id: 'trapezoid', label: 'トラペゾイド (インナーループ)', icon: '⛵' },
+  { id: 'upwind', label: '上マークフィニッシュ (上レグ2倍・RRS規則32.2 S旗)', icon: '🏁' },
+];
 const PENALTY_MODES = [
   { id: 'off', label: 'ペナルティ無 (違反表示のみ・レース続行)', icon: '🟢' },
   { id: 'on', label: 'ペナルティ有 (360°/720°回転・DSQ有)', icon: '⚖️' },
 ];
 const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
-const defaults = { venue: 'hakkeijima', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
+const defaults = { venue: 'hakkeijima', courseMode: 'trapezoid', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
@@ -39,6 +43,7 @@ if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
 cfg.venue = 'hakkeijima';
 cfg.helm = 'human_m';
 cfg.crew = 'cat';
+if (!COURSE_MODES.find((m) => m.id === cfg.courseMode)) cfg.courseMode = 'trapezoid';
 if (!PENALTY_MODES.find((m) => m.id === cfg.penaltyMode)) cfg.penaltyMode = 'off';
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
@@ -173,14 +178,17 @@ function updateLeaders(sorted) {
 const mm = $('minimap'), mctx = mm.getContext('2d');
 function drawMinimap() {
   const W = mm.width, H = mm.height, pad = 16;
-  const amin = -170, amax = 320, cmin = -220, cmax = 130;
+  const isUpwind = COURSE_MODE === 'upwind';
+  const amin = isUpwind ? -110 : -170, amax = isUpwind ? 635 : 320, cmin = isUpwind ? -180 : -220, cmax = isUpwind ? 180 : 130;
   const s = Math.min((W - pad * 2) / (cmax - cmin), (H - pad * 2) / (amax - amin));
   const X = (c) => pad + (c - cmin) * s, Y = (a) => H - pad - (a - amin) * s;
   mctx.clearRect(0, 0, W, H);
   mctx.fillStyle = 'rgba(8,24,44,0.55)'; mctx.fillRect(0, 0, W, H);
   mctx.strokeStyle = 'rgba(255,255,255,0.25)'; mctx.setLineDash([4, 4]); mctx.lineWidth = 1;
   const M = MARKS;
-  const path = [[0, 0], [M.m1.a, M.m1.c], [M.m1a.a, M.m1a.c], [40, 0], [M.m1.a, M.m1.c], [M.m2.a, M.m2.c], [M.m3.a, M.m3.c], [(M.fcom.a + M.fm.a) / 2, (M.fcom.c + M.fm.c) / 2]];
+  const path = isUpwind
+    ? [[0, 0], [(M.fcom.a + M.fm.a) / 2, (M.fcom.c + M.fm.c) / 2]]
+    : [[0, 0], [M.m1.a, M.m1.c], [M.m1a.a, M.m1a.c], [40, 0], [M.m1.a, M.m1.c], [M.m2.a, M.m2.c], [M.m3.a, M.m3.c], [(M.fcom.a + M.fm.a) / 2, (M.fcom.c + M.fm.c) / 2]];
   mctx.beginPath(); path.forEach(([a, c], i) => (i ? mctx.lineTo(X(c), Y(a)) : mctx.moveTo(X(c), Y(a)))); mctx.stroke(); mctx.setLineDash([]);
   mctx.strokeStyle = '#ffe36a'; mctx.lineWidth = 2; mctx.beginPath(); mctx.moveTo(X(M.pin.c), Y(M.pin.a)); mctx.lineTo(X(M.com.c), Y(M.com.a)); mctx.stroke();
   // スタート前のみ: スタートラインの傾き(風に対する直角基準破線)と有利サイド(★＋角度)をミニマップにも表示
@@ -206,9 +214,14 @@ function drawMinimap() {
     mctx.restore();
   }
   mctx.strokeStyle = '#6ab4ff'; mctx.beginPath(); mctx.moveTo(X(M.fcom.c), Y(M.fcom.a)); mctx.lineTo(X(M.fm.c), Y(M.fm.a)); mctx.stroke();
-  for (const [k, lb] of [['m1', '1'], ['m1a', '1a'], ['m2', '2'], ['m3', '3'], ['gL', '4S'], ['gR', '4P']]) {
+  const markList = isUpwind ? [['m1', '1']] : [['m1', '1'], ['m1a', '1a'], ['m2', '2'], ['m3', '3'], ['gL', '4S'], ['gR', '4P']];
+  for (const [k, lb] of markList) {
     mctx.fillStyle = '#ffb21a'; mctx.beginPath(); mctx.arc(X(M[k].c), Y(M[k].a), 4, 0, 7); mctx.fill();
     mctx.fillStyle = '#fff'; mctx.font = '11px sans-serif'; mctx.fillText(lb, X(M[k].c) + 6, Y(M[k].a) - 4);
+  }
+  if (isUpwind) {
+    mctx.fillStyle = '#38bdf8'; mctx.beginPath(); mctx.arc(X(M.fcom.c), Y(M.fcom.a), 3.8, 0, 7); mctx.fill();
+    mctx.fillStyle = '#e0f2fe'; mctx.font = 'bold 10px sans-serif'; mctx.fillText('FIN(S旗)', X(M.fcom.c) + 6, Y(M.fcom.a) + 3);
   }
   // 次のマーク強調
   const L = LEGS[Math.min(player.leg, LEGS.length - 1)];
@@ -276,6 +289,76 @@ function updateMarkPointer(b) {
   markPtr.box.style.top = `${sy}px`;
   if (markPtr.arrow) markPtr.arrow.style.transform = `rotate(${ang}rad)`;
   if (markPtr.label) markPtr.label.textContent = `${shortName} ${distM}m`;
+}
+
+// ---------- 艇内カメラ(COCKPIT)専用: 接近する他艇の方向＆距離を画面端に常時表示 ----------
+const nearBoatsBox = $('nearBoats');
+const nearBoatPool = [];
+function updateNearBoatsHUD(b) {
+  if (!nearBoatsBox) return;
+  if (!b || cam.mode !== COCKPIT || b.finished || b.dsq) {
+    for (const el of nearBoatPool) el.style.display = 'none';
+    return;
+  }
+  const near = [];
+  for (const o of boats) {
+    if (o === b || o.dsq) continue;
+    const dx = o.x - b.x, dz = o.z - b.z;
+    const distM = Math.hypot(dx, dz) / 1.5; // ワールド距離(1.5x)から実距離[m]へ換算
+    if (distM <= 36) near.push({ o, dx, dz, distM });
+  }
+  near.sort((a, c) => a.distM - c.distM);
+  const count = Math.min(near.length, 5);
+  const W = window.innerWidth, H = window.innerHeight;
+  const viewHdg = b.h + (cam.yaw || 0); // 現在のカメラ視線方位
+
+  for (let i = 0; i < count; i++) {
+    let el = nearBoatPool[i];
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'nearBoatTag';
+      nearBoatsBox.appendChild(el);
+      nearBoatPool.push(el);
+    }
+    const { o, dx, dz, distM } = near[i];
+    // カメラ視線に対する相対方位 relAng (0=正面, +π/2=右, -π/2=左, ±π=後方)
+    const brg = Math.atan2(dx, -dz);
+    const relB = wrap(brg - b.h);      // 自艇船首基準の相対角(左舷/右舷表現用)
+    const relCam = wrap(brg - viewHdg); // カメラ画面基準の方向角(画面端の配置用)
+
+    // 画面端の楕円・矩形フレームに沿って配置 (視界を邪魔せず端っこで直感的に位置と距離がわかる)
+    const dirX = Math.sin(relCam);
+    const dirY = Math.cos(relCam);
+    const edgeX = 0.85, edgeY = 0.76;
+    const scale = Math.max(Math.abs(dirX) / edgeX, Math.abs(dirY) / edgeY, 1e-4);
+    const nx = dirX / scale;
+    const ny = dirY / scale;
+    const sx = clamp((nx * 0.5 + 0.5) * W, 68, W - 68);
+    const sy = clamp((-ny * 0.5 + 0.5) * H, 58, H - 58);
+
+    const degB = (relB * 180) / Math.PI;
+    let sector = '正面';
+    if (degB >= -22 && degB <= 22) sector = '前方';
+    else if (degB > 22 && degB <= 68) sector = '右前';
+    else if (degB > 68 && degB <= 115) sector = '右横';
+    else if (degB > 115 && degB <= 158) sector = '右後';
+    else if (degB < -22 && degB >= -68) sector = '左前';
+    else if (degB < -68 && degB >= -115) sector = '左横';
+    else if (degB < -115 && degB >= -158) sector = '左後';
+    else sector = '後方';
+
+    const distStr = distM < 10 ? `${distM.toFixed(1)}m` : `${Math.round(distM)}m`;
+    const colHex = '#' + o.color.toString(16).padStart(6, '0');
+    const lv = distM < 7.5 ? ' danger' : distM < 15 ? ' warn' : '';
+    el.className = 'nearBoatTag' + lv;
+    el.style.display = 'flex';
+    el.style.left = `${sx}px`;
+    el.style.top = `${sy}px`;
+    el.innerHTML = `<span class="mpArrow" style="transform:rotate(${relCam}rad)">▲</span><span class="nbSw" style="background:${colHex}"></span><span>${sector} ${distStr}</span>`;
+  }
+  for (let i = count; i < nearBoatPool.length; i++) {
+    nearBoatPool[i].style.display = 'none';
+  }
 }
 
 function updateHUD(sorted) {
@@ -632,9 +715,12 @@ function loop() {
   
   if (player) {
     const showPreStart = (state.phase === 'race' && state.t < 0) || state.phase === 'menu';
-    world.setLine(state.phase === 'race' && state.t >= 0 ? 'finish' : 'start', player.finished ? 0 : player.leg === 6 ? 1 : state.phase === 'race' && state.t >= 0 ? 0.15 : 0, showPreStart);
+    const curLeg = LEGS[Math.min(player.leg, LEGS.length - 1)];
+    const isFinLeg = curLeg && curLeg.type === 'finish';
+    world.setLine(state.phase === 'race' && state.t >= 0 ? 'finish' : 'start', player.finished ? 0 : isFinLeg ? 1 : state.phase === 'race' && state.t >= 0 ? 0.15 : 0, showPreStart);
     if (world.setTargetMark) world.setTargetMark(player.leg, state.phase === 'race' ? state.t : 1, player.finished);
     updateMarkPointer(player);
+    updateNearBoatsHUD(player);
   }
   
   if (player) {
@@ -794,6 +880,8 @@ function applyVenue() {
   const eb = $('menuEyebrow');
   if (eb) eb.textContent = v.eyebrow;
 
+  setCourseMode(cfg.courseMode);
+
   const cached = weatherCache[cfg.venue];
   if (cached) {
     const { bias, desc } = computeSideBias(cfg.venue, cached.windDeg);
@@ -828,6 +916,17 @@ function buildVenueChoices() {
     btn.type = 'button'; btn.className = 'choice' + (cfg.venue === v.id ? ' sel' : ''); btn.id = `venue-${v.id}`;
     btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
     btn.onclick = () => { cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildVenueChoices(); };
+    box.appendChild(btn);
+  }
+}
+function buildCourseChoices() {
+  const box = $('courseChoices'); if (!box) return;
+  box.innerHTML = '';
+  for (const m of COURSE_MODES) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'choice' + (cfg.courseMode === m.id ? ' sel' : ''); btn.id = `courseMode-${m.id}`;
+    btn.innerHTML = `<span class="ic">${m.icon}</span><span class="lb">${m.label}</span>`;
+    btn.onclick = () => { cfg.courseMode = m.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildCourseChoices(); };
     box.appendChild(btn);
   }
 }
@@ -876,6 +975,7 @@ function updatePreview() {
 function initMenu() {
   applyVenue();
   buildVenueChoices();
+  buildCourseChoices();
   buildPenaltyChoices();
   buildChoices('helmChoices', 'helm'); buildChoices('crewChoices', 'crew');
   const sn = $('sailNo');
