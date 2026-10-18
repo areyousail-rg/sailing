@@ -1,6 +1,6 @@
 // AI艇(three.js非依存)
 import { toWorld, LEGS, LINE_HALF, lineA, LINE_SKEW, MARKS, ROUND_R } from './course.js';
-import { wrap, clamp, sheetOpt, polar, SPEED_SCALE, OBSTACLES, POLE_MIN } from './sim.js';
+import { wrap, clamp, sheetOpt, polar, bestCloseDeg, BASE_WIND_KT, SPEED_SCALE, OBSTACLES, POLE_MIN } from './sim.js';
 import { giveWayBoat } from './rules.js';
 
 const START_T = -60;
@@ -8,8 +8,9 @@ const START_T = -60;
 export class AI {
   constructor(b, rng) {
     this.b = b; this.rng = rng;
-    // クローズホールド角度(41〜45°付近)
-    this.closeAngle = 0.72 + rng() * 0.06;
+    // クローズホールド角度: 風速に応じたスナイプのベスト角度(強風38°・中風40°・軽風45°)＋わずかな個性差
+    this.closeAngleOffset = ((rng() - 0.3) * 1.6 * Math.PI) / 180;
+    this.closeAngle = (bestCloseDeg(BASE_WIND_KT) * Math.PI) / 180 + this.closeAngleOffset;
     // ランニング角度(下レグで180°の真後ろではなく170°付近を走行してVMGを稼ぐ)
     this.runAngle = ((168.5 + rng() * 3.0) * Math.PI) / 180;
     this.targetStartC = b.startTargetC ?? b.c;
@@ -38,7 +39,8 @@ export class AI {
   // 静止状態から距L(m)を走破するのに必要な時間(秒)。クローズホールドの目標速度へ指数的に加速すると仮定。
   runUpTime(L) {
     const b = this.b;
-    const vT = polar((this.closeAngle * 180) / Math.PI) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
+    const wKt = BASE_WIND_KT * (b.windF || 1);
+    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
     const tau = 2.4, v0 = b.v;
     const dist = (T) => vT * T - (vT - v0) * tau * (1 - Math.exp(-T / tau));
     let lo = 0, hi = 60;
@@ -319,6 +321,9 @@ export class AI {
     const b = this.b;
     this.others = others;
     this.now = t;
+    // 現在の風速に応じたスナイプのベストクローズ角度(強風38°・中風40°・軽風45°)へ追従
+    const curOptDeg = b.bestCloseDeg || bestCloseDeg(BASE_WIND_KT * (b.windF || 1));
+    this.closeAngle = (curOptDeg * Math.PI) / 180 + this.closeAngleOffset;
     if (b.maneuver) return;
     if (b.penalty) { b.steer = this.penDir; b.throttle = 1; return; }
     b.sheet = sheetOpt(b.twa);
