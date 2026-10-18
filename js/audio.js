@@ -4,10 +4,11 @@
 //  - セールのシバー: 連続的なバタバタ音 + タック時のパンッ
 //  - 他艇が近づくと相手の波切り音が大きく・左右定位つきで聞こえる
 let ctx = null, master = null, fx = null, windGain = null, muted = false, noiseBuf = null;
-let boatBus = null, hissGain = null, rushGain = null, rushFilter = null, swellGain = null;
+let boatBus = null, hissGain = null, hissHP = null, hissLP = null, rushGain = null, rushFilter = null, swellGain = null;
+let chineGain = null, chineFilter = null;
 let shiverGain = null, shiverLfo = null;
 let nearGain = null, nearFilter = null, nearPan = null;
-let camMul = 1, tBubble = 0, tSlap = 0, tShiver = 0;
+let camMul = 1, tBubble = 0, tSlap = 0, tSlice = 0, tGurgle = 0, tShiver = 0, wPhase = 0;
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -41,7 +42,7 @@ export function initAudio() {
     fx = ctx.createGain(); fx.gain.value = 1; fx.connect(conv);
     const wet = ctx.createGain(); wet.gain.value = 0.55; conv.connect(wet); wet.connect(master);
 
-    // ノイズ素材: 白色 / ブラウン(風用)
+    // ノイズ素材: 白色 / ブラウン(風・水流用)
     const sr = ctx.sampleRate;
     noiseBuf = ctx.createBuffer(1, sr * 2, sr);
     const wn = noiseBuf.getChannelData(0); for (let i = 0; i < wn.length; i++) wn[i] = Math.random() * 2 - 1;
@@ -59,21 +60,27 @@ export function initAudio() {
     // 艇の音バス(カメラがドローンの時は小さく、艇内では大きく)
     boatBus = ctx.createGain(); boatBus.gain.value = 1; boatBus.connect(master);
 
-    // 船体を流れる水のシャー(高域) — うねりでゆっくり揺れる
-    const hsrc = loopSource(noiseBuf, 0.9);
-    const hhp = ctx.createBiquadFilter(); hhp.type = 'highpass'; hhp.frequency.value = 1500;
-    const hlp = ctx.createBiquadFilter(); hlp.type = 'lowpass'; hlp.frequency.value = 7500;
+    // 1) 船体を流れる水のシャー(高域スプレー＆水切り) — 波との出会いに合わせてフィルタと音量が有機的に変化
+    const hsrc = loopSource(noiseBuf, 0.92);
+    hissHP = ctx.createBiquadFilter(); hissHP.type = 'highpass'; hissHP.frequency.value = 1350;
+    hissLP = ctx.createBiquadFilter(); hissLP.type = 'lowpass'; hissLP.frequency.value = 6800; hissLP.Q.value = 0.7;
     swellGain = ctx.createGain(); swellGain.gain.value = 0.75;
-    const swell = ctx.createOscillator(); swell.frequency.value = 0.31;
-    const swellAmp = ctx.createGain(); swellAmp.gain.value = 0.25; swell.connect(swellAmp); swellAmp.connect(swellGain.gain); swell.start();
+    const swell = ctx.createOscillator(); swell.frequency.value = 0.37;
+    const swellAmp = ctx.createGain(); swellAmp.gain.value = 0.22; swell.connect(swellAmp); swellAmp.connect(swellGain.gain); swell.start();
     hissGain = ctx.createGain(); hissGain.gain.value = 0;
-    hsrc.connect(hhp); hhp.connect(hlp); hlp.connect(swellGain); swellGain.connect(hissGain); hissGain.connect(boatBus);
+    hsrc.connect(hissHP); hissHP.connect(hissLP); hissLP.connect(swellGain); swellGain.connect(hissGain); hissGain.connect(boatBus);
 
-    // バウウェーブ/ハルのゴォーッという中低域
-    const rsrc = loopSource(brown, 1.7);
-    rushFilter = ctx.createBiquadFilter(); rushFilter.type = 'bandpass'; rushFilter.frequency.value = 450; rushFilter.Q.value = 0.9;
+    // 2) バウウェーブ/ハルのゴォーッ・ザァーッという中低域水流
+    const rsrc = loopSource(brown, 1.65);
+    rushFilter = ctx.createBiquadFilter(); rushFilter.type = 'bandpass'; rushFilter.frequency.value = 420; rushFilter.Q.value = 0.95;
     rushGain = ctx.createGain(); rushGain.gain.value = 0;
     rsrc.connect(rushFilter); rushFilter.connect(rushGain); rushGain.connect(boatBus);
+
+    // 3) チャイン＆船底の「シュルル・コポコポ」という水脈共鳴レイヤー
+    const csrc = loopSource(noiseBuf, 0.68);
+    chineFilter = ctx.createBiquadFilter(); chineFilter.type = 'bandpass'; chineFilter.frequency.value = 820; chineFilter.Q.value = 2.4;
+    chineGain = ctx.createGain(); chineGain.gain.value = 0;
+    csrc.connect(chineFilter); chineFilter.connect(chineGain); chineGain.connect(boatBus);
 
     // セールのシバー(連続したバサバサ・バタバタ): 中低域の厚みを持たせたバンドパスと鋸波LFO
     const ssrc = loopSource(noiseBuf, 0.95);
@@ -99,26 +106,112 @@ export function setWind(speedNorm) { if (windGain && ctx) windGain.gain.setTarge
 export function setCameraAudio(cockpit) { camMul = cockpit ? 1.0 : 0.45; }
 export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.62; return muted; }
 
-// ---- 艇の連続音(毎フレーム) ----
+// ---- 艇の連続音＆多彩な水切りバリエーション(毎フレーム) ----
+// 1) 気泡・水滴のポコポコ/ピチャッ (単発〜2連で音程・音色をランダム変化)
 function bubble(sp) {
-  const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
-  const f = 240 + Math.random() * 760;
-  o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * (1.5 + Math.random() * 1.2), t + 0.05);
-  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.035 * sp + 0.005, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
-  o.connect(g); g.connect(boatBus); o.start(t); o.stop(t + 0.1);
+  const t = ctx.currentTime;
+  const count = Math.random() < 0.42 ? 2 : 1;
+  for (let i = 0; i < count; i++) {
+    const dt0 = i * (0.025 + Math.random() * 0.035);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    const f = 220 + Math.random() * 880;
+    const dur = 0.045 + Math.random() * 0.045;
+    o.type = Math.random() < 0.7 ? 'sine' : 'triangle';
+    o.frequency.setValueAtTime(f, t + dt0);
+    o.frequency.exponentialRampToValueAtTime(f * (1.35 + Math.random() * 1.35), t + dt0 + dur);
+    const amp = (0.028 * sp + 0.005) * (0.75 + Math.random() * 0.5);
+    g.gain.setValueAtTime(0.0001, t + dt0);
+    g.gain.linearRampToValueAtTime(amp, t + dt0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dt0 + dur + 0.015);
+    o.connect(g); g.connect(boatBus);
+    o.start(t + dt0); o.stop(t + dt0 + dur + 0.025);
+  }
 }
+
+// 2) バウが波頭を切り裂く「ザシュッ / シュワァーッ」という水切りスウィッシュ音
+function bowSlice(sp, heel, upwind) {
+  const t = ctx.currentTime;
+  const dur = (upwind ? 0.28 : 0.44) + Math.random() * 0.26;
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  s.playbackRate.value = 0.68 + Math.random() * 0.52;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.Q.value = 1.1 + Math.random() * 0.9;
+  const fStart = 550 + Math.random() * 450;
+  const fPeak = 1350 + sp * 1300 + Math.random() * 750;
+  const fEnd = 340 + Math.random() * 260;
+  bp.frequency.setValueAtTime(fStart, t);
+  bp.frequency.exponentialRampToValueAtTime(fPeak, t + dur * 0.28);
+  bp.frequency.exponentialRampToValueAtTime(fEnd, t + dur);
+
+  const g = ctx.createGain();
+  const vol = (0.06 + 0.20 * sp) * (1 + heel * 1.4) * (0.8 + Math.random() * 0.4);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + dur * 0.22);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
+  s.connect(bp); bp.connect(g); g.connect(boatBus);
+  s.start(t, Math.random() * 1.3); s.stop(t + dur + 0.06);
+}
+
+// 3) チャイン・スターン渦の「チャプッ / シュルル / コポッ」という水流の揺らぎ
+function wakeGurgle(sp, heel) {
+  const t = ctx.currentTime;
+  const pulses = 2 + ((Math.random() * 2) | 0);
+  for (let i = 0; i < pulses; i++) {
+    const t0 = t + i * (0.055 + Math.random() * 0.05);
+    const dur = 0.09 + Math.random() * 0.09;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    s.playbackRate.value = 0.55 + Math.random() * 0.45;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.Q.value = 3.2 + Math.random() * 2.8;
+    const f0 = 320 + Math.random() * 520;
+    const f1 = f0 * (0.65 + Math.random() * 0.85);
+    bp.frequency.setValueAtTime(f0, t0);
+    bp.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    const g = ctx.createGain();
+    const vol = (0.045 + 0.14 * sp) * (1 + heel * 1.1) * (0.7 + Math.random() * 0.5);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.02);
+    s.connect(bp); bp.connect(g); g.connect(boatBus);
+    s.start(t0, Math.random() * 1.2); s.stop(t0 + dur + 0.03);
+  }
+}
+
+// 4) ハルが波を叩くスラップ＆飛沫 (軽快なチョップ波・飛沫を伴うスプラッシュ・重めのバウバンプの3パターン)
 function waveSlap(sp, heel) {
-  const t = ctx.currentTime, s = ctx.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = 0.7 + Math.random() * 0.6;
-  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 1.2;
-  f.frequency.setValueAtTime(1400 + Math.random() * 800, t); f.frequency.exponentialRampToValueAtTime(220, t + 0.38);
-  const g = ctx.createGain(); const vol = (0.10 + 0.26 * sp) * (1 + heel * 1.5);
-  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
-  s.connect(f); f.connect(g); g.connect(boatBus); s.start(t, Math.random() * 1.0); s.stop(t + 0.5);
+  const t = ctx.currentTime;
+  const variant = Math.random();
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  s.playbackRate.value = 0.65 + Math.random() * 0.65;
+  const f = ctx.createBiquadFilter();
+  f.type = variant < 0.45 ? 'lowpass' : 'bandpass';
+  f.Q.value = variant < 0.45 ? 1.3 : 0.95;
+  const fHi = (variant < 0.35 ? 1100 : variant < 0.75 ? 1850 : 2400) + Math.random() * 700;
+  const fLo = 180 + Math.random() * 160;
+  const dur = (variant < 0.35 ? 0.28 : 0.42) + Math.random() * 0.18;
+  f.frequency.setValueAtTime(fHi, t);
+  f.frequency.exponentialRampToValueAtTime(fLo, t + dur);
+
+  const g = ctx.createGain();
+  const vol = (0.08 + 0.24 * sp) * (1 + heel * 1.5) * (0.8 + Math.random() * 0.4);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.010);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
+  s.connect(f); f.connect(g); g.connect(boatBus);
+  s.start(t, Math.random() * 1.0); s.stop(t + dur + 0.06);
+
+  // 船体のFRP共鳴音 (波の当たり方でピッチと深さが変化)
   const o = ctx.createOscillator(), og = ctx.createGain();
-  o.type = 'sine'; o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.25);
-  og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.16 * sp, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-  o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.35);
+  o.type = variant > 0.65 ? 'triangle' : 'sine';
+  const bodyF0 = 78 + Math.random() * 42;
+  o.frequency.setValueAtTime(bodyF0, t);
+  o.frequency.exponentialRampToValueAtTime(bodyF0 * 0.48, t + 0.24);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.linearRampToValueAtTime((0.11 + Math.random() * 0.08) * sp, t + 0.01);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+  o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.32);
 }
+
 // シバー時の「バサバサッ」というセールクロスの連続はためきパルス
 function shiverFlap(lv) {
   if (!ctx || !noiseBuf) return;
@@ -150,17 +243,40 @@ function shiverFlap(lv) {
   o.connect(og); og.connect(master);
   o.start(t); o.stop(t + dur + 0.02);
 }
+
 // active=false(一時停止/メニュー)で無音。b は自艇。
 export function updateSailingAudio(dt, b, active = true) {
   if (!ctx || !hissGain) return;
   const now = ctx.currentTime;
   boatBus.gain.setTargetAtTime(active ? camMul : 0, now, 0.25);
-  const v = active && b ? b.v : 0;
+  const v = active && b ? Math.abs(b.v) : 0;
   const sp = clamp01(v / 8);
   const heel = active && b ? Math.min(0.4, Math.abs(b.heel)) : 0;
-  hissGain.gain.setTargetAtTime((0.01 + 0.34 * Math.pow(sp, 1.4)) * (1 + heel * 2.4), now, 0.12);
-  rushGain.gain.setTargetAtTime(0.02 + 0.30 * sp, now, 0.2);
-  rushFilter.frequency.setTargetAtTime(320 + sp * 900, now, 0.2);
+  const twa = active && b ? b.twa || 1.0 : 1.0;
+  const upwind = twa < 1.35;
+
+  // 波との出会い周期(クローズでは波に突っ込むため周期が速く、ランニングでは波に乗ってゆったりうねる)
+  const encRate = (0.8 + sp * (upwind ? 3.2 : 1.7)) * 1.4;
+  wPhase += dt * encRate;
+  const waveMod1 = Math.sin(wPhase);
+  const waveMod2 = Math.sin(wPhase * 1.618 + 0.9);
+  const waveMod3 = Math.sin(wPhase * 0.47 + 2.1);
+  const dynWave = clampN(0.5 + 0.28 * waveMod1 + 0.18 * waveMod2 + 0.12 * waveMod3, 0.1, 1.15);
+
+  // 連続水流音のゲインとフィルタ周波数を波のうねり・ヒール・艇速で絶えず表情付けする
+  hissGain.gain.setTargetAtTime((0.008 + 0.26 * Math.pow(sp, 1.35)) * (1 + heel * 2.2) * (0.72 + 0.55 * dynWave), now, 0.08);
+  if (hissHP && hissLP) {
+    hissHP.frequency.setTargetAtTime(1050 + sp * 480 - heel * 500 + waveMod2 * 220, now, 0.10);
+    hissLP.frequency.setTargetAtTime(3800 + sp * 3600 + dynWave * 1600, now, 0.10);
+  }
+  rushGain.gain.setTargetAtTime((0.015 + 0.25 * sp) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12);
+  rushFilter.frequency.setTargetAtTime(260 + sp * 780 + waveMod1 * 140 + heel * 260, now, 0.12);
+
+  if (chineGain && chineFilter) {
+    chineGain.gain.setTargetAtTime(sp * (0.04 + 0.12 * heel + 0.05 * Math.abs(waveMod2)), now, 0.10);
+    chineFilter.frequency.setTargetAtTime(580 + sp * 620 + waveMod3 * 240, now, 0.10);
+  }
+
   // シバー (バサバサ音を大きく・はっきりと再生)
   const luff = active && b ? clamp01(b.luff) : 0;
   const lv = luff > 0.08 ? luff : 0;
@@ -173,10 +289,31 @@ export function updateSailingAudio(dt, b, active = true) {
     if (active && lv > 0.08) shiverFlap(lv);
   }
   if (!active) return;
+
+  // 気泡・チャインの水滴音
   tBubble -= dt;
-  if (tBubble <= 0 && sp > 0.08) { tBubble = (0.06 + Math.random() * 0.16) / (0.4 + sp * 1.8); bubble(sp); }
+  if (tBubble <= 0 && sp > 0.06) {
+    tBubble = (0.05 + Math.random() * 0.15) / (0.35 + sp * 1.85);
+    bubble(sp);
+  }
+  // バウが波を切り裂く「ザシュッ / シュワァー」バリエーション
+  tSlice -= dt;
+  if (tSlice <= 0 && sp > 0.10) {
+    tSlice = (0.38 + Math.random() * 0.68) / (0.45 + sp * (upwind ? 1.55 : 1.05));
+    bowSlice(sp, heel, upwind);
+  }
+  // 船底・スターン渦の「チャプッ / コポッ」バリエーション
+  tGurgle -= dt;
+  if (tGurgle <= 0 && sp > 0.08) {
+    tGurgle = (0.28 + Math.random() * 0.55) / (0.4 + sp * 1.4);
+    wakeGurgle(sp, heel);
+  }
+  // 波打ちスラップ音
   tSlap -= dt;
-  if (tSlap <= 0 && sp > 0.15) { tSlap = (0.35 + Math.random() * 0.9) / (0.35 + sp * 1.3); waveSlap(sp, heel); }
+  if (tSlap <= 0 && sp > 0.14) {
+    tSlap = (0.35 + Math.random() * 0.88) / (0.35 + sp * (upwind ? 1.45 : 1.05));
+    waveSlap(sp, heel);
+  }
 }
 
 // 他艇が近づくと波切り音が大きく。player の進行方向に対する左右へ定位。
