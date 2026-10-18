@@ -1,6 +1,6 @@
 // 江の島沖 / 八景島沖の世界: 海・空・島・海岸・ランドマーク・マーク・航跡
 import * as THREE from 'three';
-import { MARKS, toWorld, LINE_HALF, U, W0, setWindDir } from './course.js';
+import { MARKS, toWorld, LINE_HALF, LINE_SKEW, FAVORED, lineA, U, W0, setWindDir } from './course.js';
 import { makeMotorboat } from './powerboats.js';
 
 export const FOG_COLOR = 0xbdd5e6;
@@ -525,6 +525,90 @@ export function createWorld(scene) {
   yhGroup.add(dh, dm);
   enoshimaGroup.add(yhGroup);
 
+  // 6) 江の島周辺・腰越・片瀬沖の漁船(スパンカー帆付き小型漁船)と大型クルーザー・外洋ヨット群 (レースコース外に配置)
+  const enoShips = new THREE.Group();
+  const enoWhite = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+  const enoBlue = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+  const enoNavy = new THREE.MeshLambertMaterial({ color: 0x1e3a8a });
+  const enoDark = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+  const enoTeak = new THREE.MeshLambertMaterial({ color: 0xb48a60 });
+  const enoGlass = new THREE.MeshLambertMaterial({ color: 0x0ea5e9, emissive: 0x0c4a6e });
+  // (6-a) 腰越・片瀬・江の島沖のシラス漁船・釣り船 (白い船体・青ライン・船尾スパンカー帆)
+  const enoFishCoords = [
+    [620, -480, 0.65], [960, -360, -0.45], [1180, -640, 1.15],
+    [-460, -520, 0.35], [-740, -680, -0.85], [-580, 260, 0.9],
+    [540, 480, -1.2], [860, 220, 0.25], [-420, 560, 1.6]
+  ];
+  for (const [fx, fz, fry] of enoFishCoords) {
+    const fg = new THREE.Group();
+    const fh = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.3, 11.5), enoWhite);
+    fh.position.y = 0.55; fg.add(fh);
+    const fb = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.38, 11.6), enoBlue);
+    fb.position.y = 1.15; fg.add(fb);
+    const fc = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.0, 3.4), enoWhite);
+    fc.position.set(0, 2.0, -0.4); fg.add(fc);
+    const fWin = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.65, 1.8), enoGlass);
+    fWin.position.set(0, 2.35, 0.3); fg.add(fWin);
+    const spanker = new THREE.Mesh(new THREE.ConeGeometry(1.55, 4.2, 3), enoWhite);
+    spanker.position.set(0, 3.5, -4.1); fg.add(spanker);
+    fg.position.set(fx, 0, fz); fg.rotation.y = fry;
+    enoShips.add(fg);
+  }
+  // (6-b) 湘南港・相模湾を航行する大型モータークルーザー & 大型外洋セーリングクルーザー
+  const enoCruiserConfigs = [
+    { x: 740, z: -210, ry: -0.35, scale: 1.25, col: 0xf8fafc, stripe: 0x1e3a8a, sail: false },
+    { x: -520, z: -240, ry: 0.55, scale: 1.35, col: 0x1e293b, stripe: 0x38bdf8, sail: false },
+    { x: 640, z: 160, ry: 2.35, scale: 1.18, col: 0xf8fafc, stripe: 0x0284c7, sail: true },
+    { x: -640, z: -40, ry: -0.75, scale: 1.28, col: 0xf1f5f9, stripe: 0xdc2626, sail: true },
+    { x: 1080, z: -80, ry: -1.1, scale: 1.45, col: 0xf8fafc, stripe: 0x0f172a, sail: false },
+    { x: 380, z: 640, ry: 0.18, scale: 1.22, col: 0xf8fafc, stripe: 0x2563eb, sail: true },
+  ];
+  for (const cc of enoCruiserConfigs) {
+    const cg = new THREE.Group();
+    const hullMat = new THREE.MeshLambertMaterial({ color: cc.col });
+    const strMat = new THREE.MeshLambertMaterial({ color: cc.stripe });
+    // 船体 (全長約20〜26m級の大型ラグジュアリークルーザー)
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.4, 21.0), hullMat);
+    hull.position.y = 1.0; cg.add(hull);
+    const bow = new THREE.Mesh(new THREE.ConeGeometry(3.96, 6.8, 4), hullMat);
+    bow.rotation.x = Math.PI / 2; bow.rotation.y = Math.PI / 4;
+    bow.scale.set(1, 0.62, 1); bow.position.set(0, 1.05, 13.8); cg.add(bow);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(5.72, 0.42, 21.2), strMat);
+    stripe.position.y = 1.85; cg.add(stripe);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.3, 20.0), enoTeak);
+    deck.position.y = 2.25; cg.add(deck);
+    if (cc.sail) {
+      // 大型外洋セーリングクルーザー(45〜55ft級: キャビン＋高いマスト＆メイン・ジブセール)
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.3, 8.5), enoWhite);
+      cabin.position.set(0, 2.8, 1.2); cg.add(cabin);
+      const cWin = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.55, 6.2), enoGlass);
+      cWin.position.set(0, 3.0, 1.4); cg.add(cWin);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 24.0, 8), enoWhite);
+      mast.position.set(0, 14.0, 2.5); cg.add(mast);
+      const mainSail = new THREE.Mesh(new THREE.ConeGeometry(4.2, 20.0, 3), new THREE.MeshLambertMaterial({ color: 0xf8fafc, side: THREE.DoubleSide }));
+      mainSail.position.set(0, 13.5, -1.2); mainSail.scale.set(0.12, 1, 1.35); cg.add(mainSail);
+      const jibSail = new THREE.Mesh(new THREE.ConeGeometry(3.5, 17.5, 3), new THREE.MeshLambertMaterial({ color: 0xf1f5f9, side: THREE.DoubleSide }));
+      jibSail.position.set(0, 12.0, 7.6); jibSail.scale.set(0.12, 1, 1.15); cg.add(jibSail);
+    } else {
+      // フライブリッジ付き大型モータークルーザー (サロンクルーザー)
+      const salon = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.2, 11.5), enoWhite);
+      salon.position.set(0, 3.3, -0.5); cg.add(salon);
+      const sWin = new THREE.Mesh(new THREE.BoxGeometry(4.72, 1.1, 9.8), enoGlass);
+      sWin.position.set(0, 3.5, 0.2); cg.add(sWin);
+      const fly = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.4, 6.8), enoWhite);
+      fly.position.set(0, 5.0, -1.2); cg.add(fly);
+      const radarArch = new THREE.Mesh(new THREE.BoxGeometry(3.9, 1.8, 1.2), enoWhite);
+      radarArch.position.set(0, 6.2, -3.2); cg.add(radarArch);
+      const hardTop = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.3, 6.2), enoWhite);
+      hardTop.position.set(0, 7.1, -1.2); cg.add(hardTop);
+    }
+    cg.scale.setScalar(cc.scale);
+    cg.position.set(cc.x, 0, cc.z);
+    cg.rotation.y = cc.ry;
+    enoShips.add(cg);
+  }
+  enoshimaGroup.add(enoShips);
+
   // ===== 2. 八景島ステージ (横浜・八景島シーパラダイス沖) =====
   buildHakkeijima(hakkeijimaGroup, surfStrip, fgeo);
 
@@ -586,9 +670,58 @@ export function createWorld(scene) {
   // スタートライン(TV中継風の薄いライン)
   const pa0 = toWorld(MARKS.pin.a, MARKS.pin.c), pb0 = toWorld(MARKS.com.a, MARKS.com.c);
   const len = Math.hypot(pb0.x - pa0.x, pb0.z - pa0.z);
-  const lineMesh = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.6), new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const lineMesh = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.7), new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.62, depthWrite: false, blending: THREE.AdditiveBlending }));
   lineMesh.rotation.x = -Math.PI / 2; scene.add(lineMesh);
-  
+
+  // ---------- スタート前限定: スタートライン角度(風に対する傾き) & 有利サイド3Dガイド ----------
+  const preStartGroup = new THREE.Group();
+  scene.add(preStartGroup);
+  const skewDegNum = Math.abs((LINE_SKEW * 180) / Math.PI);
+  const skewDegStr = skewDegNum.toFixed(1);
+  const favEndName = FAVORED === 'com' ? '本部船(右)' : 'ピン(左)';
+  // 風に対して直角な基準破線(不利側エンドを起点に風直角方向へ引き、実際のスタートラインとの角度差がひと目でわかるようにする)
+  const dashTex = (() => {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 16; const x = c.getContext('2d');
+    x.fillStyle = 'rgba(56,189,248,0.92)'; x.fillRect(0, 0, 38, 16);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(18, 1); return t;
+  })();
+  const refLineMat = new THREE.MeshBasicMaterial({ map: dashTex, transparent: true, opacity: 0.78, depthWrite: false });
+  const refLineMesh = new THREE.Mesh(new THREE.PlaneGeometry(LINE_HALF * 2, 0.65), refLineMat);
+  refLineMesh.rotation.x = -Math.PI / 2;
+  preStartGroup.add(refLineMesh);
+
+  const makeBannerSprite = (text, subText, bg, borderCol, wScale, hScale) => {
+    const c = document.createElement('canvas'); c.width = 768; c.height = 192; const x = c.getContext('2d');
+    x.fillStyle = bg; x.fillRect(0, 0, 768, 192);
+    x.strokeStyle = borderCol; x.lineWidth = 10; x.strokeRect(5, 5, 758, 182);
+    x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(text, 384, subText ? 68 : 96);
+    if (subText) {
+      x.fillStyle = '#fef08a'; x.font = 'bold 46px sans-serif';
+      x.fillText(subText, 384, 138);
+    }
+    const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(wScale, hScale, 1);
+    sp.renderOrder = 6;
+    return sp;
+  };
+  const favEndBadge = makeBannerSprite(
+    `★ 有利サイド (${favEndName})`,
+    `風上へ +${skewDegStr}° 有利`,
+    'rgba(185, 28, 28, 0.90)',
+    '#fde047',
+    30, 7.5
+  );
+  const startSkewBadge = makeBannerSprite(
+    `ライン角度: ${favEndName}側が +${skewDegStr}° 風上`,
+    '水色破線 ＝ 風に対する直角基準線',
+    'rgba(12, 34, 64, 0.88)',
+    '#38bdf8',
+    32, 8.0
+  );
+  preStartGroup.add(favEndBadge, startSkewBadge);
+
   // フィニッシュライン(チェッカー柄の帯 + 縦のカーテン + FINISH表示)
   const fpa0 = toWorld(MARKS.fm.a, MARKS.fm.c), fpb0 = toWorld(MARKS.fcom.a, MARKS.fcom.c);
   const flen = Math.hypot(fpb0.x - fpa0.x, fpb0.z - fpa0.z);
@@ -635,6 +768,15 @@ export function createWorld(scene) {
     lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.15, lcz);
     startLabel.position.set(lcx, 12, lcz);
 
+    // スタート前ガイド: 風直角基準線(不利側エンド基準)と有利サイドバッジの位置更新
+    const unfavA = Math.min(MARKS.pin.a, MARKS.com.a);
+    const rpa = toWorld(unfavA, -LINE_HALF), rpb = toWorld(unfavA, LINE_HALF);
+    const rcx = (rpa.x + rpb.x) / 2, rcz = (rpa.z + rpb.z) / 2, rrot = -Math.atan2(rpb.z - rpa.z, rpb.x - rpa.x);
+    refLineMesh.rotation.z = rrot; refLineMesh.position.set(rcx, 0.14, rcz);
+    const favPt = FAVORED === 'com' ? pb : pa;
+    favEndBadge.position.set(favPt.x, 15.5, favPt.z);
+    startSkewBadge.position.set(lcx, 6.2, lcz);
+
     const fpa = toWorld(MARKS.fm.a, MARKS.fm.c), fpb = toWorld(MARKS.fcom.a, MARKS.fcom.c);
     const flcx = (fpa.x + fpb.x) / 2, flcz = (fpa.z + fpb.z) / 2, flrot = -Math.atan2(fpb.z - fpa.z, fpb.x - fpa.x);
     finBand.rotation.z = flrot; finBand.position.set(flcx, 0.18, flcz);
@@ -642,30 +784,49 @@ export function createWorld(scene) {
     finLabel.position.set(flcx, 12, flcz);
   };
   syncCourseObjects();
-  // マークの番号ラベル (ドローンカメラ高度 y=8〜11m と重ならないようブイ直上の低い位置 y=4.2m に配置し、カメラ接近時は完全非表示化)
+
+  // マークの番号ラベル (遠くのマークほど番号がはっきり大きく見えるよう距離比例スケール + カメラ接近時は完全非表示化)
   const markSprites = {};
   const label = (txt, key, y = 4.2) => {
-    const c = document.createElement('canvas'); c.width = 128; c.height = 128; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(10,20,40,0.72)'; x.beginPath(); x.arc(64, 64, 56, 0, 7); x.fill();
-    x.strokeStyle = '#ffd23f'; x.lineWidth = 6; x.stroke();
-    x.fillStyle = '#fff'; x.font = 'bold 62px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 64, 68);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: true, depthWrite: false, transparent: true, opacity: 0.88 }));
-    s.scale.set(3.8, 3.8, 1); s.position.y = y; markObjs[key].add(s);
+    const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d');
+    x.fillStyle = 'rgba(8, 18, 38, 0.88)'; x.beginPath(); x.arc(128, 128, 114, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#ffd23f'; x.lineWidth = 14; x.stroke();
+    x.fillStyle = '#ffffff'; x.font = 'bold 126px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(txt, 128, 134);
+    const tex = new THREE.CanvasTexture(c);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false, transparent: true, opacity: 0.94 }));
+    s.scale.set(4.5, 4.5, 1); s.position.y = y; s.renderOrder = 4; markObjs[key].add(s);
     markSprites[key] = s;
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
 
-  // ---------- 次向かうマークの矢印 (艇内・ドローン双方から見やすいサイズ、4ゲートは4S/4P両方に表示) ----------
+  // ---------- 次向かうマークの赤い矢印 + 上部「Next」文字列 (4ゲートは4S/4P両方に表示) ----------
+  const makeNextTextTex = () => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 112; const x = c.getContext('2d');
+    x.fillStyle = 'rgba(220, 24, 24, 0.92)';
+    x.beginPath(); x.roundRect(12, 12, 232, 88, 22); x.fill();
+    x.strokeStyle = '#ffffff'; x.lineWidth = 8; x.stroke();
+    x.fillStyle = '#ffffff'; x.font = 'bold 64px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('Next', 128, 58);
+    return new THREE.CanvasTexture(c);
+  };
+  const nextTex = makeNextTextTex();
   const makeTargetArrow = () => {
     const g = new THREE.Group();
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.94, depthWrite: false });
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.0, 3.4, 12), coneMat);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.96, depthWrite: false });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.7, 4.5, 14), coneMat);
     cone.rotation.x = Math.PI;
-    cone.position.y = -1.1;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.68, 2.8, 12), coneMat);
-    shaft.position.y = 1.8;
-    g.add(cone, shaft);
+    cone.position.y = -1.2;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.92, 3.6, 14), coneMat);
+    shaft.position.y = 2.4;
+    const nextMat = new THREE.SpriteMaterial({ map: nextTex, transparent: true, opacity: 0.96, depthWrite: false });
+    const nextSp = new THREE.Sprite(nextMat);
+    nextSp.scale.set(6.8, 3.0, 1);
+    nextSp.position.y = 6.2;
+    nextSp.renderOrder = 6;
+    g.add(cone, shaft, nextSp);
     g.userData.mat = coneMat;
+    g.userData.nextMat = nextMat;
     g.visible = false;
     scene.add(g);
     return g;
@@ -771,9 +932,10 @@ export function createWorld(scene) {
         }
       }
     },
-    // mode: 'start' | 'finish'  emph: 0..1 (プレイヤーが最終レグで強調)
-    setLine(mode, emph) {
+    // mode: 'start' | 'finish'  emph: 0..1 (プレイヤーが最終レグで強調)  showPreStart: スタート前のみtrue
+    setLine(mode, emph, showPreStart = false) {
       finCurtainMat.opacity = 0.25 + 0.3 * emph + (emph > 0.5 ? 0.12 * Math.sin(performance.now() / 250) : 0);
+      preStartGroup.visible = !!showPreStart;
     },
     update(t, camera, dt, wt = 0) {
       waterMat.uniforms.uTime.value = t; waterMat.uniforms.uWT.value = wt; waterMat.uniforms.uW0.value = W0; skyMat.uniforms.uTime.value = t;
@@ -800,23 +962,32 @@ export function createWorld(scene) {
         return distFade;
       };
 
-      // マーク上の矢印アニメーション（カメラ接近・視線重複時は完全透過して視界を邪魔しない）
+      // マーク上の赤矢印＋Nextラベル: 遠方でも見やすいよう距離に応じて少し拡大し、カメラ接近・視線重複時は完全透過
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
-        ar.position.y = 7.2 + 0.6 * Math.sin(t * 3.2);
+        const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
+        const arScale = clampN(1.0 + Math.max(0, dCam - 55) * 0.0065, 1.0, 2.8);
+        ar.scale.setScalar(arScale);
+        ar.position.y = 8.4 + 0.65 * Math.sin(t * 3.2) + (arScale - 1.0) * 3.2;
         ar.rotation.y = t * 1.6;
         const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18);
-        ar.userData.mat.opacity = 0.94 * v;
+        ar.userData.mat.opacity = 0.96 * v;
+        if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
       }
-      // マーク番号ラベル: 回航済みマークやカメラと自艇の間に入ったマーク番号は完全に消す
+      // マーク番号ラベル: 遠くにあるマークほど大きく拡大して遠くからでも番号がはっきり判読できるようにし、カメラ接近時は完全に消す
       for (const [k, sp] of Object.entries(markSprites)) {
         const isAct = activeMarkKeys.includes(k);
-        const s = isAct ? 4.5 : 3.6;
-        sp.scale.set(s, s, 1);
         const mo = markObjs[k];
+        const dCam = Math.hypot(mo.position.x - cx, mo.position.z - cz);
+        // 遠方(dCam > 60m)では距離に比例して最大22倍までスケールアップし、300m先の1マーク等でも番号がくっきり読めるようにする
+        const baseS = isAct ? 4.8 : 4.0;
+        const distBoost = Math.max(0, dCam - 50) * (isAct ? 0.048 : 0.040);
+        const s = clampN(baseS + distBoost, baseS, isAct ? 22.0 : 18.0);
+        sp.scale.set(s, s, 1);
+        sp.position.y = 4.2 + (s - baseS) * 0.38;
         // 次に向かうマーク以外は55m以内で完全に消すことで、上マーク回航後に1番・1a番ラベルがカメラと被るのを防ぐ
-        const v = calcVis(mo.position.x, 4.2, mo.position.z, isAct ? 26 : 55, 22);
-        sp.material.opacity = 0.90 * v;
+        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 26 : 55, 22);
+        sp.material.opacity = 0.94 * v;
         sp.visible = v > 0.02;
       }
       for (const lb of [startLabel, finLabel]) {
@@ -824,6 +995,14 @@ export function createWorld(scene) {
         const v = calcVis(lb.position.x, lb.position.y, lb.position.z, 32, 24);
         lb.material.opacity = 0.88 * v;
         lb.visible = v > 0.02;
+      }
+      if (preStartGroup.visible) {
+        const vFav = calcVis(favEndBadge.position.x, favEndBadge.position.y, favEndBadge.position.z, 22, 18);
+        favEndBadge.material.opacity = 0.92 * vFav;
+        favEndBadge.visible = vFav > 0.02;
+        const vSkw = calcVis(startSkewBadge.position.x, startSkewBadge.position.y, startSkewBadge.position.z, 26, 20);
+        startSkewBadge.material.opacity = 0.90 * vSkw;
+        startSkewBadge.visible = vSkw > 0.02;
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
