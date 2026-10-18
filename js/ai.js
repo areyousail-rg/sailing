@@ -1,5 +1,5 @@
 // AI艇(three.js非依存)
-import { toWorld, LEGS, LINE_HALF, lineA, LINE_SKEW, MARKS, ROUND_R } from './course.js';
+import { toWorld, LEGS, LINE_HALF, lineA, LINE_SKEW, MARKS, ROUND_R, COURSE_MODE } from './course.js';
 import { wrap, clamp, sheetOpt, polar, bestCloseDeg, BASE_WIND_KT, SPEED_SCALE, OBSTACLES, POLE_MIN } from './sim.js';
 import { giveWayBoat } from './rules.js';
 
@@ -29,8 +29,12 @@ export class AI {
     this.creepExp = 1.5 + rng() * 0.8;
     this.gap0 = null;
     this.avoidUntil = 0; this.avoidH = 0;
-    this.roundR = 7.0 + rng() * 2.0; // マーク回航半径(ワイドイン・タイトアウト気味)
+    this.roundR = 6.6 + rng() * 1.0; // マーク進入半径(ワイドイン)
+    this.roundROut = 2.40;            // マーク脱出半径(タイトアウト: クローズ時点でマーク真横にピッタリつく)
     this.rp = null;
+    // 4ゲート(4S=gL / 4P=gR): CP艇が片方に偏らないようIDの偶奇で50%ずつ均等に4S(左・右舷回航)と4P(右・左舷回航)へ振り分ける
+    this.gateKey = b.id % 2 === 0 ? 'gL' : 'gR';
+    this.gateRp = null;
     this.poleT = 0;
   }
 
@@ -55,7 +59,7 @@ export class AI {
   }
 
   // 目標点(a,c)へ向かうヘディング(風上ならタック、風下170°超ならジャイブで170°付近を維持)
-  headingFor(tgt, t, prestart) {
+  headingFor(tgt, t, prestart, directDownwind = false) {
     const b = this.b, W = b.windFrom;
     const tw = toWorld(tgt.a, tgt.c);
     const brg = this.bearing(tw.x, tw.z);
@@ -63,7 +67,7 @@ export class AI {
     const ca = this.closeAngle;
     const ra = this.runAngle;
     // 下レグ(目標が真風角170°より深い場合): 180°で走らず170°付近を維持し、レイラインに達したらジャイブする
-    if (!prestart && Math.abs(relT) > ra && Math.hypot(tgt.a - b.a, tgt.c - b.c) > 22) {
+    if (!prestart && !directDownwind && Math.abs(relT) > ra && Math.hypot(tgt.a - b.a, tgt.c - b.c) > 22) {
       const hs = wrap(W - ra), hp = wrap(W + ra);
       const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
       if (t - this.lastTack > 6 && !this.crowded() && !this.nearObstacle(8)) {
@@ -118,31 +122,28 @@ export class AI {
     return false;
   }
 
-  // ---------- マーク回航プラン ----------
-  // 左舷回航(マークを左に見て反時計回り)。
-  // 進入点 → マーク中心・半径 r の円を接線方向に周回(半径誤差を補正するベクトル場) → 脱出点 → 次の目標。
-  // 風上マークは右舷レイライン上の進入点を経由し、マークの右上から回り込む(マークタッチ・逆回り防止)。
+  // ---------- マーク回航プラン (ワイドイン・タイトアウト: クローズ時点でマーク真横にピッタリつく) ----------
   buildRounding(L) {
-    const m = L.mark, r = this.roundR, ca = this.closeAngle;
+    const m = L.mark, rIn = this.roundR, rOut = this.roundROut, ca = this.closeAngle;
     const right = (d) => ({ c: d.a, a: -d.c });
     const ri = right(L.dirIn), ro = right(L.dirOut);
     const th1 = Math.atan2(ri.a, ri.c);
     let th2 = Math.atan2(ro.a, ro.c);
     while (th2 < th1 + 0.05) th2 += 2 * Math.PI;
-    const P = (th) => ({ c: m.c + r * Math.cos(th), a: m.a + r * Math.sin(th) });
     const beat = L.dirIn.a > 0.7;
-    const ths = beat ? Math.max(th1, ca + 0.12) : th1 - 0.45;
-    const entry = P(ths), e = P(th2);
-    // 右舷クローズホールドの進行方向 (c,a)=(-sin ca, cos ca) の手前16mにレイライン進入点
+    const ths = beat ? Math.max(th1, ca + 0.12) : th1 - 0.38;
+    const entry = { c: m.c + rIn * Math.cos(ths), a: m.a + rIn * Math.sin(ths) };
+    // 脱出点 e はマーク真横(rOut = 2.40m)にピタリとつく位置
+    const e = { c: m.c + rOut * Math.cos(th2), a: m.a + rOut * Math.sin(th2) };
     const lay = beat ? { c: entry.c + 16 * Math.sin(ca), a: entry.a - 16 * Math.cos(ca) } : null;
     const exit = { c: e.c + L.dirOut.c * 8, a: e.a + L.dirOut.a * 8 };
-    return { leg: L.id, m, r, ths, arc: th2 - ths, entry, lay, exit, phase: beat ? 'lay' : 'approach', beat, idx: 0 };
+    return { leg: L.id, m, r: rIn, rOut, ths, arc: th2 - ths, entry, e, lay, exit, phase: beat ? 'lay' : 'approach', beat, idx: 0 };
   }
 
   roundingTarget(L) {
     const b = this.b;
     if (!this.rp || this.rp.leg !== L.id) this.rp = this.buildRounding(L);
-    const rp = this.rp, m = rp.m, r = rp.r;
+    const rp = this.rp, m = rp.m, rIn = rp.r, rOut = rp.rOut;
     const dc = b.c - m.c, da = b.a - m.a, dM = Math.hypot(dc, da);
     const thb = Math.atan2(da, dc);
     let uu = thb - rp.ths; // 円弧上の進み具合(rad)
@@ -154,7 +155,6 @@ export class AI {
       else return rp.lay;
     }
     if (rp.phase === 'approach' && rp.beat && !this.fetchable(rp.entry, -0.08) && dist(rp.entry) > 4) {
-      // 右舷レイラインより下(届かない) → 左舷に返してレイラインまで伸ばしてからタック(マーク下でのピンチ・タッチ防止)
       rp.phase = 'lay2';
       if (b.tack === 1 && !b.maneuver && t - this.lastTack > 3) { this.lastTack = t; b.startManeuver('tack'); }
     }
@@ -163,7 +163,6 @@ export class AI {
         if (b.tack === -1 && !b.maneuver && t - this.lastTack > 3) { this.lastTack = t; b.startManeuver('tack'); }
         rp.phase = 'approach';
       } else {
-        // 左舷クローズホールド方向 (c,a)=(sin ca, cos ca) と右舷レイライン(進入点から (sin ca, -cos ca) 方向)の交点の少し先
         const pc = Math.sin(ca), pa = Math.cos(ca), sc = Math.sin(ca), sa = -Math.cos(ca);
         const rc = rp.entry.c - b.c, ra = rp.entry.a - b.a, det = pc * -sa - pa * -sc;
         const u = Math.abs(det) > 1e-6 ? (rc * -sa - ra * -sc) / det : 10;
@@ -172,36 +171,115 @@ export class AI {
       }
     }
     if (rp.phase === 'approach') {
-      // 非ビートレグでは進入点の手前側(時計回り側)から近づいた場合もそのまま周回に入る(進入点へ無理に切り上がらない)
-      if (dist(rp.entry) < 5 || (dM < 2 * r && uu > (rp.beat ? -0.35 : -1.2) && uu < rp.arc)) rp.phase = 'orbit';
+      if (dist(rp.entry) < 5 || (dM < 2.1 * rIn && uu > (rp.beat ? -0.35 : -1.1) && uu < rp.arc)) rp.phase = 'orbit';
       else return rp.entry;
     }
     if (rp.phase === 'orbit') {
       rp.idx = 1;
-      if (uu >= rp.arc - 0.04) rp.phase = 'exit'; // 行き過ぎても再周回しない
-      else if (dM > 3.2 * r) { rp.phase = 'approach'; return rp.entry; }
+      if (uu >= rp.arc - 0.04) rp.phase = 'exit';
+      else if (dM > 3.2 * rIn) { rp.phase = 'approach'; return rp.entry; }
       else {
+        // ワイドイン(rIn=6.6m) → タイトアウト(rOut=2.40m)へスパイラル状に半径を絞り、脱出時はマーク真横にピタリとつける
+        const prog = clamp(uu / Math.max(0.2, rp.arc), 0, 1);
+        const rDes = rIn + (rOut - rIn) * Math.pow(prog, 0.85);
         const tc = -Math.sin(thb), ta = Math.cos(thb), nc = Math.cos(thb), na = Math.sin(thb);
-        const k = clamp(((dM - r) / r) * 1.6, -1.2, 1);
+        const k = clamp(((dM - rDes) / Math.max(2.2, rDes)) * 1.85, -1.2, 1.15);
         let vc = tc - k * nc, va = ta - k * na; const l = Math.hypot(vc, va) || 1; vc /= l; va /= l;
-        return { c: b.c + vc * 15, a: b.a + va * 15 };
+        return { c: b.c + vc * 14, a: b.a + va * 14 };
       }
     }
     // exit
     rp.idx = 2;
-    if (dM > ROUND_R + 4) { this.rp = null; return L.mark; } // 回航が認められていない → 回り直し
-    if (dist(rp.exit) > 5 && (b.c - rp.exit.c) * L.dirOut.c + (b.a - rp.exit.a) * L.dirOut.a < 0) return rp.exit;
+    if (dM > ROUND_R + 4) { this.rp = null; return L.mark; }
+    if (dist(rp.exit) > 4.5 && (b.c - rp.exit.c) * L.dirOut.c + (b.a - rp.exit.a) * L.dirOut.a < 0) return rp.exit;
     const nL = LEGS[b.leg + 1];
-    // 次がマークなら、マーク中心ではなく次の回航の進入点へ向かう(近接した1→1aでのタッチ防止)
     return nL ? (nL.type === 'mark' ? this.buildRounding(nL).entry : nL.center) : L.mark;
   }
 
+  // ---------- 4ゲート(4S=gL / 4P=gR) 専用回航プラン ----------
+  // 1) 4S(gL: a=40, c=-22) はゲート内側から入り、マークの下を回って右舷に見て(時計回り・右舷タックのクローズで)外側(c=-24.4)の真横へピタリと出る
+  // 2) 4P(gR: a=40, c=+22) はゲート内側から入り、マークの下を回って左舷に見て(反時計回り・左舷タックのクローズで)外側(c=+24.4)の真横へピタリと出る
+  updateGateRounding(t) {
+    const b = this.b, ca = this.closeAngle;
+    const key = this.gateKey; // 'gL' (4S) or 'gR' (4P)
+    const m = MARKS[key];
+    // s = -1: 4S(gL, c=-22, 左側マーク・右舷回航) / s = +1: 4P(gR, c=+22, 右側マーク・左舷回航)
+    const s = key === 'gL' ? -1 : 1;
+    // 回航後のクローズホールドで走るべきタック: 4S(s=-1)は右舷タック(+1)、4P(s=+1)は左舷タック(-1)
+    const reqTack = -s;
+
+    if (!this.gateRp) {
+      this.gateRp = {
+        key,
+        s,
+        phase: 'approach', // 'approach' -> 'orbit' -> 'tightExit' -> 'done'
+      };
+    }
+    const gp = this.gateRp;
+    const dc = b.c - m.c, da = b.a - m.a;
+    // ゲート内側のワイド進入点(マークの7.0m内側、a=45.5)
+    const entry = { a: m.a + 5.5, c: m.c - s * 7.0 };
+    // クローズになった時点でマークの真横(a=m.a, 外側2.40m)にピタリとつくタイトアウト点
+    const tightAbeam = { a: m.a + 0.4, c: m.c + s * 2.40 };
+    const closeFollow = { a: m.a + 14.0, c: m.c + s * (2.40 + 13.6 * Math.tan(ca)) };
+
+    // まだゲートより十分風上(a > 52)にいるとき:
+    if (gp.phase === 'approach') {
+      // ゲート手前(a = 52..105)で回航タック(reqTack)と逆のタックなら早めにジャイブを済ませ、マーク際ではラフのみで綺麗に回れるようにする
+      if (b.a < 105 && b.a > 50 && b.tack !== reqTack && !b.maneuver && t - this.lastTack > 4 && !this.crowded()) {
+        this.lastTack = t;
+        b.startManeuver('gybe');
+      }
+      // 万一ゲートの外側(|c| > 20)に膨らんでしまった場合は、必ずゲート内側(c = m.c - s * 7.5, a = 47)へ戻してから進入する
+      if (b.a < 58 && (b.c - m.c) * s > -2.5) {
+        return { tgt: { a: Math.max(m.a + 6.5, b.a - 4), c: m.c - s * 7.5 }, direct: true, rounding: true };
+      }
+      if (b.a <= m.a + 5.5 && (b.c - m.c) * s <= 1.0) {
+        gp.phase = 'orbit';
+      } else {
+        return { tgt: entry, direct: b.a < 115, rounding: b.a < 68 };
+      }
+    }
+
+    if (gp.phase === 'orbit') {
+      if (b.pole) b.setPole(false);
+      // phi: ゲート内側(da=0, dc=-s*r)で 0 → マーク真下(da<0, dc=0)で π/2 → マーク外側真横(da=0, dc=+s*r)で π
+      const phi = Math.atan2(-da, -s * dc);
+      // すでにマーク外側(s*dc > 1.2)かつ真横付近(da >= -0.8)まで回り込んだらタイトアウト直進フェーズへ
+      if (s * dc > 1.2 && da >= -0.8) {
+        gp.phase = 'tightExit';
+      } else {
+        // phi に応じて目標半径を 7.0m(ワイドイン) → 5.2m(ボトム) → 2.40m(マーク真横タイトアウト) へ滑らかに絞る
+        const phiClamped = clamp(phi, -0.35, Math.PI);
+        const phiNext = Math.min(Math.PI, Math.max(0.35, phiClamped + 0.52));
+        const prog = clamp(phiNext / Math.PI, 0, 1);
+        const rC = 2.40 + (7.0 - 2.40) * Math.pow(Math.cos(prog * Math.PI * 0.5), 1.4);
+        const rA = 5.2;
+        const tgtC = m.c - s * rC * Math.cos(phiNext);
+        const tgtA = m.a - rA * Math.sin(phiNext);
+        return { tgt: { a: tgtA, c: tgtC }, direct: true, rounding: true };
+      }
+    }
+
+    if (gp.phase === 'tightExit') {
+      if (b.pole) b.setPole(false);
+      // マーク真横(tightAbeam: a=40.4, c=m.c+s*2.40)をかすめながらクローズホールドの角度で立ち上がる
+      if (b.a < m.a + 1.8) {
+        return { tgt: tightAbeam, direct: true, rounding: true };
+      }
+      if (b.a < m.a + 8.5) {
+        return { tgt: closeFollow, direct: true, rounding: true };
+      }
+      gp.phase = 'done';
+    }
+    return null;
+  }
+
   // 衝突回避: 避ける義務艇のみ回避ヘディングを返す。
-  // 希望針路からのずれが最小で、相手とぎりぎり(最接近距離 CLEAR)離れられる針路を選ぶ(大回りしない)
   avoid(t, desired) {
     const b = this.b;
     if (t < this.avoidUntil) return this.avoidH;
-    const CLEAR = 4.0, DETECT = 3.8; // 艇体同士が触れない最小限(中心間距離)
+    const CLEAR = 4.0, DETECT = 3.8;
     const vb = Math.max(b.v, 1.2);
     const cpaFor = (h, o) => {
       const vx = Math.sin(h) * vb, vz = -Math.cos(h) * vb, vo = Math.max(o.v, 0.8);
@@ -255,8 +333,7 @@ export class AI {
     return m;
   }
 
-  // マーク・運営艇への接触を避ける: 希望ヘディングの前方に障害物があれば、
-  // 実際に走れて(真風角)・前方と旋回途中の両方で十分離れられる最小のずらし角を探す
+  // マーク・運営艇への接触を避ける
   avoidMarks(heading, prestart) {
     const b = this.b, W = b.windFrom, ca = this.closeAngle;
     const near = [];
@@ -265,32 +342,37 @@ export class AI {
       if (ox * ox + oz * oz < 676) near.push({ o, ox, oz });
     }
     if (!near.length) return heading;
-    const L = LEGS[b.leg];
-    const active = !prestart && !b.finished && L && L.type === 'mark' ? Object.keys(MARKS).find((k) => MARKS[k] === L.mark) : null;
-    const look = clamp(b.v * 4, 9, 20);
-    // ヘディングhで直進した時の前方 maxAlong[m] 以内の障害物との最小横距離(障害物半径を差し引く)
+    const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
+    const activeGate = this.gateRp && this.gateRp.phase !== 'done' ? this.gateKey : null;
+    const active = activeGate || (!prestart && !b.finished && L && L.type === 'mark' ? Object.keys(MARKS).find((k) => MARKS[k] === L.mark) : null);
+    const look = clamp(b.v * 4, 8, 18);
+    // 回航対象マークの真横をタイト(中心間2.4m = 余白1.05m)に抜ける際、余計な大回り回避が入らないよう対象マークのみ許容余白を1.02mにする
     const clr = (h, maxAlong) => {
       const fx = Math.sin(h), fz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
       let m = 99;
       for (const n of near) {
         const along = n.ox * fx + n.oz * fz;
-        if (along < -2.5 || along > maxAlong) continue;
-        m = Math.min(m, Math.abs(n.ox * rx + n.oz * rz) - n.o.r);
+        if (along < -2.0 || along > maxAlong) continue;
+        const pad = n.o.key === active ? 0.82 : 0.0;
+        m = Math.min(m, Math.abs(n.ox * rx + n.oz * rz) - n.o.r + pad);
       }
       return m;
     };
-    const score = (h) => Math.min(clr(h, look), clr(wrap(b.h + wrap(h - b.h) * 0.5), 7));
-    const NEED = 1.9; // 艇体円(半径0.95)+余裕
+    const score = (h) => Math.min(clr(h, look), clr(wrap(b.h + wrap(h - b.h) * 0.5), 6));
+    const NEED = 1.85;
     if (score(heading) > NEED) return heading;
     const ok = (h) => { const tw = Math.abs(wrap(W - h)); return tw > ca - 0.08 && (!b.pole || tw > POLE_MIN); };
-    // 回航中のマークを右舷側に見るずらし方(逆回り)は減点
     const wrongSide = (h) => {
       if (!active) return 0;
       const fx = Math.sin(h), fz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+      const isRightRound = active === 'gL'; // 4S(gL)のみ右舷回航、他は左舷回航
       for (const n of near) {
         if (n.o.key !== active) continue;
         const along = n.ox * fx + n.oz * fz, lat = n.ox * rx + n.oz * rz;
-        if (along > 0 && along < 20 && lat > 0 && lat < 10) return 3;
+        if (along > 0 && along < 20) {
+          if (!isRightRound && lat > 0 && lat < 10) return 3;
+          if (isRightRound && lat < 0 && lat > -10) return 3;
+        }
       }
       return 0;
     };
@@ -328,19 +410,19 @@ export class AI {
     if (b.penalty) { b.steer = this.penDir; b.throttle = 1; return; }
     b.sheet = sheetOpt(b.twa);
     this.coverTime = b.cover > 0.35 ? (this.coverTime || 0) + dt : 0;
-    const Lc = LEGS[b.leg];
+    const Lc = LEGS[Math.min(b.leg, LEGS.length - 1)];
     const nearMark = Lc && Lc.type === 'mark' && Math.hypot(b.c - Lc.mark.c, b.a - Lc.mark.a) < 40;
-    if (this.coverTime > 5 && t > 0 && t - this.lastTack > 12 && b.twa < 1.4 && !nearMark && !this.crowded()) { this.lastTack = t; this.coverTime = 0; b.startManeuver('tack'); return; }
+    const inGateRound = this.gateRp && this.gateRp.phase !== 'done';
+    if (this.coverTime > 5 && t > 0 && t - this.lastTack > 12 && b.twa < 1.4 && !nearMark && !inGateRound && !this.crowded()) { this.lastTack = t; this.coverTime = 0; b.startManeuver('tack'); return; }
     let heading;
     const prestart = t < 0;
     if (b.finished) {
       b.throttle = 0.5;
       if (b.pole) b.setPole(false);
-      heading = this.headingFor({ a: -170, c: -40 }, t, false);
+      heading = this.headingFor(COURSE_MODE === 'upwind' ? { a: 665, c: 55 } : { a: -170, c: -40 }, t, false);
     } else if (prestart) {
       // 実戦同様: セールを緩めてラフしながら少しずつラインへ近づき、号砲に合わせてクローズホールドで加速
       const gap = Math.max(0, lineA(b.c) - b.a);
-      // ラインまでの航走距離 = gap / (cosθ + tan(skew)·sinθ·tack)  (右舷は左へ進むので斜めのラインに早く届く)
       const tw = Math.min(b.twa, 1.3);
       const upf = Math.max(0.35, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
       if (this.gap0 === null) this.gap0 = gap;
@@ -352,23 +434,20 @@ export class AI {
         const tGo = this.tc - this.runUpTime(goL / upf);
         const span = Math.max(5, tGo - START_T);
         const f = clamp((t - START_T) / span, 0, 1), p = this.creepExp;
-        const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(f, p)); // 目標の残り距離(序盤ゆっくり→終盤速く)
+        const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(f, p));
         const dDdt = (Math.max(0, this.gap0 - goL) * p * Math.pow(Math.max(f, 1e-3), p - 1)) / span;
         const vDes = Math.max(0, dDdt + 0.22 * (gap - D)) / upf;
         b.throttle = clamp(vDes / Math.max(0.1, vT), 0.05, 0.85);
         b.sheet = Math.max(0, sheetOpt(b.twa) - 0.05 - 0.25 * (1 - b.throttle));
       }
       const W = b.windFrom;
-      // 目標のスタート位置(targetStartC: 下側〜本部船側まで均一分布)に合わせて角度・タックを調整
       const tgtC = this.targetStartC ?? 0;
-      const cPred = b.c - gap * Math.tan(this.closeAngle) * 0.78; // 右舷タックのままラインに達した時の予想横位置
+      const cPred = b.c - gap * Math.tan(this.closeAngle) * 0.78;
       const preAngle = b.tack === 1 ? clamp(this.closeAngle + (cPred - tgtC) * 0.012, 0.66, 0.90) : this.closeAngle;
       heading = wrap(W - b.tack * preAngle);
       if (t - this.lastTack > 11) {
         let wantTack = false;
-        // 目標位置より下(左)へ流れすぎた場合は、スタート13秒前までなら左舷タックで上(本部船)側へ戻る
         if (b.tack === 1 && (b.c < -LINE_HALF * 0.82 || (t < -13 && cPred < tgtC - 12))) wantTack = true;
-        // 左舷タックで目標スロットの風上レイラインまで上ったら、またはスタート10秒前になったら右舷タックへ返す
         if (b.tack === -1 && (b.c > LINE_HALF * 0.88 || cPred >= tgtC || t > -10)) wantTack = true;
         if (wantTack && !this.crowded()) { this.lastTack = t; b.startManeuver('tack'); }
       }
@@ -378,26 +457,32 @@ export class AI {
       heading = this.headingFor({ a: lineA(b.c) - 14, c: b.c }, t, false);
     } else {
       b.throttle = 1;
-      const L = LEGS[b.leg];
-      let tgt, rounding = false, distMark;
-      if (L.type === 'mark') {
-        tgt = this.roundingTarget(L);
-        distMark = Math.hypot(b.c - L.mark.c, b.a - L.mark.a);
-        rounding = (this.rp ? this.rp.idx > 0 : false) || distMark < 30;
-      } else {
-        tgt = L.type === 'gate' ? { a: L.aim.a, c: L.aim.c + this.jit } : L.aim;
-        if (L.type === 'gate') {
-          // ゲートの外側を通ってしまった → ゲートの上へ戻って間を通り直す
-          if (b.a < L.center.a - 2) this.gateRetry = true;
-          if (this.gateRetry && b.a > L.center.a + 6) this.gateRetry = false;
-          if (this.gateRetry) tgt = { a: L.center.a + 10, c: L.center.c };
+      const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
+      let tgt, rounding = false, distMark, directDownwind = false;
+      // 4ゲート回航: レグ2(gate)の間、およびレグ3に切り替わった直後でもマーク真横のタイトアウトが完了するまで継続
+      if (L.type === 'gate' || (this.gateRp && this.gateRp.phase !== 'done' && b.leg === 3)) {
+        const gRes = this.updateGateRounding(t);
+        if (gRes) {
+          tgt = gRes.tgt;
+          directDownwind = gRes.direct;
+          rounding = gRes.rounding;
+          const gm = MARKS[this.gateKey];
+          distMark = Math.hypot(b.c - gm.c, b.a - gm.a);
         }
-        distMark = Math.hypot(b.c - L.center.c, b.a - L.center.a);
       }
-      heading = this.headingFor(tgt, t, false);
+      if (!tgt) {
+        if (L.type === 'mark') {
+          tgt = this.roundingTarget(L);
+          distMark = Math.hypot(b.c - L.mark.c, b.a - L.mark.a);
+          rounding = (this.rp ? this.rp.idx > 0 : false) || distMark < 30;
+        } else {
+          tgt = L.aim;
+          distMark = Math.hypot(b.c - L.center.c, b.a - L.center.a);
+        }
+      }
+      heading = this.headingFor(tgt, t, false, directDownwind);
       this.updatePole(dt, heading, distMark, rounding);
     }
-    // スタート直前(密集時)の無闇な回避行動による風下へのベアアウェイを防ぐため、スタート前は回避を抑制
     const av = prestart ? null : this.avoid(t, heading);
     if (av !== null && av !== undefined) heading = av;
     heading = this.avoidMarks(heading, prestart);
