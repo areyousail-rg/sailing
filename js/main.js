@@ -183,6 +183,28 @@ function drawMinimap() {
   const path = [[0, 0], [M.m1.a, M.m1.c], [M.m1a.a, M.m1a.c], [40, 0], [M.m1.a, M.m1.c], [M.m2.a, M.m2.c], [M.m3.a, M.m3.c], [(M.fcom.a + M.fm.a) / 2, (M.fcom.c + M.fm.c) / 2]];
   mctx.beginPath(); path.forEach(([a, c], i) => (i ? mctx.lineTo(X(c), Y(a)) : mctx.moveTo(X(c), Y(a)))); mctx.stroke(); mctx.setLineDash([]);
   mctx.strokeStyle = '#ffe36a'; mctx.lineWidth = 2; mctx.beginPath(); mctx.moveTo(X(M.pin.c), Y(M.pin.a)); mctx.lineTo(X(M.com.c), Y(M.com.a)); mctx.stroke();
+  // スタート前のみ: スタートラインの傾き(風に対する直角基準破線)と有利サイド(★＋角度)をミニマップにも表示
+  const isPreStart = (state.phase === 'race' && state.t < 0) || state.phase === 'menu';
+  if (isPreStart) {
+    const unfavA = Math.min(M.pin.a, M.com.a);
+    mctx.save();
+    mctx.strokeStyle = 'rgba(56,189,248,0.85)';
+    mctx.lineWidth = 1.4;
+    mctx.setLineDash([3, 3]);
+    mctx.beginPath(); mctx.moveTo(X(M.pin.c), Y(unfavA)); mctx.lineTo(X(M.com.c), Y(unfavA)); mctx.stroke();
+    mctx.setLineDash([]);
+    const favM = FAVORED === 'com' ? M.com : M.pin;
+    mctx.fillStyle = '#ff3b3b';
+    mctx.beginPath(); mctx.arc(X(favM.c), Y(favM.a), 5.2, 0, Math.PI * 2); mctx.fill();
+    mctx.strokeStyle = '#fde047'; mctx.lineWidth = 1.6; mctx.stroke();
+    const skewDeg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(1);
+    const favTxt = FAVORED === 'com' ? `★本部船(右) +${skewDeg}°有利` : `★ピン(左) +${skewDeg}°有利`;
+    mctx.fillStyle = '#fde047';
+    mctx.font = 'bold 10px sans-serif';
+    mctx.textAlign = 'center';
+    mctx.fillText(favTxt, X(0), Y(Math.max(M.pin.a, M.com.a)) - 7);
+    mctx.restore();
+  }
   mctx.strokeStyle = '#6ab4ff'; mctx.beginPath(); mctx.moveTo(X(M.fcom.c), Y(M.fcom.a)); mctx.lineTo(X(M.fm.c), Y(M.fm.a)); mctx.stroke();
   for (const [k, lb] of [['m1', '1'], ['m1a', '1a'], ['m2', '2'], ['m3', '3'], ['gL', '4S'], ['gR', '4P']]) {
     mctx.fillStyle = '#ffb21a'; mctx.beginPath(); mctx.arc(X(M[k].c), Y(M[k].a), 4, 0, 7); mctx.fill();
@@ -191,7 +213,7 @@ function drawMinimap() {
   // 次のマーク強調
   const L = LEGS[Math.min(player.leg, LEGS.length - 1)];
   const tg = L.type === 'mark' ? L.mark : L.center;
-  mctx.strokeStyle = '#7dffb2'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(X(tg.c), Y(tg.a), 9 + Math.sin(performance.now() / 200) * 2, 0, 7); mctx.stroke();
+  mctx.strokeStyle = '#ff3b3b'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(X(tg.c), Y(tg.a), 9 + Math.sin(performance.now() / 200) * 2, 0, 7); mctx.stroke();
   for (const b of boats) {
     if (b.isPlayer) continue;
     mctx.fillStyle = '#' + b.color.toString(16).padStart(6, '0'); mctx.beginPath(); mctx.arc(X(b.c), Y(b.a), 2.6, 0, 7); mctx.fill();
@@ -261,8 +283,10 @@ function updateHUD(sorted) {
   const isPrac = state.phase === 'menu' || state.phase === 'practice';
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const nextMarkTxt = L.type === 'finish' ? 'フィニッシュ' : L.type === 'gate' ? '4ゲート(4S/4P)' : `${L.name}マーク`;
+  const skewDeg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(1);
+  const favEndName = FAVORED === 'com' ? '本部船(右)' : 'ピン(左)';
   hud.clock.textContent = isPrac ? '練習中' : fmt(t);
-  hud.phase.textContent = isPrac ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `1分前 ― 次: スタート → 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
+  hud.phase.textContent = isPrac ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `スタート前 [ライン傾き: ${favEndName} +${skewDeg}°有利] ― 次: 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
   const wd = ((b.windFrom * 180) / Math.PI + 360) % 360;
   hud.wdir.textContent = Math.round(wd) + '°';
@@ -291,7 +315,7 @@ function updateHUD(sorted) {
   } else {
     hud.blk.style.display = 'none';
   }
-  hud.leg.textContent = isPrac ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? 'スタート準備' : L.label;
+  hud.leg.textContent = isPrac ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? `スタート前 (★${favEndName} +${skewDeg}°有利)` : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
   const brg = Math.atan2(tw.x - b.x, -(tw.z - b.z));
@@ -607,7 +631,8 @@ function loop() {
   }
   
   if (player) {
-    world.setLine(state.phase === 'race' && state.t >= 0 ? 'finish' : 'start', player.finished ? 0 : player.leg === 6 ? 1 : state.phase === 'race' && state.t >= 0 ? 0.15 : 0);
+    const showPreStart = (state.phase === 'race' && state.t < 0) || state.phase === 'menu';
+    world.setLine(state.phase === 'race' && state.t >= 0 ? 'finish' : 'start', player.finished ? 0 : player.leg === 6 ? 1 : state.phase === 'race' && state.t >= 0 ? 0.15 : 0, showPreStart);
     if (world.setTargetMark) world.setTargetMark(player.leg, state.phase === 'race' ? state.t : 1, player.finished);
     updateMarkPointer(player);
   }
