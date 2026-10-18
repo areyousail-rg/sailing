@@ -19,9 +19,10 @@ const LINE_T = Math.tan(LINE_SKEW);
 export const lineA = (c) => c * LINE_T; // スタートライン上で横位置cにおける風上距離a
 export const FAVORED = LINE_SKEW > 0 ? 'com' : 'pin';
 export const ROUND_R = 22;
+export let COURSE_MODE = 'trapezoid'; // 'trapezoid' | 'upwind'
+
 // トラペゾイドコース: 1(風上) → 2(ウィング) → 3(リーチ終点) → 4(ゲート)
-//  4→1: クローズホールドのビート / 1→2: 真風角120°のリーチ
-//  2→3: ほぼランニング / 3→4: 真風角120°のリーチ
+// 上マークフィニッシュコース(RRS 32.2 S旗コース短縮準拠): スタート → 2倍距離(a=600)の1マークとS旗掲揚運営艇の間のフィニッシュライン
 export const MARKS = {
   m1: { a: 300, c: 0 },
   m1a: { a: 300, c: -30 },
@@ -31,7 +32,7 @@ export const MARKS = {
   gR: { a: 40, c: 22 },
   pin: { a: lineA(-LINE_HALF), c: -LINE_HALF },
   com: { a: lineA(LINE_HALF), c: LINE_HALF },
-  // フィニッシュ: 図の通り 運営艇(右上=風上側)とフィニッシュマーク(左下)。3マークから右下へリーチして間を通過
+  // フィニッシュ: トラペゾイド時は運営艇(右上)とフィニッシュマーク(左下)、上マークフィニッシュ時は1マーク(左端)とS旗掲揚運営艇(右端)
   fcom: { a: -95, c: -70 },
   fm: { a: -135, c: -110 },
 };
@@ -40,38 +41,65 @@ const norm = (a, c) => { const l = Math.hypot(a, c) || 1; return { a: a / l, c: 
 const dir = (p, q) => norm(q.a - p.a, q.c - p.c);
 const START = { a: 0, c: 0 };
 const GATEC = { a: 40, c: 0 };
-const FINISHC = { a: (-95 + -135) / 2, c: (-70 + -110) / 2 };
-const { m1, m1a, m2, m3 } = MARKS;
 
-// side: 通過時にマークが艇の左(-1=左舷回航)か右(+1)か。側判定 cross<0 が左舷回航。
-export const LEGS = [
-  { id: 0, name: '1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: START, next: m1a },
-  { id: 1, name: '1a', label: '1a(オフセット)を左舷に見て回航', type: 'mark', mark: m1a, side: -1, from: m1, next: GATEC },
-  { id: 2, name: '4', label: '4ゲート(4S/4P)を通過', type: 'gate', from: m1a, center: GATEC, aim: { a: 10, c: 0 } },
-  { id: 3, name: '1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: GATEC, next: m2 },
-  { id: 4, name: '2', label: '2マーク(ウィング)を左舷に見て回航', type: 'mark', mark: m2, side: -1, from: m1, next: m3 },
-  { id: 5, name: '3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISHC },
-  { id: 6, name: 'F', label: 'フィニッシュラインへ', type: 'finish', from: m3, center: FINISHC, aim: FINISHC },
-];
-let cum = 0;
-for (const L of LEGS) {
-  if (L.type === 'mark') {
-    L.dirIn = dir(L.from, L.mark);
-    L.dirOut = dir(L.mark, L.next);
-    const o = norm(L.dirIn.a - L.dirOut.a, L.dirIn.c - L.dirOut.c);
-    L.aim = { a: L.mark.a + 12 * o.a, c: L.mark.c + 12 * o.c };
+export const LEGS = [];
+export let TOTAL = 0;
+
+export function setCourseMode(mode = 'trapezoid') {
+  COURSE_MODE = mode === 'upwind' ? 'upwind' : 'trapezoid';
+  LEGS.length = 0;
+  if (COURSE_MODE === 'upwind') {
+    // RRS 32.2(a) 回航マークにおけるフィニッシュ(コース短縮・S旗):
+    // トラペゾイドの2倍の風上距離(a=600)に1マーク(左端ピン)とS旗掲揚運営艇(右端・スターボード側)を配置し、その間を風下からフィニッシュする
+    MARKS.m1.a = 600; MARKS.m1.c = -22;
+    MARKS.fm.a = 600; MARKS.fm.c = -22; // 1マーク自体がフィニッシュライン左端(ピン)
+    MARKS.fcom.a = 600; MARKS.fcom.c = 24; // S旗・青旗を掲揚したフィニッシュ運営艇が右端
+    const upFinCenter = { a: 600, c: 1 };
+    LEGS.push(
+      { id: 0, name: 'F', label: '1マーク(2倍距離)フィニッシュへ [RRS32.2 S旗]', type: 'finish', from: START, center: upFinCenter, aim: { a: 600, c: 0 } }
+    );
+  } else {
+    MARKS.m1.a = 300; MARKS.m1.c = 0;
+    MARKS.m1a.a = 300; MARKS.m1a.c = -30;
+    MARKS.m2.a = 200; MARKS.m2.c = -160;
+    MARKS.m3.a = -40; MARKS.m3.c = -160;
+    MARKS.gL.a = 40; MARKS.gL.c = -22;
+    MARKS.gR.a = 40; MARKS.gR.c = 22;
+    MARKS.fcom.a = -95; MARKS.fcom.c = -70;
+    MARKS.fm.a = -135; MARKS.fm.c = -110;
+    const FINISHC = { a: (-95 + -135) / 2, c: (-70 + -110) / 2 };
+    const { m1, m1a, m2, m3 } = MARKS;
+    LEGS.push(
+      { id: 0, name: '1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: START, next: m1a },
+      { id: 1, name: '1a', label: '1a(オフセット)を左舷に見て回航', type: 'mark', mark: m1a, side: -1, from: m1, next: GATEC },
+      { id: 2, name: '4', label: '4ゲート(4S/4P)を通過', type: 'gate', from: m1a, center: GATEC, aim: { a: 10, c: 0 } },
+      { id: 3, name: '1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: GATEC, next: m2 },
+      { id: 4, name: '2', label: '2マーク(ウィング)を左舷に見て回航', type: 'mark', mark: m2, side: -1, from: m1, next: m3 },
+      { id: 5, name: '3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISHC },
+      { id: 6, name: 'F', label: 'フィニッシュラインへ', type: 'finish', from: m3, center: FINISHC, aim: FINISHC }
+    );
   }
-  const tgt = L.type === 'mark' ? L.mark : L.center;
-  L.len = Math.hypot(tgt.a - L.from.a, tgt.c - L.from.c);
-  L.cum = cum;
-  cum += L.len;
+  let cum = 0;
+  for (const L of LEGS) {
+    if (L.type === 'mark') {
+      L.dirIn = dir(L.from, L.mark);
+      L.dirOut = dir(L.mark, L.next);
+      const o = norm(L.dirIn.a - L.dirOut.a, L.dirIn.c - L.dirOut.c);
+      L.aim = { a: L.mark.a + 12 * o.a, c: L.mark.c + 12 * o.c };
+    }
+    const tgt = L.type === 'mark' ? L.mark : L.center;
+    L.len = Math.hypot(tgt.a - L.from.a, tgt.c - L.from.c);
+    L.cum = cum;
+    cum += L.len;
+  }
+  TOTAL = cum;
 }
-export const TOTAL = cum;
+setCourseMode('trapezoid');
 
 export function progressOf(b) {
   if (b.dsq) return -1e6;
   if (b.finished) return 1e6 - b.finishTime;
-  const L = LEGS[b.leg];
+  const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const tgt = L.type === 'mark' ? L.mark : L.center;
   const d = Math.hypot(b.c - tgt.c, b.a - tgt.a);
   return L.cum + Math.max(0, L.len - d) - (b.ocs ? 50 : 0);
@@ -84,7 +112,8 @@ export function updateProgress(b, t) {
   const prevA = b.a, prevC = b.c;
   b.a = cp.a; b.c = cp.c;
   if (b.finished || t < 0 || prevA === undefined) return ev;
-  const L = LEGS[b.leg];
+  const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
+  if (!L) return ev;
   if (L.type === 'mark') {
     const dx = b.c - L.mark.c, dy = b.a - L.mark.a;
     const d = Math.hypot(dx, dy);
@@ -116,7 +145,8 @@ export function updateProgress(b, t) {
     const F = MARKS.fcom, G = MARKS.fm;
     const side = (a, c) => (G.a - F.a) * (c - F.c) - (G.c - F.c) * (a - F.a);
     const s0 = side(prevA, prevC), s1 = side(b.a, b.c);
-    const sRef = side(MARKS.m3.a, MARKS.m3.c); // 3マーク側が「手前」
+    const refPt = L.from || START;
+    const sRef = side(refPt.a, refPt.c); // 前マークまたはスタート側が「手前」
     if (s0 * sRef > 0 && s1 * sRef <= 0) {
       const ll = Math.hypot(G.a - F.a, G.c - F.c);
       const proj = ((b.a - F.a) * (G.a - F.a) + (b.c - F.c) * (G.c - F.c)) / ll;
