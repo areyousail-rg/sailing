@@ -1,6 +1,6 @@
 // 江の島沖 / 八景島沖の世界: 海・空・島・海岸・ランドマーク・マーク・航跡
 import * as THREE from 'three';
-import { MARKS, toWorld, LINE_HALF, LINE_SKEW, FAVORED, lineA, U, W0, setWindDir } from './course.js';
+import { MARKS, LEGS, COURSE_MODE, toWorld, LINE_HALF, LINE_SKEW, FAVORED, lineA, U, W0, setWindDir } from './course.js';
 import { makeMotorboat } from './powerboats.js';
 
 export const FOG_COLOR = 0xbdd5e6;
@@ -746,20 +746,36 @@ export function createWorld(scene) {
   const startLabel = lineLabel('START LINE', 'rgba(180,120,0,0.85)', 0, 0);
   const finLabel = lineLabel('FINISH', 'rgba(20,20,20,0.88)', 0, 0);
   
-  // フィニッシュ運営艇とピン
-  const fComBoat = putBoat(makeMotorboat('committee', { stripe: 0x1d4ed8, flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
+  // フィニッシュ運営艇(青旗 + RRS 32.2コース短縮「S旗」+ オレンジライン旗)とピン
+  const fComBoat = putBoat(makeMotorboat('committee', { stripe: 0x1d4ed8, flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
   markObjs.fcom = fComBoat;
   const fPinObj = buoy(0x2a77ff, 0x2a77ff); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
 
-  // 風向(W0)変更時にすべてのコースマーク・ライン・観覧艇のワールド座標を更新
+  // 風向(W0)やコースモード(COURSE_MODE)変更時にすべてのコースマーク・ライン・観覧艇のワールド座標と表示状態を更新
   const syncCourseObjects = () => {
+    const isUpwindMode = COURSE_MODE === 'upwind';
     for (const k of ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm']) {
       const p = toWorld(MARKS[k].a, MARKS[k].c);
       markObjs[k].position.x = p.x; markObjs[k].position.z = p.z;
     }
+    // 上マークフィニッシュモード時は 1a, 2, 3, 4S(gL), 4P(gR), fm(下フィニッシュピン: 上マーク1がピンになるため) を非表示化
+    for (const k of ['m1a', 'm2', 'm3', 'gL', 'gR', 'fm']) {
+      markObjs[k].visible = !isUpwindMode;
+    }
     const head = Math.atan2(U.x, U.z);
     for (const cb of courseBoats) {
-      const p = toWorld(cb.a, cb.c);
+      let ca = cb.a, cc = cb.c;
+      if (cb.b === fComBoat) {
+        ca = MARKS.fcom.a; cc = MARKS.fcom.c;
+      } else if (cb.b === markObjs.pin) {
+        ca = MARKS.pin.a; cc = MARKS.pin.c;
+      } else if (cb.b === markObjs.com) {
+        ca = MARKS.com.a; cc = MARKS.com.c;
+      } else if (isUpwindMode && cb.a >= 350) {
+        // 1マーク北側の観覧艇は2倍レグ(a=600)の上側に退避
+        ca = cb.a + 300;
+      }
+      const p = toWorld(ca, cc);
       cb.b.position.x = p.x; cb.b.position.z = p.z;
       cb.b.rotation.y = head + cb.relRot;
     }
@@ -778,7 +794,10 @@ export function createWorld(scene) {
     startSkewBadge.position.set(lcx, 6.2, lcz);
 
     const fpa = toWorld(MARKS.fm.a, MARKS.fm.c), fpb = toWorld(MARKS.fcom.a, MARKS.fcom.c);
+    const curFlen = Math.hypot(fpb.x - fpa.x, fpb.z - fpa.z);
     const flcx = (fpa.x + fpb.x) / 2, flcz = (fpa.z + fpb.z) / 2, flrot = -Math.atan2(fpb.z - fpa.z, fpb.x - fpa.x);
+    finBand.scale.x = curFlen / flen;
+    finCurtain.scale.x = curFlen / flen;
     finBand.rotation.z = flrot; finBand.position.set(flcx, 0.18, flcz);
     finCurtain.rotation.y = flrot; finCurtain.position.set(flcx, 2.2, flcz);
     finLabel.position.set(flcx, 12, flcz);
@@ -909,17 +928,20 @@ export function createWorld(scene) {
         activeMarkKeys = [];
         return;
       }
-      // 各レグで向かうマークのキー配列 (1→1aはm1a、4ゲートはgL(4S)とgR(4P)の両方に矢印を表示)
-      const legKeys = [
-        ['m1'],         // leg 0: Start -> 1
-        ['m1a'],        // leg 1: 1 -> 1a
-        ['gL', 'gR'],   // leg 2: 1a -> 4ゲート (4S / 4P 両方)
-        ['m1'],         // leg 3: 4 -> 1
-        ['m2'],         // leg 4: 1 -> 2
-        ['m3'],         // leg 5: 2 -> 3
-        ['fm'],         // leg 6: 3 -> フィニッシュマーク
-      ];
-      activeMarkKeys = legKeys[Math.min(Math.max(0, legIndex || 0), legKeys.length - 1)];
+      const L = LEGS[Math.min(Math.max(0, legIndex || 0), LEGS.length - 1)];
+      if (!L) return;
+      // フィニッシュレグではマーク(fm)の上ではなく「FINISH」看板(finLabel)の真上にNext矢印を表示する
+      if (L.type === 'finish') {
+        activeMarkKeys = COURSE_MODE === 'upwind' ? ['m1'] : [];
+        const ar0 = targetArrows[0];
+        ar0.visible = true;
+        ar0.position.x = finLabel.position.x;
+        ar0.position.z = finLabel.position.z;
+        ar0.userData.isFinish = true;
+        targetArrows[1].visible = false;
+        return;
+      }
+      activeMarkKeys = L.type === 'gate' ? ['gL', 'gR'] : [L.mark];
       for (let i = 0; i < targetArrows.length; i++) {
         const key = activeMarkKeys[i];
         const ar = targetArrows[i];
@@ -927,6 +949,7 @@ export function createWorld(scene) {
           ar.visible = true;
           ar.position.x = markObjs[key].position.x;
           ar.position.z = markObjs[key].position.z;
+          ar.userData.isFinish = false;
         } else {
           ar.visible = false;
         }
@@ -962,13 +985,14 @@ export function createWorld(scene) {
         return distFade;
       };
 
-      // マーク上の赤矢印＋Nextラベル: 遠方でも見やすいよう距離に応じて少し拡大し、カメラ接近・視線重複時は完全透過
+      // マーク上(フィニッシュ時はFINISH看板の上)の赤矢印＋Nextラベル: 遠方でも見やすいよう距離に応じて少し拡大し、カメラ接近・視線重複時は完全透過
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
         const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
         const arScale = clampN(1.0 + Math.max(0, dCam - 55) * 0.0065, 1.0, 2.8);
         ar.scale.setScalar(arScale);
-        ar.position.y = 8.4 + 0.65 * Math.sin(t * 3.2) + (arScale - 1.0) * 3.2;
+        const baseY = ar.userData.isFinish ? 18.2 : 8.4;
+        ar.position.y = baseY + 0.65 * Math.sin(t * 3.2) + (arScale - 1.0) * 3.2;
         ar.rotation.y = t * 1.6;
         const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18);
         ar.userData.mat.opacity = 0.96 * v;
@@ -976,10 +1000,11 @@ export function createWorld(scene) {
       }
       // マーク番号ラベル: 遠くにあるマークほど大きく拡大して遠くからでも番号がはっきり判読できるようにし、カメラ接近時は完全に消す
       for (const [k, sp] of Object.entries(markSprites)) {
-        const isAct = activeMarkKeys.includes(k);
         const mo = markObjs[k];
+        if (!mo.visible) { sp.visible = false; continue; }
+        const isAct = activeMarkKeys.includes(k);
         const dCam = Math.hypot(mo.position.x - cx, mo.position.z - cz);
-        // 遠方(dCam > 60m)では距離に比例して最大22倍までスケールアップし、300m先の1マーク等でも番号がくっきり読めるようにする
+        // 遠方(dCam > 60m)では距離に比例して最大22倍までスケールアップし、300m〜600m先の1マーク等でも番号がくっきり読めるようにする
         const baseS = isAct ? 4.8 : 4.0;
         const distBoost = Math.max(0, dCam - 50) * (isAct ? 0.048 : 0.040);
         const s = clampN(baseS + distBoost, baseS, isAct ? 22.0 : 18.0);
