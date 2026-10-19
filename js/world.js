@@ -112,14 +112,14 @@ precision highp float; varying vec3 vD; uniform float uTime;
 ${SKY_FN}
 float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
-float fbm(vec2 p){ float a=0.55,s=0.0; for(int i=0;i<3;i++){ s+=a*vn(p); p=p*2.03+1.7; a*=0.48;} return s; }
+float fbm(vec2 p){ float a=0.5,s=0.0; for(int i=0;i<5;i++){ s+=a*vn(p); p=p*2.03+1.7; a*=0.5;} return s; }
 void main(){
   vec3 d=normalize(vD);
   vec3 c=skyBase(vec3(d.x,max(d.y,0.0),d.z));
   if(d.y<0.0) c=mix(c,vec3(0.74,0.86,0.94),smoothstep(0.0,-0.2,d.y));
   if(d.y>0.0){
     vec2 uv=d.xz/(d.y+0.12)*0.9+vec2(uTime*0.004,uTime*0.002);
-    float cl=smoothstep(0.50,0.84,fbm(uv*1.4));
+    float cl=smoothstep(0.52,0.85,fbm(uv*1.4));
     float lit=0.75+0.25*clamp(dot(normalize(vec3(d.x,0.0,d.z)),normalize(vec3(uSun.x,0.0,uSun.z)))*0.5+0.5,0.0,1.0);
     vec3 cc=mix(vec3(0.72,0.78,0.86),vec3(1.0),lit);
     c=mix(c,cc,cl*smoothstep(0.0,0.25,d.y)*0.9);
