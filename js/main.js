@@ -51,12 +51,12 @@ const hexNum = (s) => parseInt(s.replace('#', ''), 16);
 // ---------- Three ----------
 const canvas = $('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-let pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.25 : 1.5);
+const pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.0 : 1.25);
 renderer.setPixelRatio(pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.NoToneMapping;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.5, 150000);
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 1.0, 52000);
 const world = createWorld(scene);
 const cam = new DroneCam(camera, canvas);
 cam.menuOffset = true;
@@ -292,7 +292,7 @@ function updateMarkPointer(b) {
   if (markPtr.label) markPtr.label.textContent = `${shortName} ${distM}m`;
 }
 
-// ---------- 艇内カメラ(COCKPIT)専用: カメラ視界外(死角)から近づいている他艇のみ画面端に表示 ----------
+// ---------- 艇内カメラ(COCKPIT)専用: カメラ視界外(死角)から近づいている15m以内の他艇のみ画面端に表示 ----------
 const nearBoatsBox = $('nearBoats');
 const nearBoatPool = [];
 const nearBoatV3 = new THREE.Vector3();
@@ -303,11 +303,16 @@ function updateNearBoatsHUD(b) {
     return;
   }
   const near = [];
+  const bvx = Math.sin(b.h) * b.v, bvz = -Math.cos(b.h) * b.v;
   for (const o of boats) {
     if (o === b || o.dsq) continue;
     const dx = o.x - b.x, dz = o.z - b.z;
     const distM = Math.hypot(dx, dz) / 1.5; // ワールド距離(1.5x)から実距離[m]へ換算
-    if (distM > 24) continue;
+    if (distM > 15) continue; // 15m以内から表記
+    // 離れていく船は表示しない (相対速度ベクトルと位置ベクトルの内積が負＝接近中のみ表示)
+    const ovx = Math.sin(o.h) * o.v, ovz = -Math.cos(o.h) * o.v;
+    const closingDot = dx * (ovx - bvx) + dz * (ovz - bvz);
+    if (closingDot >= -0.02) continue;
     // カメラ視界内に入っている他艇は直接見えるため表示せず、カメラに見えない(画面外の)接近艇だけ表示する
     nearBoatV3.set(o.x, 1.8, o.z).project(camera);
     const behind = nearBoatV3.z > 1;
@@ -354,7 +359,8 @@ function updateNearBoatsHUD(b) {
 
     const distStr = distM < 10 ? `${distM.toFixed(1)}m` : `${Math.round(distM)}m`;
     const colHex = '#' + o.color.toString(16).padStart(6, '0');
-    const lv = distM < 7.5 ? ' danger' : distM < 14 ? ' warn' : '';
+    // 15m〜10mまでは薄い表示(.faint)、10m以内ははっきり警告表示
+    const lv = distM < 6.5 ? ' danger' : distM <= 10 ? ' warn' : ' faint';
     el.className = 'nearBoatTag' + lv;
     el.style.display = 'flex';
     el.style.left = `${sx}px`;
@@ -678,7 +684,7 @@ function showResult() {
 
 // ---------- メインループ ----------
 const clock = new THREE.Clock();
-let frameAvg = 16, lowTime = 0, hudAcc = 0;
+let hudAcc = 0;
 function togglePause(p) {
   if (state.phase === 'menu') { startPractice(); return; }
   if (state.phase !== 'race' && state.phase !== 'practice') return;
@@ -696,9 +702,6 @@ function togglePause(p) {
 function loop() {
   requestAnimationFrame(loop);
   const raw = Math.min(0.1, clock.getDelta());
-  frameAvg += (raw * 1000 - frameAvg) * 0.05;
-  if (frameAvg > 26) lowTime += raw; else lowTime = Math.max(0, lowTime - raw);
-  if (lowTime > 2.5 && pixelRatio > 0.6) { pixelRatio = Math.max(0.6, pixelRatio - 0.15); renderer.setPixelRatio(pixelRatio); renderer.setSize(window.innerWidth, window.innerHeight); lowTime = 0; }
   const dt = Math.min(0.05, raw);
   const time = performance.now() / 1000;
   
