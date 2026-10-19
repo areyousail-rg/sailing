@@ -32,19 +32,18 @@ vec3 skyBase(vec3 d){
 }`;
 export const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
 const waterMat = new THREE.ShaderMaterial({
-  defines: { NWAVE: MOBILE ? 4 : 6 },
+  defines: { NWAVE: MOBILE ? 3 : 4 },
   uniforms: { uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR } },
   vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
   fragmentShader: `
 precision highp float;
 varying vec3 vW; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias;
 ${SKY_FN}
-float hh(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
 void main(){
   vec2 p=vW.xz; vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
   vec2 g=vec2(0.0);
-  vec4 W0=vec4(0.34,-0.94,0.11,0.55);  // dirx,dirz,k,A
   for(int i=0;i<NWAVE;i++){
     float fi=float(i);
     float ang=0.35+fi*0.83; vec2 d=normalize(vec2(sin(ang)*0.9+0.34,-cos(ang)*0.7-0.5));
@@ -52,14 +51,14 @@ void main(){
     float w=sqrt(9.8*k)*0.9;
     float fade=exp(-dist*k*0.0035);
     if(fade<0.02) break; // 遠方では高周波の波を省略(kは増加するので以降も不要)
-    g+=d*A*k*cos(dot(d,p)*k-uTime*w+fi*1.7)*fade;
+    g+=d*A*k*cos(mod(dot(d,p)*k-uTime*w+fi*1.7,628.3185))*fade;
   }
-  if(dist<2500.0) g+=(vec2(vn(p*0.9+uTime*0.3),vn(p*0.9-uTime*0.25+7.0))-0.5)*0.12*exp(-dist*0.004);
+  if(dist<2000.0) g+=(vec2(vn(p*0.9+uTime*0.3),vn(p*0.9-uTime*0.25+7.0))-0.5)*0.12*exp(-dist*0.004);
   // 風: sim.js windAt と完全に同じ式で、風上から風下へ流れるブロー(黒い筋)とシフトを海面に表現
   vec2 uDir=vec2(sin(uW0),-cos(uW0));
   vec2 rDir=vec2(cos(uW0),sin(uW0));
   float ca=dot(p,uDir), cc=dot(p,rDir);
-  float adv=ca+uWT*4.8;
+  float adv=mod(ca+uWT*4.8,6283.185);
   float p1=sin(adv*0.032+cc*0.018+sin(cc*0.011-uWT*0.08)*1.4);
   float p2=sin(adv*0.055-cc*0.024+1.7);
   float p3=sin(adv*0.019+cc*0.038-0.9);
@@ -71,7 +70,7 @@ void main(){
   float wu=dot(p,wp), wv=dot(p,wd);
   float gust=smoothstep(0.84,1.18,wf);
   float blow=smoothstep(0.98,1.16,wf); // ブロー(強風域)の視覚強調係数
-  if(dist<3000.0){
+  if(dist<2400.0){
     float rip=vn(vec2(wu*1.2,wv*0.25-uTime*2.6))*0.6+vn(vec2(wu*2.7+3.0,wv*0.55-uTime*3.6))*0.4;
     g+=wp*(rip-0.5)*(0.12+0.68*gust)*exp(-dist*0.0025);
   }
@@ -84,7 +83,7 @@ void main(){
   float crest=clamp(length(g)*2.2,0.0,1.0);
   vec3 body=mix(deep,shallow,crest*0.7+0.15);
   vec3 col=mix(body,refl,F);
-  if(dist<3500.0){
+  if(dist<2800.0){
     float foam=smoothstep(0.62,0.95,length(g)*3.2+vn(p*2.3+uTime*0.5)*0.35)*exp(-dist*0.002);
     col=mix(col,vec3(0.92,0.96,0.98),foam*0.5);
   }
@@ -92,7 +91,7 @@ void main(){
   float catpaw=0.55+0.45*vn(vec2(wu*0.48,wv*0.07-uTime*1.35));
   col*=mix(1.03,0.90,smoothstep(0.76,1.22,wf));
   col=mix(col,col*vec3(0.84,0.87,0.91),blow*(0.20+0.20*catpaw)*exp(-dist*0.0006));
-  if(dist<5000.0){
+  if(dist<4000.0){
     float streak=smoothstep(0.72,0.92,vn(vec2(wu*0.32,wv*0.03-uTime*1.1)));
     col+=vec3(0.55,0.62,0.66)*streak*0.11*(0.4+gust)*exp(-dist*0.0012);
   }
@@ -111,16 +110,16 @@ const skyMat = new THREE.ShaderMaterial({
   fragmentShader: `
 precision highp float; varying vec3 vD; uniform float uTime;
 ${SKY_FN}
-float hh(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
-float fbm(vec2 p){ float a=0.5,s=0.0; for(int i=0;i<5;i++){ s+=a*vn(p); p=p*2.03+1.7; a*=0.5;} return s; }
+float fbm(vec2 p){ float a=0.55,s=0.0; for(int i=0;i<3;i++){ s+=a*vn(p); p=p*2.03+1.7; a*=0.48;} return s; }
 void main(){
   vec3 d=normalize(vD);
   vec3 c=skyBase(vec3(d.x,max(d.y,0.0),d.z));
   if(d.y<0.0) c=mix(c,vec3(0.74,0.86,0.94),smoothstep(0.0,-0.2,d.y));
   if(d.y>0.0){
     vec2 uv=d.xz/(d.y+0.12)*0.9+vec2(uTime*0.004,uTime*0.002);
-    float cl=smoothstep(0.52,0.85,fbm(uv*1.4));
+    float cl=smoothstep(0.50,0.84,fbm(uv*1.4));
     float lit=0.75+0.25*clamp(dot(normalize(vec3(d.x,0.0,d.z)),normalize(vec3(uSun.x,0.0,uSun.z)))*0.5+0.5,0.0,1.0);
     vec3 cc=mix(vec3(0.72,0.78,0.86),vec3(1.0),lit);
     c=mix(c,cc,cl*smoothstep(0.0,0.25,d.y)*0.9);
