@@ -7,13 +7,14 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const uOf = (z) => clamp01((z + L) / (2 * L));
 
 export const FLOOR_Y = 0.07; // コクピット床
-export const COAM = 0.43; // コクピット半幅
+export const COAM = 0.50; // コクピット半幅 (スナイプ級の広いコクピット幅)
 export const ZC0 = -0.58, ZC1 = 1.66; // コクピット前端・後端
 
 export function halfBeam(z) {
   const u = uOf(z);
-  if (u < 0.5) return 0.77 * Math.pow(Math.sin((u / 0.5) * Math.PI / 2), 0.72);
-  return 0.77 - 0.2 * Math.pow((u - 0.5) / 0.5, 1.7);
+  // スナイプ級特有の横に太くどっしりしたビーム(最大半幅0.90m＝全幅1.80m相当の視覚バランス)と張りのあるバウ・トランサム
+  if (u < 0.48) return 0.90 * Math.pow(Math.sin((u / 0.48) * Math.PI / 2), 0.62);
+  return 0.90 - 0.18 * Math.pow((u - 0.48) / 0.52, 1.65);
 }
 export function sheerY(z) {
   const u = uOf(z);
@@ -80,13 +81,14 @@ export const M = {
   nonskid: new THREE.MeshPhysicalMaterial({ color: 0xf7f9fc, roughness: 0.24, metalness: 0.01, clearcoat: 0.85, clearcoatRoughness: 0.12, side: THREE.DoubleSide }),
   floor: new THREE.MeshPhysicalMaterial({ color: 0xf2f5f8, roughness: 0.28, metalness: 0.01, clearcoat: 0.7, clearcoatRoughness: 0.15, side: THREE.DoubleSide }),
   wall: new THREE.MeshPhysicalMaterial({ color: 0xf8fafc, roughness: 0.2, clearcoat: 0.9, clearcoatRoughness: 0.08, side: THREE.DoubleSide }),
-  alu: new THREE.MeshStandardMaterial({ color: 0xd4dae2, roughness: 0.24, metalness: 0.88 }),
-  steel: new THREE.MeshStandardMaterial({ color: 0xb8c0cc, roughness: 0.22, metalness: 0.92 }),
-  black: new THREE.MeshStandardMaterial({ color: 0x262a30, roughness: 0.5, metalness: 0.1 }),
+  // 環境マップ無しでも黒く沈まず明るいシルバーに見えるよう metalness を抑えて明度を確保
+  alu: new THREE.MeshStandardMaterial({ color: 0xdbe2ea, roughness: 0.35, metalness: 0.22 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.32, metalness: 0.25 }),
+  black: new THREE.MeshStandardMaterial({ color: 0x262a30, roughness: 0.5, metalness: 0.08 }),
   rubber: new THREE.MeshStandardMaterial({ color: 0x262a30, roughness: 0.85 }),
   rail: new THREE.MeshPhysicalMaterial({ color: 0xfafcff, roughness: 0.18, clearcoat: 1 }),
   wood: new THREE.MeshStandardMaterial({ color: 0xb98a55, roughness: 0.55 }),
-  strap: new THREE.MeshStandardMaterial({ color: 0x1e3a5f, roughness: 0.85, map: webbing }),
+  strap: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85, map: webbing }),
   foam: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 }),
 };
 const ropeMats = new Map();
@@ -215,59 +217,63 @@ export function buildHull(accent = 0x2a77ff) {
   });
   g.add(new THREE.Mesh(hoodBack, M.wall));
 
-  // センターボードケース(トランク) & コクピット床のアルミフレームレール (写真2枚目の通り黒い縁を無くし白＋シルバーアルミに)
+  // センターボードケース(ダガーボードトランク):
+  // 画像3枚目準拠: コクピット前部のみ(z = -0.54 〜 +0.04、長さ約0.58m)の低めの純白ケース(高さ th = 0.21m、サイドデッキより低い)
+  // 上面は明るいシルバーのリムで、中央の黒いスリットはごく短く(長さ0.32m)再現
   const trunk = new THREE.Group();
-  const tw = 0.055, tz0 = -0.52, tz1 = 0.48, th = 0.44;
+  const tw = 0.048, tz0 = -0.54, tz1 = 0.04, th = 0.21;
   trunk.add(mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, (tz0 + tz1) / 2));
-  trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.016, 0.016, tz1 - tz0 + 0.02), M.alu, 0, FLOOR_Y + th + 0.004, (tz0 + tz1) / 2));
-  // コクピット床を前後に走る2本のシルバーアルミレール(写真の構造)
-  for (const sg of [-1, 1]) {
-    trunk.add(mesh(new THREE.BoxGeometry(0.022, 0.024, 1.95), M.alu, sg * 0.085, FLOOR_Y + 0.016, 0.58));
-  }
+  // 上面のシルバーアルミプレート
+  trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.012, 0.010, tz1 - tz0 + 0.01), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
+  // 短く細いセンターボードスリット開口部のみダークグレー (z = -0.45 〜 -0.13)
+  trunk.add(mesh(new THREE.BoxGeometry(0.022, 0.012, 0.32), M.black, 0, FLOOR_Y + th + 0.006, -0.29));
+  // ダガーボード上端の小さなシルバーハンドルバー
+  trunk.add(mesh(new THREE.BoxGeometry(0.052, 0.028, 0.020), M.alu, 0, FLOOR_Y + th + 0.022, -0.36));
+  // センターケース後端(z=0.04〜0.18)の低い白いフロアブレース＆メインシートブロック台座 (画像3枚目)
+  trunk.add(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.10));
   g.add(trunk);
 
-  // トランク・コンソール周りのクリート (黒縁を廃しコンパクトに)
+  // トランク・コンソール周りのクリート
   for (const sg of [-1, 1]) {
     const c = camCleat(0.95); c.position.set(sg * 0.14, deckY(-0.52, sg * 0.14) + 0.055, -0.52); c.rotation.x = 0.25; g.add(c);
     const c2 = camCleat(0.9); c2.position.set(sg * (COAM - 0.02), deckY(0.05, sg * COAM) + 0.005, 0.05); g.add(c2);
   }
 
-  // ハイクアウトストラップ(トーストラップ): ネイビーブルーのフラットベルト
+  // ハイクアウトストラップ(トーストラップ): 黒く太く見えないよう細身のグレーストラップを左右に配置
   for (const sg of [-1, 1]) {
-    const pts = [[0, 0], [0.2, 0.03], [0.55, 0.11], [0.95, 0.12], [1.3, 0.09], [1.55, 0.03]]
-      .map(([zz, hh]) => new THREE.Vector3(sg * 0.22, FLOOR_Y + 0.02 + hh, -0.05 + zz));
+    const pts = [[0, 0], [0.2, 0.025], [0.55, 0.07], [0.95, 0.075], [1.3, 0.06], [1.52, 0.02]]
+      .map(([zz, hh]) => new THREE.Vector3(sg * 0.24, FLOOR_Y + 0.018 + hh, 0.02 + zz));
     const cv = new THREE.CatmullRomCurve3(pts);
-    const t = new THREE.Mesh(new THREE.TubeGeometry(cv, 32, 0.014, 8), M.strap); t.scale.set(2.0, 0.6, 1);
-    t.position.x = sg * 0.22 * (1 - 2.0); g.add(t);
+    const t = new THREE.Mesh(new THREE.TubeGeometry(cv, 28, 0.010, 8), M.strap); t.scale.set(1.3, 0.55, 1);
+    t.position.x = sg * 0.24 * (1 - 1.3); g.add(t);
   }
 
-  // ジブリード & サイドステー金具 (サイドデッキの大きな黒ベース板を廃止し、シルバーの金具と小型ブロックのみに)
+  // ジブリード & サイドステー金具 (広くなった船体幅に合わせて配置)
   for (const sg of [-1, 1]) {
-    const x = sg * 0.56;
+    const x = sg * 0.64;
     g.add(mesh(new THREE.BoxGeometry(0.016, 0.008, 0.36), M.alu, x, deckY(-0.08, x) + 0.004, -0.08));
     const jb = block(0.016); jb.position.set(x, deckY(-0.1, x) + 0.02, -0.1); g.add(jb);
     // シュラウド・チェーンプレート(ステンレス)
-    const sx = sg * 0.62, sz = -0.75, sy = deckY(sz, sx);
+    const sx = sg * 0.72, sz = -0.75, sy = deckY(sz, sx);
     g.add(mesh(new THREE.BoxGeometry(0.028, 0.006, 0.075), M.steel, sx, sy + 0.003, sz));
     g.add(mesh(new THREE.TorusGeometry(0.011, 0.0035, 6, 10), M.steel, sx, sy + 0.016, sz));
   }
 
-  // 艇首: 丸いハッチや黒い3本線は付けず、バウ先端のステンレス金具と細引き(イエロー/グリーンのバウライン)のみ再現
+  // 艇首: バウ先端のステンレス金具と細引き
   const bowEye = mesh(new THREE.TorusGeometry(0.016, 0.005, 6, 10), M.steel, 0, deckY(-2.22, 0) + 0.015, -2.22); bowEye.rotation.y = Math.PI / 2; g.add(bowEye);
   const stem = mesh(new THREE.BoxGeometry(0.032, 0.045, 0.085), M.steel, 0, deckY(-2.29, 0) + 0.01, -2.29); g.add(stem);
-  // 写真2枚目のフォアデッキ中央を走る黄色〜緑のショックコード/ランチャーライン
   g.add(rope([[0, deckY(-2.24, 0) + 0.012, -2.24], [0, deckY(-1.65, 0) + 0.012, -1.65]], 0xfacc15, 0.0035));
   g.add(rope([[0, deckY(-1.65, 0) + 0.012, -1.65], [0, deckY(-1.12, 0) + 0.018, -1.12]], 0x4ade80, 0.0035));
 
-  // 後部コクピット: メインシートブロック(センター)
-  const msc = camCleat(1.0); msc.position.set(0, FLOOR_Y + 0.02, 1.15); g.add(msc);
-  const tb = block(0.022); tb.position.set(0, FLOOR_Y + 0.06, 1.15); g.add(tb);
+  // センターケース後端(z=0.10)のメインシートラチェットブロック & カムクリート (画像2・3枚目の位置)
+  const msc = camCleat(1.0); msc.position.set(0, FLOOR_Y + 0.11, 0.10); g.add(msc);
+  const tb = block(0.022); tb.position.set(0, FLOOR_Y + 0.15, 0.10); g.add(tb);
 
-  // コンソール周りのカラフルなコントロールライン(ピンク・イエロー・パープル・ブルーの細ロープ)
+  // コンソール周りのカラフルなコントロールライン(ピンク・イエロー・ライトグリーン・ブルーの細ロープ)
   const tail = (sx, z0, color) => {
     const pts = []; for (let i = 0; i < 6; i++) pts.push(new THREE.Vector3(sx * (0.18 + i * 0.025), deckY(z0, sx * 0.2) + 0.01 + (i % 2) * 0.004, z0 + i * 0.055 + Math.sin(i * 1.7) * 0.02));
     g.add(rope(pts, color, 0.004));
   };
-  tail(-1, -0.48, 0xf472b6); tail(1, -0.48, 0xfacc15); tail(-0.5, -0.52, 0xa855f7); tail(0.5, -0.50, 0x38bdf8);
+  tail(-1, -0.48, 0xf472b6); tail(1, -0.48, 0xfacc15); tail(-0.5, -0.52, 0x4ade80); tail(0.5, -0.50, 0x38bdf8);
   return g;
 }
