@@ -225,7 +225,7 @@ export class Boat {
     this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null; this.penaltyUpgraded = null;
     this.leg = 0; this.ocs = false; this.finished = false; this.finishTime = 0;
     this.a = undefined; this.c = 0; this.visit = null;
-    this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.turned = 0;
+    this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.hike = 0.15; this.turned = 0;
     this.sOpt = 1; this.luff = 0; this.stall = 0;
     this.cover = 0; this.coverT = 0;
     this.windBend = 0; this.windBendT = 0;
@@ -412,8 +412,18 @@ export class Boat {
 
     this.x += (Math.sin(this.h) * this.v + leeX) * dt;
     this.z += (-Math.cos(this.h) * this.v + leeZ) * dt;
-    const heelT = nt * clamp((0.03 + 0.13 * Math.sin(twa) * w.f * this.sheet) * (0.4 + 0.6 * clamp(Math.abs(this.v) / 2, 0, 1)), 0, 0.32);
-    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 1.5));
+
+    // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力(ヒールを起こす動き)
+    const anglePress = Math.sin(clamp(twa, 0.2, Math.PI * 0.88)) * (0.35 + 0.65 * this.sheet) * (1 - 0.65 * smoothstep(1.85, 2.75, twa)) * (1 - 0.55 * this.luff);
+    const windPress = Math.pow(clamp(localWindKt / 9.2, 0.25, 1.85), 1.25);
+    const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
+    const rawHeelPress = anglePress * windPress * speedPress;
+    // クルーとスキッパーは風圧と現在のヒール角に応じてハイクアウト量を調整し、船をフラットに起こす
+    const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.18 + Math.abs(this.heel) * 1.35, 0.05, 1.0);
+    this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
+    const netHeel = Math.max(0.012, rawHeelPress * 0.24 - this.hike * 0.145);
+    const heelT = nt * clamp(netHeel, 0, 0.23);
+    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 2.8));
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
   }
