@@ -13,11 +13,13 @@ export const toCourse = (x, z) => ({ a: x * U.x + z * U.z, c: x * Rv.x + z * Rv.
 
 export const LINE_HALF = 75; // スタートライン半幅
 // 実際のスタートラインは風に対して完全な直角ではなく、どちらかのエンドが少し有利になる。
-// LINE_SKEW>0: 本部船(右)側が風上=有利 / <0: ピン(左)側が有利。ページ読み込み毎に4〜8°でランダム。
-export const LINE_SKEW = (Math.random() < 0.5 ? -1 : 1) * ((4 + Math.random() * 4) * Math.PI) / 180;
-const LINE_T = Math.tan(LINE_SKEW);
+// LINE_SKEW>0: 本部船(上/右)側が風上=上有利 / <0: ピン(下/左)側が風上=下有利。
+// 偏りが出ないよう、前回と逆サイドになる確率を高めつつ約50/50の確率で上有利・下有利を決定する。
+export let LINE_SKEW = 0;
+let LINE_T = 0;
+export let FAVORED = 'pin';
 export const lineA = (c) => c * LINE_T; // スタートライン上で横位置cにおける風上距離a
-export const FAVORED = LINE_SKEW > 0 ? 'com' : 'pin';
+
 export const ROUND_R = 22;
 export let COURSE_MODE = 'trapezoid'; // 'trapezoid' | 'upwind'
 
@@ -30,12 +32,32 @@ export const MARKS = {
   m3: { a: -40, c: -160 },
   gL: { a: 40, c: -22 },
   gR: { a: 40, c: 22 },
-  pin: { a: lineA(-LINE_HALF), c: -LINE_HALF },
-  com: { a: lineA(LINE_HALF), c: LINE_HALF },
+  pin: { a: 0, c: -LINE_HALF },
+  com: { a: 0, c: LINE_HALF },
   // フィニッシュ: トラペゾイド時は運営艇(右上)とフィニッシュマーク(左下)、上マークフィニッシュ時は1マーク(左端)とS旗掲揚運営艇(右端)
   fcom: { a: -95, c: -70 },
   fm: { a: -135, c: -110 },
 };
+
+export function randomizeStartLine() {
+  let sign = Math.random() < 0.5 ? -1 : 1;
+  try {
+    const prev = sessionStorage.getItem('snipe-last-fav');
+    // 連続して同じサイドばかりにならないよう、前回記録がある場合は65%の確率で反対側にして体感でもしっかり半々にする
+    if (prev === 'com') sign = Math.random() < 0.65 ? -1 : 1;
+    else if (prev === 'pin') sign = Math.random() < 0.65 ? 1 : -1;
+    sessionStorage.setItem('snipe-last-fav', sign > 0 ? 'com' : 'pin');
+  } catch (e) {}
+  const deg = Math.round(4 + Math.random() * 4); // 4°〜8°の整数角度
+  LINE_SKEW = sign * ((deg * Math.PI) / 180);
+  LINE_T = Math.tan(LINE_SKEW);
+  FAVORED = LINE_SKEW > 0 ? 'com' : 'pin';
+  MARKS.pin.a = lineA(-LINE_HALF);
+  MARKS.pin.c = -LINE_HALF;
+  MARKS.com.a = lineA(LINE_HALF);
+  MARKS.com.c = LINE_HALF;
+}
+randomizeStartLine();
 
 const norm = (a, c) => { const l = Math.hypot(a, c) || 1; return { a: a / l, c: c / l }; };
 const dir = (p, q) => norm(q.a - p.a, q.c - p.c);
@@ -70,12 +92,12 @@ export function setCourseMode(mode = 'trapezoid') {
     const FINISHC = { a: (-95 + -135) / 2, c: (-70 + -110) / 2 };
     const { m1, m1a, m2, m3 } = MARKS;
     LEGS.push(
-      { id: 0, name: '1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: START, next: m1a },
-      { id: 1, name: '1a', label: '1a(オフセット)を左舷に見て回航', type: 'mark', mark: m1a, side: -1, from: m1, next: GATEC },
+      { id: 0, name: '1', markKey: 'm1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: START, next: m1a },
+      { id: 1, name: '1a', markKey: 'm1a', label: '1a(オフセット)を左舷に見て回航', type: 'mark', mark: m1a, side: -1, from: m1, next: GATEC },
       { id: 2, name: '4', label: '4ゲート(4S/4P)を通過', type: 'gate', from: m1a, center: GATEC, aim: { a: 10, c: 0 } },
-      { id: 3, name: '1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: GATEC, next: m2 },
-      { id: 4, name: '2', label: '2マーク(ウィング)を左舷に見て回航', type: 'mark', mark: m2, side: -1, from: m1, next: m3 },
-      { id: 5, name: '3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISHC },
+      { id: 3, name: '1', markKey: 'm1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: GATEC, next: m2 },
+      { id: 4, name: '2', markKey: 'm2', label: '2マーク(ウィング)を左舷に見て回航', type: 'mark', mark: m2, side: -1, from: m1, next: m3 },
+      { id: 5, name: '3', markKey: 'm3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISHC },
       { id: 6, name: 'F', label: 'フィニッシュラインへ', type: 'finish', from: m3, center: FINISHC, aim: FINISHC }
     );
   }
