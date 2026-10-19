@@ -135,11 +135,13 @@ export class DroneCam {
     const follow = 2.4, lookRate = 5.5;
     const wob = (a) => Math.sin(t * 0.9 * a + a) * 0.4 + Math.sin(t * 2.3 * a) * 0.2;
 
-    // ドローンカメラ視点
+    // ドローンカメラ視点 (スタート画面表示中はヨットがカメラの下側に来るよう視線lk.yを高くする)
     const ang = boat.h + this.yaw;
-    const d = DRONE_D * this.zoom, hgt = (DRONE_H + this.pitch * 12) * this.zoom;
+    const menuLift = this.menuOffset ? (SMALL ? 7.2 : 5.8) : 0;
+    const d = (DRONE_D - (this.menuOffset ? 2 : 0)) * this.zoom;
+    const hgt = (DRONE_H - (this.menuOffset ? 1.6 : 0) + this.pitch * 12) * this.zoom;
     w.set(boat.x - Math.sin(ang) * d, hgt, boat.z + Math.cos(ang) * d);
-    lk.set(boat.x + Math.sin(boat.h) * 8, 1.6, boat.z - Math.cos(boat.h) * 8);
+    lk.set(boat.x + Math.sin(boat.h) * 8, 1.6 + menuLift, boat.z - Math.cos(boat.h) * 8);
 
     w.x += wob(1) * 0.25; w.y += wob(1.7) * 0.2; w.z += wob(2.3) * 0.25;
     if (!this.inited) { this.pos.copy(w); this.look.copy(lk); this.inited = true; }
