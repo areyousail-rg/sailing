@@ -12,7 +12,7 @@ import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearby
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 12;
+const N_BOATS = 16; // 自艇1 + CP艇15 (うち4艇はやや遅めのCP船)
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -59,6 +59,8 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.5, 150000);
 const world = createWorld(scene);
 const cam = new DroneCam(camera, canvas);
+cam.menuOffset = true;
+document.body.classList.add('menuOpen');
 window.addEventListener('resize', () => { renderer.setSize(window.innerWidth, window.innerHeight); camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); });
 
 // ---------- 状態 ----------
@@ -91,7 +93,7 @@ function makeFleet() {
   // 右舷タックで左(-c)へ進む分だけ1分前の初期位置(c)を風上(右/+c)側へオフセットして配置する
   for (let i = 0; i < N_BOATS - 1; i++) {
     const targetC = -54 + i * (113 / (N_BOATS - 2)); // -54 .. +59 (本部船 c=65 のすぐ内側まで均一)
-    const a0 = -32 - (i % 3) * 8;
+    const a0 = -32 - (i % 4) * 7.5;
     const c0 = targetC + Math.abs(a0) * 0.78;
     slots.push({ a: a0, c: c0, targetC });
   }
@@ -104,7 +106,9 @@ function makeFleet() {
     let no; do { no = String(1000 + ((rng() * 30999) | 0)); } while (used.has(no)); used.add(no);
     const color = new THREE.Color().setHSL((k * 0.618) % 1, 0.65, 0.5).getHex();
     const s = isP ? pslot : slots.pop();
-    const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : 1.04 + rng() * 0.05, startTargetC: s.targetC });
+    // 追加した4艇(k >= 12)はやや遅めのCP船(skill 0.94〜0.98)に設定
+    const cpSkill = k >= 12 ? 0.94 + rng() * 0.04 : 1.04 + rng() * 0.05;
+    const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : cpSkill, startTargetC: s.targetC });
     const p = toWorld(s.a + lineA(s.c), s.c);
     b.place(p.x, p.z, W0 - 0.75 + (rng() - 0.5) * 0.05);
     b.v = 0.4; b.sheet = sheetOpt(b.twa);
@@ -195,12 +199,15 @@ function drawMinimap() {
   const isPreStart = (state.phase === 'race' && state.t < 0) || state.phase === 'menu';
   if (isPreStart) {
     mctx.save();
-    const favM = FAVORED === 'com' ? M.com : M.pin;
-    mctx.fillStyle = '#ff3b3b';
-    mctx.beginPath(); mctx.arc(X(favM.c), Y(favM.a), 4.6, 0, Math.PI * 2); mctx.fill();
-    mctx.strokeStyle = '#fde047'; mctx.lineWidth = 1.4; mctx.stroke();
     const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-    const favTxt = `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
+    const isEven = FAVORED === 'even' || skewDeg === 0;
+    if (!isEven) {
+      const favM = FAVORED === 'com' ? M.com : M.pin;
+      mctx.fillStyle = '#ff3b3b';
+      mctx.beginPath(); mctx.arc(X(favM.c), Y(favM.a), 4.6, 0, Math.PI * 2); mctx.fill();
+      mctx.strokeStyle = '#fde047'; mctx.lineWidth = 1.4; mctx.stroke();
+    }
+    const favTxt = isEven ? '0°有利なし' : `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
     mctx.fillStyle = '#fca5a5';
     mctx.font = 'bold 10px sans-serif';
     mctx.textAlign = 'center';
@@ -237,7 +244,7 @@ function drawMinimap() {
 
 const markPtr = { box: $('markPointer'), arrow: $('mpArrow'), label: $('mpText'), v3: new THREE.Vector3() };
 function updateMarkPointer(b) {
-  if (!markPtr.box || !b || b.finished || b.dsq) {
+  if (!markPtr.box || !b || b.finished || b.dsq || state.phase === 'menu') {
     if (markPtr.box) markPtr.box.classList.add('hidden');
     return;
   }
@@ -291,7 +298,7 @@ const nearBoatPool = [];
 const nearBoatV3 = new THREE.Vector3();
 function updateNearBoatsHUD(b) {
   if (!nearBoatsBox) return;
-  if (!b || cam.mode !== COCKPIT || b.finished || b.dsq) {
+  if (!b || cam.mode !== COCKPIT || b.finished || b.dsq || state.phase === 'menu') {
     for (const el of nearBoatPool) el.style.display = 'none';
     return;
   }
@@ -361,11 +368,14 @@ function updateNearBoatsHUD(b) {
 
 function updateHUD(sorted) {
   const b = player, t = state.t;
-  const isPrac = state.phase === 'menu' || state.phase === 'practice';
+  const isMenu = state.phase === 'menu';
+  const isPrac = isMenu || state.phase === 'practice';
+  document.body.classList.toggle('menuOpen', isMenu);
+  cam.menuOffset = isMenu;
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const nextMarkTxt = L.type === 'finish' ? 'フィニッシュ' : L.type === 'gate' ? '4ゲート(4S/4P)' : `${L.name}マーク`;
   const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-  const favShort = `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
+  const favShort = (FAVORED === 'even' || skewDeg === 0) ? '0°有利なし' : `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
   hud.clock.textContent = isPrac ? '練習中' : fmt(t);
   hud.phase.textContent = isPrac ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `スタート前 (${favShort}) ― 次: 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
@@ -506,11 +516,13 @@ function startRace() {
   makeFleet();
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
+  document.body.classList.remove('menuOpen'); cam.menuOffset = false;
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
   document.body.classList.add('hintOn'); clearTimeout(window.__hintT); window.__hintT = setTimeout(() => document.body.classList.remove('hintOn'), 5000);
   const deg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-  toast(`スタート1分前 (${deg}°${FAVORED === 'com' ? '上有利' : '下有利'})`, 'info', 6500);
+  const favLabel = (FAVORED === 'even' || deg === 0) ? '0°有利なし' : `${deg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
+  toast(`スタート1分前 (${favLabel})`, 'info', 6500);
 }
 function startPractice() {
   initAudio();
@@ -518,6 +530,7 @@ function startPractice() {
   makeFleet();
   state.phase = 'practice'; state.t = 0; state.paused = false; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
+  document.body.classList.remove('menuOpen'); cam.menuOffset = false;
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
   toast('練習モード開始 ― 自由にコースを航行できます（右上「⏸ 中断」からいつでもスタート画面へ戻れます）', 'info', 5500);
 }
@@ -791,7 +804,7 @@ function initTouch() {
   tap('pauseBtn', () => togglePause());
   tap('resumeBtn', () => togglePause(false));
   tap('restartBtn', () => { togglePause(false); startRace(); });
-  tap('exitMenuBtn', () => { togglePause(false); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; makeFleet(); });
+  tap('exitMenuBtn', () => { togglePause(false); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(); });
 
   // ランチャー アップ/ダウン
   tap('poleUpBtn', () => setPlayerPole(true));
@@ -965,8 +978,9 @@ function updatePreview() {
   if (!pv) return;
   pv.g.clear();
   const st = { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat), jacket: 0xff7a1a };
-  const a = buildFigure(cfg.helm, st); a.position.set(-0.5, a.userData.upper ? 0.16 : 0, 0); a.rotation.y = 0.25; pv.g.add(a);
-  const b = buildFigure(cfg.crew, st); b.position.set(0.5, b.userData.upper ? 0.16 : 0, 0); b.rotation.y = -0.25; pv.g.add(b);
+  // buildFigureは顔が -z 向きなので、Math.PI 回転してカメラ(+z)側・正面を向かせる
+  const a = buildFigure(cfg.helm, st); a.position.set(-0.5, a.userData.upper ? 0.16 : 0, 0); a.rotation.y = Math.PI + 0.22; pv.g.add(a);
+  const b = buildFigure(cfg.crew, st); b.position.set(0.5, b.userData.upper ? 0.16 : 0, 0); b.rotation.y = Math.PI - 0.22; pv.g.add(b);
   pv.g.rotation.y = 0;
   pv.r.render(pv.sc, pv.cm);
 }
@@ -983,7 +997,7 @@ function initMenu() {
   }
   $('startBtn').onclick = startRace;
   if ($('practiceBtn')) $('practiceBtn').onclick = startPractice;
-  $('againBtn').onclick = () => { $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; makeFleet(); };
+  $('againBtn').onclick = () => { $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(); };
   initPreview();
 }
 
