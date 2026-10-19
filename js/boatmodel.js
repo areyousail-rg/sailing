@@ -214,22 +214,24 @@ function jibTexture() {
     x.beginPath(); x.moveTo(0, y); x.lineTo(256, y); x.stroke();
   }
 
-  // ジブセール下部の透明ウインドウ (実艇写真準拠: フット近くの低い位置に横長の透明窓を設け、alphaTestで高速・描画崩れゼロで反対側が透けて見えるようにする)
+  // ジブセール下部の透明ウインドウ (実艇写真準拠: フット近くの低い位置に横長のクリアビニール窓を設け、反対側が透けて見えるようにする)
   const wx = 44, wy = 408, ww = 166, wh = 54;
   x.clearRect(wx, wy, ww, wh);
+  x.fillStyle = 'rgba(190, 225, 250, 0.16)';
+  x.fillRect(wx, wy, ww, wh);
   // 透明ビニール窓の細い反射ハイライト線
-  x.strokeStyle = 'rgba(225, 240, 255, 0.85)';
+  x.strokeStyle = 'rgba(255, 255, 255, 0.38)';
   x.lineWidth = 1.5;
   x.beginPath();
   x.moveTo(wx + 24, wy + wh - 4); x.lineTo(wx + 62, wy + 4);
   x.moveTo(wx + 108, wy + wh - 4); x.lineTo(wx + 142, wy + 4);
   x.stroke();
   // 窓枠の白い補強テープ縁取り
-  x.strokeStyle = 'rgba(230, 236, 242, 0.98)';
+  x.strokeStyle = 'rgba(230, 236, 242, 0.96)';
   x.lineWidth = 6;
   x.strokeRect(wx, wy, ww, wh);
-  x.strokeStyle = 'rgba(148, 178, 206, 0.88)';
-  x.lineWidth = 2;
+  x.strokeStyle = 'rgba(165, 182, 200, 0.85)';
+  x.lineWidth = 1.5;
   x.strokeRect(wx, wy, ww, wh);
 
   jibTex = new THREE.CanvasTexture(c); jibTex.colorSpace = THREE.SRGBColorSpace; return jibTex;
@@ -301,9 +303,9 @@ export class BoatModel {
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
 
     const tex = mainSailTexture(String(boat.sailNo), boat.color);
-    // 半透明ソートによるセール同士・船体との前後反転(描画崩れ)を防ぐため、不透明＋alphaTestで高速・正確に描画
+    // メインセールは不透明で前後ソート崩れを防ぎ、ジブは透明窓が自然な色で透けるようdepthWrite付き透過に設定
     this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.65, metalness: 0.05 });
-    this.jibMat = new THREE.MeshStandardMaterial({ map: jibTexture(), side: THREE.DoubleSide, roughness: 0.58, alphaTest: 0.35 });
+    this.jibMat = new THREE.MeshStandardMaterial({ map: jibTexture(), side: THREE.DoubleSide, roughness: 0.58, transparent: true, opacity: 0.98, depthWrite: true });
 
     this.mainPivot = new THREE.Group(); this.mainPivot.position.set(0, 0.4, -0.9); this.body.add(this.mainPivot);
     this.mainSail = new THREE.Mesh(mainGeo, this.sailMat); this.mainPivot.add(this.mainSail);
