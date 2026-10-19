@@ -214,16 +214,21 @@ function jibTexture() {
     x.beginPath(); x.moveTo(0, y); x.lineTo(256, y); x.stroke();
   }
 
-  // ジブセール下部の透明ウインドウ (実艇写真準拠: フット近くの低い位置に横長の透明窓を設け、実際に反対側の海面や他艇が透けて見えるようにアルファを抜く)
+  // ジブセール下部の透明ウインドウ (実艇写真準拠: フット近くの低い位置に横長の透明窓を設け、alphaTestで高速・描画崩れゼロで反対側が透けて見えるようにする)
   const wx = 44, wy = 408, ww = 166, wh = 54;
   x.clearRect(wx, wy, ww, wh);
-  x.fillStyle = 'rgba(190, 225, 250, 0.16)';
-  x.fillRect(wx, wy, ww, wh);
+  // 透明ビニール窓の細い反射ハイライト線
+  x.strokeStyle = 'rgba(225, 240, 255, 0.85)';
+  x.lineWidth = 1.5;
+  x.beginPath();
+  x.moveTo(wx + 24, wy + wh - 4); x.lineTo(wx + 62, wy + 4);
+  x.moveTo(wx + 108, wy + wh - 4); x.lineTo(wx + 142, wy + 4);
+  x.stroke();
   // 窓枠の白い補強テープ縁取り
-  x.strokeStyle = 'rgba(230, 236, 242, 0.95)';
+  x.strokeStyle = 'rgba(230, 236, 242, 0.98)';
   x.lineWidth = 6;
   x.strokeRect(wx, wy, ww, wh);
-  x.strokeStyle = 'rgba(148, 178, 206, 0.75)';
+  x.strokeStyle = 'rgba(148, 178, 206, 0.88)';
   x.lineWidth = 2;
   x.strokeRect(wx, wy, ww, wh);
 
@@ -259,8 +264,24 @@ const onShroud = (y) => { const t = (y - SHROUD_A[1]) / (SHROUD_B[1] - SHROUD_A[
 // ランチャー(ウィスカーポール): ブーム基部(グースネック付近 y=1.36)からジブクリューの先端まで正確に伸びる
 const POLE_ROOT = new THREE.Vector3(0, 1.36, -0.92);
 const poleGeo = new THREE.CylinderGeometry(0.015, 0.017, 1, 8); poleGeo.translate(0, 0.5, 0);
+// シート用共有ジオメトリ (毎フレームのジオメトリ生成・破棄をゼロにしてGPUメモリ負荷と描画崩れを完全解消)
+const sheetSegGeo = new THREE.CylinderGeometry(0.0064, 0.0064, 1, 6); sheetSegGeo.translate(0, 0.5, 0);
+const mainSheetMat = ropeMat(0x86efac);
+const jibSheetMatL = ropeMat(0xf5f5f5);
+const jibSheetMatW = ropeMat(0x3b82f6);
 const JIB_WING = 1.22; // ランチャーで風上側に張り出したジブの角度
-const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3(), _root = new THREE.Vector3();
+const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3(), _root = new THREE.Vector3(), _segDir = new THREE.Vector3();
+const _p0 = new THREE.Vector3(), _p1 = new THREE.Vector3(), _p2 = new THREE.Vector3(), _p3 = new THREE.Vector3(), _p4 = new THREE.Vector3(), _p5 = new THREE.Vector3();
+
+function placeSeg(mesh, a, b) {
+  mesh.position.copy(a);
+  _segDir.subVectors(b, a);
+  const len = _segDir.length();
+  if (len < 1e-4) { mesh.visible = false; return; }
+  mesh.visible = true;
+  mesh.quaternion.setFromUnitVectors(_Y, _segDir.multiplyScalar(1 / len));
+  mesh.scale.set(1, len, 1);
+}
 
 export class BoatModel {
   constructor(boat, crewHelm, crewCrew) {
@@ -280,8 +301,9 @@ export class BoatModel {
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
 
     const tex = mainSailTexture(String(boat.sailNo), boat.color);
-    this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.65, metalness: 0.05, transparent: true });
-    this.jibMat = new THREE.MeshStandardMaterial({ map: jibTexture(), side: THREE.DoubleSide, roughness: 0.58, transparent: true, opacity: 0.98, depthWrite: true });
+    // 半透明ソートによるセール同士・船体との前後反転(描画崩れ)を防ぐため、不透明＋alphaTestで高速・正確に描画
+    this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.65, metalness: 0.05 });
+    this.jibMat = new THREE.MeshStandardMaterial({ map: jibTexture(), side: THREE.DoubleSide, roughness: 0.58, alphaTest: 0.35 });
 
     this.mainPivot = new THREE.Group(); this.mainPivot.position.set(0, 0.4, -0.9); this.body.add(this.mainPivot);
     this.mainSail = new THREE.Mesh(mainGeo, this.sailMat); this.mainPivot.add(this.mainSail);
@@ -297,18 +319,24 @@ export class BoatModel {
     this.mainPivot.add(rope([[0, 0.12, 0.06], [0.02, 0.07, 0.2], [0.04, 0.0, 0.4]], 0x3b82f6, 0.0055));
     // 後部ブライドル基部ブロック (z=1.56)
     const aftBridleBlk = block(0.018); aftBridleBlk.position.set(0, FLOOR_Y + 0.28, 1.56); this.body.add(aftBridleBlk);
-    // メインシート(実艇写真2・3枚目準拠のライトグリーン〜白のメインシートシステム) & ジブシート×2(プレイヤー艇)
-    this.mainSheetMesh = new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0x86efac));
-    this.mainSheetMesh.frustumCulled = false;
-    this.body.add(this.mainSheetMesh);
+    // メインシート(4セグメント共有ジオメトリ方式で毎フレームのアロケーションゼロ)
+    this.mainSheetSegs = [];
+    for (let i = 0; i < 4; i++) {
+      const seg = new THREE.Mesh(sheetSegGeo, mainSheetMat);
+      this.body.add(seg);
+      this.mainSheetSegs.push(seg);
+    }
     if (boat.isPlayer) {
-      this.rj = [new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0xf5f5f5)), new THREE.Mesh(new THREE.BufferGeometry(), ropeMat(0x3b82f6))];
-      for (const r of this.rj) { r.frustumCulled = false; this.body.add(r); }
+      this.rjLeeSegs = [];
+      this.rjWndSegs = [];
+      for (let i = 0; i < 4; i++) { const s = new THREE.Mesh(sheetSegGeo, jibSheetMatL); this.body.add(s); this.rjLeeSegs.push(s); }
+      for (let i = 0; i < 5; i++) { const s = new THREE.Mesh(sheetSegGeo, jibSheetMatW); this.body.add(s); this.rjWndSegs.push(s); }
     }
 
     this.jibPivot = new THREE.Group(); this.jibPivot.position.set(0, 0.42, -2.08); this.body.add(this.jibPivot);
     this.jibGeo = jibGeo.clone();
     this.jibSail = new THREE.Mesh(this.jibGeo, this.jibMat); this.jibPivot.add(this.jibSail);
+    this._lastPk = -1; this._lastJibRot = -99; this._lastJibCamber = -99;
 
     this.helm = buildFigure(crewHelm.type, crewHelm.style); this.helmRig = new THREE.Group(); this.helmRig.add(this.helm); this.body.add(this.helmRig);
     this.crew = buildFigure(crewCrew.type, crewCrew.style); this.crewRig = new THREE.Group(); this.crewRig.add(this.crew); this.body.add(this.crewRig);
@@ -398,21 +426,29 @@ export class BoatModel {
   }
 
   updateJibShape(pk, jibRot, camberSigned) {
+    const eps = this.boat.isPlayer ? 0.004 : 0.015;
+    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps) return;
+    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned;
+
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
     const clewLocalY = 0.22 + 0.96 * pk;
     const clewLocalZ = JIB_CLEW_LEN * Math.cos(jibRot);
     const pos = this.jibGeo.attributes.position;
+    const norm = this.jibGeo.attributes.normal;
+    const nxBase = Math.cos(jibRot), nzBase = -Math.sin(jibRot);
     let idx = 0;
     for (let i = 0; i <= JIB_NU; i++) {
       const u = i / JIB_NU;
       for (let j = 0; j <= JIB_NV; j++) {
         const v = j / JIB_NV;
         this.evalJibPoint(u, v, clewX, clewLocalY, clewLocalZ, camberSigned, pk, _v);
-        pos.setXYZ(idx++, _v.x, _v.y, _v.z);
+        pos.setXYZ(idx, _v.x, _v.y, _v.z);
+        if (norm) norm.setXYZ(idx, nxBase, 0.08, nzBase);
+        idx++;
       }
     }
     pos.needsUpdate = true;
-    this.jibGeo.computeVertexNormals();
+    if (norm) norm.needsUpdate = true;
   }
 
   // ジブのテルテール: セール面に常に密着し、風上側が躍る=上り過ぎ、風下側が躍る=落とし過ぎ、リーバウ効果時は風上テルテールが上向きにリフト反応
@@ -561,41 +597,54 @@ export class BoatModel {
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
     this.mount.position.set(this.side * (0.50 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
     this.syncMainSheet(sgn, lean, sideAbs);
-    if (this.rj) this.syncRopes(sgn, clewY);
+    if (this.rjLeeSegs) this.syncRopes(sgn, clewY);
   }
 
-  // メインシート(実艇写真2・3枚目準拠):
+  // メインシート(実艇写真2・3枚目準拠・共有Cylinderセグメント方式で毎フレームのアロケーション0):
   // 後部ブライドル(z=1.56) → ブーム後端ブロック(bz=2.52) → ブーム下面に沿って中央ブロック(bz=1.18) →
   // センターケース後端のフロアブロック(z=0.10)へ真っ直ぐ降り、そこからスキッパーの前手へ直線的に繋がる
   syncMainSheet(sgn, lean, sideAbs) {
-    if (!this.mainSheetMesh) return;
-    const A = this.boomA, V = THREE.Vector3;
-    const pm = -sgn * A;
+    if (!this.mainSheetSegs) return;
+    const pm = -sgn * this.boomA;
+    const sinP = Math.sin(pm), cosP = Math.cos(pm);
     const bzAft = 2.52, bzMid = 1.18;
-    const aftBridle = new V(0, FLOOR_Y + 0.28, 1.56);
-    const bblkAft = new V(bzAft * Math.sin(pm), 1.35, -0.9 + bzAft * Math.cos(pm));
-    const bblkMid = new V(bzMid * Math.sin(pm), 1.35, -0.9 + bzMid * Math.cos(pm));
-    const ratchet = new V(0, FLOOR_Y + 0.16, 0.10);
-    // スキッパーの前手(メインシートを持つ手)の座標
-    const handX = this.side * (0.30 + lean * 0.20);
-    const handY = 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12;
-    const handZ = 0.72;
-    const hand = new V(handX, handY, handZ);
-    this.mainSheetMesh.geometry.dispose();
-    this.mainSheetMesh.geometry = tautSheetGeo([aftBridle, bblkAft, bblkMid, ratchet, hand], 0.0068);
+    _p0.set(0, FLOOR_Y + 0.28, 1.56);
+    _p1.set(bzAft * sinP, 1.35, -0.9 + bzAft * cosP);
+    _p2.set(bzMid * sinP, 1.35, -0.9 + bzMid * cosP);
+    _p3.set(0, FLOOR_Y + 0.16, 0.10);
+    _p4.set(this.side * (0.30 + lean * 0.20), 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12, 0.72);
+    placeSeg(this.mainSheetSegs[0], _p0, _p1);
+    placeSeg(this.mainSheetSegs[1], _p1, _p2);
+    placeSeg(this.mainSheetSegs[2], _p2, _p3);
+    placeSeg(this.mainSheetSegs[3], _p3, _p4);
   }
 
-  // 走る索: ジブシート(風下=緊張 / 風上=たるみ)
+  // 走る索: ジブシート(共有Cylinderセグメント方式で毎フレームのアロケーション0)
   syncRopes(sgn, clewY = 0.64) {
-    const V = THREE.Vector3;
-    const pj = this.jibRot, clew = new V(JIB_CLEW_LEN * Math.sin(pj), clewY, -2.08 + JIB_CLEW_LEN * Math.cos(pj));
+    const pj = this.jibRot;
+    _p0.set(JIB_CLEW_LEN * Math.sin(pj), clewY, -2.08 + JIB_CLEW_LEN * Math.cos(pj));
     const carY = (x) => deckY(-0.1, x) + 0.05;
     const xL = -sgn * 0.64, xW = sgn * 0.64, cl = 0.085;
-    const set = (i, pts, r) => { const m = this.rj[i]; m.geometry.dispose(); m.geometry = ropeGeo(pts, r, 24); };
-    const lee = [clew, new V(xL * 0.92, carY(xL) + 0.01, -0.1), new V(xL * 0.55, FLOOR_Y + 0.55, -0.1), new V(-sgn * cl, FLOOR_Y + 0.34, -0.12), new V(-sgn * cl, FLOOR_Y + 0.2, 0.0)];
-    const mid = clew.clone().lerp(new V(xW, carY(xW), -0.1), 0.5); mid.y -= 0.18; mid.x *= 0.5;
-    const wnd = [clew, mid, new V(xW * 1.0, carY(xW) + 0.01, -0.1), new V(xW * 0.6, FLOOR_Y + 0.5, -0.1), new V(sgn * cl, FLOOR_Y + 0.34, -0.12), new V(sgn * cl, FLOOR_Y + 0.2, 0.0)];
-    set(0, lee, 0.0065); set(1, wnd, 0.0065);
+    // 風下シート(4セグメント)
+    _p1.set(xL * 0.92, carY(xL) + 0.01, -0.1);
+    _p2.set(xL * 0.55, FLOOR_Y + 0.55, -0.1);
+    _p3.set(-sgn * cl, FLOOR_Y + 0.34, -0.12);
+    _p4.set(-sgn * cl, FLOOR_Y + 0.2, 0.0);
+    placeSeg(this.rjLeeSegs[0], _p0, _p1);
+    placeSeg(this.rjLeeSegs[1], _p1, _p2);
+    placeSeg(this.rjLeeSegs[2], _p2, _p3);
+    placeSeg(this.rjLeeSegs[3], _p3, _p4);
+    // 風上シート(5セグメント)
+    _p1.set((_p0.x + xW) * 0.25, (_p0.y + carY(xW)) * 0.5 - 0.18, (_p0.z - 0.1) * 0.5);
+    _p2.set(xW, carY(xW) + 0.01, -0.1);
+    _p3.set(xW * 0.6, FLOOR_Y + 0.5, -0.1);
+    _p4.set(sgn * cl, FLOOR_Y + 0.34, -0.12);
+    _p5.set(sgn * cl, FLOOR_Y + 0.2, 0.0);
+    placeSeg(this.rjWndSegs[0], _p0, _p1);
+    placeSeg(this.rjWndSegs[1], _p1, _p2);
+    placeSeg(this.rjWndSegs[2], _p2, _p3);
+    placeSeg(this.rjWndSegs[3], _p3, _p4);
+    placeSeg(this.rjWndSegs[4], _p4, _p5);
   }
 }
 
