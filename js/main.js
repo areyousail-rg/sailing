@@ -56,7 +56,7 @@ renderer.setPixelRatio(pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.NoToneMapping;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 1.0, 52000);
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.5, 150000);
 const world = createWorld(scene);
 const cam = new DroneCam(camera, canvas);
 cam.menuOffset = true;
