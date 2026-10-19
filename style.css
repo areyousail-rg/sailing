@@ -92,26 +92,43 @@ h1{margin:0;font-size:1.45rem;line-height:1.15;background:linear-gradient(90deg,
 #preview{width:136px;height:96px;border-radius:12px;background:radial-gradient(circle at 50% 30%,rgba(120,220,255,.25),rgba(0,0,0,.2));border:1px solid var(--line)}
 .note{font-size:.7rem;color:var(--mute);text-align:center;line-height:1.4}
 code{background:rgba(255,255,255,.12);padding:1px 5px;border-radius:5px}
-.startActions{display:flex;gap:8px;margin-top:4px}
+.startActions{display:flex;gap:8px;margin-top:5px;align-items:stretch}
 .cta{margin-top:10px;width:100%;padding:9px 12px;font-size:.96rem;font-weight:700;letter-spacing:.06em;font-family:inherit;color:#042;border:none;border-radius:11px;cursor:pointer;background:linear-gradient(90deg,#35e0c1,#7df0ff);box-shadow:0 6px 18px rgba(53,224,193,.38);transition:transform .15s,box-shadow .15s}
-.startActions .cta{margin-top:0;flex:1.6}
-.cta:hover{transform:translateY(-1px) scale(1.01);box-shadow:0 10px 24px rgba(53,224,193,.5)}
-.btnPractice{flex:1;padding:9px 10px;font-size:.86rem;font-weight:700;font-family:inherit;color:#e2e8f0;background:rgba(255,255,255,.10);border:1.5px solid var(--sea);border-radius:11px;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s;white-space:nowrap}
-.btnPractice:hover{transform:translateY(-1px);background:rgba(53,224,193,.22);color:#fff;box-shadow:0 6px 16px rgba(53,224,193,.25)}
-.keys{text-align:center;color:var(--mute);font-size:.63rem;margin:1px 0 0;line-height:1.25}
+.startActions .cta{margin-top:0;flex:2.1}
+.startRaceBtn{padding:11px 16px;font-size:1.08rem;font-weight:800;letter-spacing:.08em;color:#031c18;background:linear-gradient(135deg,#fde047 0%,#35e0c1 52%,#38bdf8 100%);border:2px solid #fef08a;box-shadow:0 0 22px rgba(253,224,71,.48),0 6px 20px rgba(53,224,193,.45);text-shadow:0 1px 0 rgba(255,255,255,.45)}
+.cta:hover,.startRaceBtn:hover{transform:translateY(-1px) scale(1.02);box-shadow:0 0 28px rgba(253,224,71,.68),0 10px 26px rgba(53,224,193,.58)}
+.btnPractice{flex:0.95;padding:9px 10px;font-size:.82rem;font-weight:700;font-family:inherit;color:#cbd5e1;background:rgba(255,255,255,.08);border:1px solid rgba(148,163,184,.4);border-radius:11px;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s;white-space:nowrap}
+.btnPractice:hover{transform:translateY(-1px);background:rgba(53,224,193,.18);color:#fff;border-color:var(--sea)}
 .weatherInfoBottom{font-size:.6rem;color:#9ad8ff;text-align:center;background:rgba(12,32,56,.55);border:1px solid rgba(154,216,255,.16);padding:3px 8px;border-radius:7px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* ブランケット横長ゲージバー */
-.blkGauge{position:fixed;left:50%;top:122px;transform:translateX(-50%);width:min(320px,74vw);padding:5px 12px 7px;border-radius:10px;background:rgba(10,24,42,.82);border:1.5px solid rgba(251,191,36,.65);box-shadow:0 4px 16px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:4px;z-index:3;pointer-events:none;transition:border-color .2s,background .2s}
-.blkGauge .blkTxt{font-size:.76rem;font-weight:700;color:#fde68a;letter-spacing:.04em;text-align:center;line-height:1.1;font-variant-numeric:tabular-nums}
-.blkGauge .blkTrack{width:100%;height:8px;border-radius:999px;background:rgba(255,255,255,.14);overflow:hidden}
+/* ブランケット横長ゲージバー (存在感控えめ・薄めのデザイン) */
+.blkGauge{position:fixed;left:50%;top:118px;transform:translateX(-50%);width:min(220px,54vw);padding:3px 10px 5px;border-radius:8px;background:rgba(10,24,42,.52);border:1px solid rgba(251,191,36,.38);box-shadow:0 2px 8px rgba(0,0,0,.22);display:flex;flex-direction:column;gap:3px;z-index:3;pointer-events:none;opacity:.78;transition:border-color .2s,background .2s,opacity .2s}
+.blkGauge .blkTxt{font-size:.66rem;font-weight:600;color:rgba(253,230,138,.88);letter-spacing:.03em;text-align:center;line-height:1.05;font-variant-numeric:tabular-nums}
+.blkGauge .blkTrack{width:100%;height:5px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
 .blkGauge .blkFill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#facc15,#f97316);transition:width .12s ease-out,background .2s}
-.blkGauge.mid{border-color:rgba(249,115,22,.85);background:rgba(38,18,10,.85)}
-.blkGauge.mid .blkTxt{color:#fed7aa}
+.blkGauge.mid{border-color:rgba(249,115,22,.55);background:rgba(38,18,10,.58);opacity:.84}
+.blkGauge.mid .blkTxt{color:rgba(254,215,170,.92)}
 .blkGauge.mid .blkFill{background:linear-gradient(90deg,#fb923c,#ea580c)}
-.blkGauge.high{border-color:rgba(239,68,68,.95);background:rgba(68,12,18,.88);box-shadow:0 0 18px rgba(239,68,68,.45)}
+.blkGauge.high{border-color:rgba(239,68,68,.72);background:rgba(68,12,18,.64);box-shadow:0 0 10px rgba(239,68,68,.25);opacity:.9}
 .blkGauge.high .blkTxt{color:#fecaca}
 .blkGauge.high .blkFill{background:linear-gradient(90deg,#f97316,#ef4444 55%,#dc2626)}
+
+/* スタート画面(menuOpen)表示中: 上部の角度・順位・中断・ミニマップ等を非表示にし「練習中」だけ残す。下部のセールAUTO等は残す */
+body.menuOpen #boardPanel,
+body.menuOpen #pauseBtn,
+body.menuOpen #minimap,
+body.menuOpen #markPointer,
+body.menuOpen #nearBoats,
+body.menuOpen #help,
+body.menuOpen #toasts,
+body.menuOpen #miniLog,
+body.menuOpen #blkBadge,
+body.menuOpen #timerPanel #phase,
+body.menuOpen #timerPanel .sub,
+body.menuOpen .bottom-center .cell:not(.sheet):not(.pole){display:none!important}
+body.menuOpen #timerPanel{padding:5px 12px;min-width:0;border-radius:10px;background:rgba(8,26,46,.48)}
+body.menuOpen #timerPanel #clock{font-size:1.15rem}
+body.menuOpen .menuPractice{padding-top:34px}
 
 .markPointer{position:fixed;z-index:3;pointer-events:none;display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:rgba(8,24,44,.82);border:1.5px solid var(--gold);color:var(--gold);font-weight:700;font-size:.78rem;box-shadow:0 4px 16px rgba(0,0,0,.45);transform:translate(-50%,-50%);white-space:nowrap}
 .markPointer .mpArrow{display:inline-block;font-size:.95rem;line-height:1;transform-origin:center}
@@ -173,11 +190,12 @@ body.touch .pauseBtn{top:8px;right:124px;padding:7px 13px;font-size:.8rem}
 body.touch #minimap{width:120px;height:120px;right:8px;top:56px;bottom:auto}
 body.touch .camLabel{display:none}
 body.touch .bottom-center{bottom:auto;top:8px;transform:translateX(-50%) scale(.72);transform-origin:top center;gap:12px;padding:6px 12px}
+body.touch.menuOpen .bottom-center{top:auto;bottom:14px;left:50%;transform:translateX(-50%) scale(.78);transform-origin:bottom center}
 body.touch .bottom-center .cell:nth-child(2),body.touch .bottom-center .cell.mark{display:none}
 body.touch #toasts{top:96px;width:min(420px,60vw)}body.touch .toast{font-size:.78rem;padding:6px 12px}
 body.touch #bigCount{font-size:5rem;top:36%}
 body.touch .badge{top:62px;font-size:.78rem;padding:6px 12px}body.touch .badge.warn{top:92px}
-body.touch .blkGauge{top:88px;width:min(260px,64vw);padding:4px 10px 6px}
+body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 4px}
 @media(max-height:480px){.card{padding:10px 14px}h1{font-size:1.3rem}.lead{margin-bottom:6px}#preview{width:110px;height:78px}.cta{margin-top:6px;padding:7px}}
 @media(pointer:coarse) and (orientation:portrait){body.hintOn::after{content:"横向きにするとプレイしやすくなります";position:fixed;bottom:145px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:5px 12px;border-radius:10px;font-size:.7rem;z-index:20;pointer-events:none;white-space:nowrap}}
 
@@ -192,6 +210,7 @@ body.touch .blkGauge{top:88px;width:min(260px,64vw);padding:4px 10px 6px}
   body.touch .top-right h2 span{font-size:.82rem;margin-left:5px}
   body.touch .pauseBtn{top:6px;right:86px;padding:6px 10px;font-size:.66rem;border-radius:9px}
   body.touch .bottom-center{top:46px;left:6px;right:auto;transform:none;gap:8px;padding:4px 8px;border-radius:10px;max-width:calc(100vw - 110px);justify-content:flex-start}
+  body.touch.menuOpen .bottom-center{top:auto;bottom:98px;left:auto;right:8px;transform:none;padding:3px 7px}
   body.touch .cell{min-width:0}
   body.touch .cell label{font-size:.48rem;white-space:nowrap}
   body.touch .cell b{font-size:.98rem}
@@ -201,9 +220,9 @@ body.touch .blkGauge{top:88px;width:min(260px,64vw);padding:4px 10px 6px}
   body.touch #minimap{width:92px;height:92px;right:6px;top:38px}
   body.touch .badge{top:96px;left:6px;transform:none;font-size:.6rem;padding:4px 9px;max-width:calc(100vw - 110px)}
   body.touch .badge.warn{top:120px}
-  body.touch .blkGauge{top:96px;left:6px;transform:none;width:calc(100vw - 112px);padding:4px 8px 5px}
-  body.touch .blkGauge .blkTxt{font-size:.68rem}
-  body.touch .blkGauge .blkTrack{height:7px}
+  body.touch .blkGauge{top:94px;left:6px;transform:none;width:calc(100vw - 136px);padding:3px 7px 4px}
+  body.touch .blkGauge .blkTxt{font-size:.6rem}
+  body.touch .blkGauge .blkTrack{height:4px}
   body.touch #toasts{top:136px;width:92vw}
   body.touch .toast{font-size:.62rem;padding:4px 10px}
   body.touch #miniLog{top:182px;max-width:44vw}
@@ -212,7 +231,7 @@ body.touch .blkGauge{top:88px;width:min(260px,64vw);padding:4px 10px 6px}
   .tgrp.left{left:8px;bottom:10px;gap:8px}.tgrp.left button{width:84px;height:80px;font-size:1.85rem;border-radius:16px}
   .tgrp.mid{left:8px;top:auto;bottom:98px;flex-direction:row}.tgrp.mid button{width:auto;min-width:50px;height:34px;padding:0 8px;font-size:.62rem}
   .tgrp.right{right:8px;bottom:10px;width:150px;gap:6px}.tgrp.right button{width:72px;height:48px;font-size:.62rem;border-radius:14px}
-  .menuPractice{padding-top:86px}
+  .menuPractice{padding-top:34px}
   .menuCard{padding:8px 10px;gap:4px;max-height:none;overflow:visible;width:95vw;border-radius:14px}
   .menuCard h1{font-size:1.18rem}
   .menuCard .eyebrow{font-size:.5rem}
@@ -226,8 +245,8 @@ body.touch .blkGauge{top:88px;width:min(260px,64vw);padding:4px 10px 6px}
   #preview{width:96px;height:68px;border-radius:9px}
   .colors input[type=text]{width:50px;padding:3px 5px;font-size:.68rem}
   .startActions{margin-top:3px;gap:6px}
-  .startActions .cta,.btnPractice{padding:7px 8px;font-size:.82rem;border-radius:9px}
-  .keys{font-size:.54rem;margin:0}
+  .startActions .cta{padding:8px 10px;font-size:.92rem;border-radius:9px}
+  .btnPractice{padding:7px 8px;font-size:.76rem;border-radius:9px}
   .weatherInfoBottom{font-size:.52rem;padding:2px 6px}
 }
 
