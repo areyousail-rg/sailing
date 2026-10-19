@@ -106,8 +106,12 @@ function makeFleet() {
     let no; do { no = String(1000 + ((rng() * 30999) | 0)); } while (used.has(no)); used.add(no);
     const color = new THREE.Color().setHSL((k * 0.618) % 1, 0.65, 0.5).getHex();
     const s = isP ? pslot : slots.pop();
-    // 追加した4艇(k >= 12)はやや遅めのCP船(skill 0.94〜0.98)に設定
-    const cpSkill = k >= 12 ? 0.94 + rng() * 0.04 : 1.04 + rng() * 0.05;
+    // 1マークで全艇が団子になってごった返さないよう、上位群・中上位群・中下位群・下位群でCPのレベル(艇速・スキル)に自然なばらつきを持たせる
+    const cpSkill =
+      k <= 3 ? 1.06 + rng() * 0.045 :
+      k <= 7 ? 1.00 + rng() * 0.045 :
+      k <= 11 ? 0.94 + rng() * 0.045 :
+      0.87 + rng() * 0.055;
     const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : cpSkill, startTargetC: s.targetC });
     const p = toWorld(s.a + lineA(s.c), s.c);
     b.place(p.x, p.z, W0 - 0.75 + (rng() - 0.5) * 0.05);
