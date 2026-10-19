@@ -92,7 +92,7 @@ export function sheetOpt(twa) {
 }
 
 // ブランケット(風影)・リーバウ効果(風下前方からの吹き上げリフト＆風上艇へのバックウィンド)・別タック艇スターン通過リフト
-const SHADOW_LEN = 46; // ディンギーの風影影響圏(約9〜10艇身)
+const SHADOW_LEN = 28; // ディンギーの風影影響圏(約5.5〜6艇身: 遠方の船からは影響を受けにくく調整)
 export function computeBlanket(boats) {
   for (const b of boats) {
     b.coverT = 0;
@@ -118,22 +118,23 @@ export function computeBlanket(boats) {
       if (dist2 > (SHADOW_LEN + 6) * (SHADOW_LEN + 6)) continue;
 
       // 1) ブランケット(風影コーン): A艇の風下側(sx, sz方向)に入るB艇の風速低下＋乱流ヘダー
+      // 遠くの船では従来の半分程度以下の数値・影響度に抑え、至近距離または複数艇が風上に重なった場合は100%(1.0)になるよう調整
       const along = rx * sx + rz * sz;
-      if (along > 1.4 && along < SHADOW_LEN) {
+      if (along > 1.2 && along < SHADOW_LEN) {
         const latSigned = -rx * sz + rz * sx;
         const lat = Math.abs(latSigned);
-        // セール開き角に応じて近距離の風影幅が変化し、風下へ約17°で広がる
-        const sailProj = 1.65 + 0.55 * Math.sin(clamp(A.twa, 0.4, 2.8));
-        const half = sailProj + along * 0.31;
+        const sailProj = 1.45 + 0.45 * Math.sin(clamp(A.twa, 0.4, 2.8));
+        const half = sailProj + along * 0.21;
         if (lat < half) {
-          const distFactor = Math.pow(1 - along / SHADOW_LEN, 0.85);
-          const coreFactor = Math.exp(-Math.pow(lat / (half * 0.58), 2));
-          const edgeFactor = 1 - lat / half;
-          const s = clamp(distFactor * (0.72 * coreFactor + 0.42 * edgeFactor) * 1.25, 0, 0.95);
-          B.coverT = 1 - (1 - B.coverT) * (1 - s);
+          const normDist = clamp((along - 1.2) / (SHADOW_LEN - 1.2), 0, 1);
+          const distFactor = Math.pow(1 - normDist, 2.15);
+          const coreFactor = Math.exp(-Math.pow(lat / (half * 0.48), 2));
+          const edgeFactor = Math.max(0, 1 - lat / half);
+          const s = clamp(distFactor * (0.76 * coreFactor + 0.26 * edgeFactor), 0, 1.0);
+          B.coverT = clamp(B.coverT + s * 0.94, 0, 1.0);
           // 風影内ではセール後流の乱れで風向がわずかにヘダー(頭を抑えられる悪風)になる
-          if (B.twa < 1.5 && s > 0.15) {
-            B.windBendT -= s * 0.055;
+          if (B.twa < 1.5 && s > 0.18) {
+            B.windBendT -= s * 0.038;
           }
         }
       }
@@ -281,10 +282,11 @@ export class Boat {
 
   update(dt, t, boats) {
     const w = windAt(this.x, this.z, t);
-    this.cover += (this.coverT - this.cover) * (1 - Math.exp(-dt / 0.95));
+    this.cover += (this.coverT - this.cover) * (1 - Math.exp(-dt / 0.85));
     this.windBend += (this.windBendT - this.windBend) * (1 - Math.exp(-dt / 0.38));
     this.flowBoost += (this.flowBoostT - this.flowBoost) * (1 - Math.exp(-dt / 0.42));
-    w.f = clamp(w.f * (1 - 0.52 * this.cover + this.flowBoost), 0.35, 1.45);
+    // 軽いブランケット時は減速を従来の約半分に抑え、80〜100%の濃厚な風影ではしっかり減速する非線形カーブ
+    w.f = clamp(w.f * (1 - 0.38 * Math.pow(this.cover, 1.35) + this.flowBoost), 0.42, 1.45);
     w.from = wrap(w.from + this.tack * this.windBend);
     this.windFrom = w.from; this.windF = w.f;
     let steer = this.steer;
