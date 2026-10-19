@@ -673,54 +673,33 @@ export function createWorld(scene) {
   const lineMesh = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.7), new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.62, depthWrite: false, blending: THREE.AdditiveBlending }));
   lineMesh.rotation.x = -Math.PI / 2; scene.add(lineMesh);
 
-  // ---------- スタート前限定: スタートライン角度(風に対する傾き) & 有利サイド3Dガイド ----------
+  // ---------- スタート前限定: 有利サイド(赤バッジのみ・コンパクト表記) ----------
   const preStartGroup = new THREE.Group();
   scene.add(preStartGroup);
-  const skewDegNum = Math.abs((LINE_SKEW * 180) / Math.PI);
-  const skewDegStr = skewDegNum.toFixed(1);
-  const favEndName = FAVORED === 'com' ? '本部船(右)' : 'ピン(左)';
-  // 風に対して直角な基準破線(不利側エンドを起点に風直角方向へ引き、実際のスタートラインとの角度差がひと目でわかるようにする)
-  const dashTex = (() => {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 16; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(56,189,248,0.92)'; x.fillRect(0, 0, 38, 16);
-    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(18, 1); return t;
-  })();
-  const refLineMat = new THREE.MeshBasicMaterial({ map: dashTex, transparent: true, opacity: 0.78, depthWrite: false });
-  const refLineMesh = new THREE.Mesh(new THREE.PlaneGeometry(LINE_HALF * 2, 0.65), refLineMat);
-  refLineMesh.rotation.x = -Math.PI / 2;
-  preStartGroup.add(refLineMesh);
+  const favCanvas = document.createElement('canvas');
+  favCanvas.width = 384; favCanvas.height = 112;
+  const favTex = new THREE.CanvasTexture(favCanvas);
+  const favEndBadge = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: favTex, transparent: true, depthWrite: false })
+  );
+  favEndBadge.scale.set(13.5, 3.9, 1);
+  favEndBadge.renderOrder = 6;
+  preStartGroup.add(favEndBadge);
 
-  const makeBannerSprite = (text, subText, bg, borderCol, wScale, hScale) => {
-    const c = document.createElement('canvas'); c.width = 768; c.height = 192; const x = c.getContext('2d');
-    x.fillStyle = bg; x.fillRect(0, 0, 768, 192);
-    x.strokeStyle = borderCol; x.lineWidth = 10; x.strokeRect(5, 5, 758, 182);
-    x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText(text, 384, subText ? 68 : 96);
-    if (subText) {
-      x.fillStyle = '#fef08a'; x.font = 'bold 46px sans-serif';
-      x.fillText(subText, 384, 138);
-    }
-    const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
-    const sp = new THREE.Sprite(mat);
-    sp.scale.set(wScale, hScale, 1);
-    sp.renderOrder = 6;
-    return sp;
+  const updateFavBadge = () => {
+    const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
+    const favSideTxt = FAVORED === 'com' ? '上有利' : '下有利';
+    const labelStr = `${skewDeg}°${favSideTxt}`;
+    const ctx = favCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 384, 112);
+    ctx.fillStyle = 'rgba(185, 28, 28, 0.90)';
+    ctx.beginPath(); ctx.roundRect(6, 6, 372, 100, 20); ctx.fill();
+    ctx.strokeStyle = '#fde047'; ctx.lineWidth = 6; ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 54px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(labelStr, 192, 58);
+    favTex.needsUpdate = true;
   };
-  const favEndBadge = makeBannerSprite(
-    `★ 有利サイド (${favEndName})`,
-    `風上へ +${skewDegStr}° 有利`,
-    'rgba(185, 28, 28, 0.90)',
-    '#fde047',
-    30, 7.5
-  );
-  const startSkewBadge = makeBannerSprite(
-    `ライン角度: ${favEndName}側が +${skewDegStr}° 風上`,
-    '水色破線 ＝ 風に対する直角基準線',
-    'rgba(12, 34, 64, 0.88)',
-    '#38bdf8',
-    32, 8.0
-  );
-  preStartGroup.add(favEndBadge, startSkewBadge);
 
   // フィニッシュライン(チェッカー柄の帯 + 縦のカーテン + FINISH表示)
   const fpa0 = toWorld(MARKS.fm.a, MARKS.fm.c), fpb0 = toWorld(MARKS.fcom.a, MARKS.fcom.c);
@@ -784,14 +763,10 @@ export function createWorld(scene) {
     lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.15, lcz);
     startLabel.position.set(lcx, 12, lcz);
 
-    // スタート前ガイド: 風直角基準線(不利側エンド基準)と有利サイドバッジの位置更新
-    const unfavA = Math.min(MARKS.pin.a, MARKS.com.a);
-    const rpa = toWorld(unfavA, -LINE_HALF), rpb = toWorld(unfavA, LINE_HALF);
-    const rcx = (rpa.x + rpb.x) / 2, rcz = (rpa.z + rpb.z) / 2, rrot = -Math.atan2(rpb.z - rpa.z, rpb.x - rpa.x);
-    refLineMesh.rotation.z = rrot; refLineMesh.position.set(rcx, 0.14, rcz);
+    // スタート前ガイド: 有利サイド赤バッジの位置とテキスト更新
+    updateFavBadge();
     const favPt = FAVORED === 'com' ? pb : pa;
-    favEndBadge.position.set(favPt.x, 15.5, favPt.z);
-    startSkewBadge.position.set(lcx, 6.2, lcz);
+    favEndBadge.position.set(favPt.x, 12.5, favPt.z);
 
     const fpa = toWorld(MARKS.fm.a, MARKS.fm.c), fpb = toWorld(MARKS.fcom.a, MARKS.fcom.c);
     const curFlen = Math.hypot(fpb.x - fpa.x, fpb.z - fpa.z);
@@ -911,6 +886,7 @@ export function createWorld(scene) {
   return {
     markObjs,
     wake,
+    syncCourseObjects,
     setVenue(venue, customWindDeg = null, sideBias = -0.6) {
       const isHakkei = venue === 'hakkeijima';
       enoshimaGroup.visible = !isHakkei;
@@ -941,7 +917,7 @@ export function createWorld(scene) {
         targetArrows[1].visible = false;
         return;
       }
-      activeMarkKeys = L.type === 'gate' ? ['gL', 'gR'] : [L.mark];
+      activeMarkKeys = L.type === 'gate' ? ['gL', 'gR'] : [L.markKey || 'm1'];
       for (let i = 0; i < targetArrows.length; i++) {
         const key = activeMarkKeys[i];
         const ar = targetArrows[i];
@@ -1025,9 +1001,6 @@ export function createWorld(scene) {
         const vFav = calcVis(favEndBadge.position.x, favEndBadge.position.y, favEndBadge.position.z, 22, 18);
         favEndBadge.material.opacity = 0.92 * vFav;
         favEndBadge.visible = vFav > 0.02;
-        const vSkw = calcVis(startSkewBadge.position.x, startSkewBadge.position.y, startSkewBadge.position.z, 26, 20);
-        startSkewBadge.material.opacity = 0.90 * vSkw;
-        startSkewBadge.visible = vSkw > 0.02;
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
@@ -1397,20 +1370,98 @@ function buildHakkeijima(root, surfStrip, fgeo) {
     roof.position.set(hx, 38, hz); roof.scale.set(1, 1, 0.45); fukuura.add(roof);
   }
 
-  // テクノタワーホテル周辺の白い低層建屋群 (圧迫感が出ないよう小さめ・低めに配置)
-  for (const [bx, bz, bw, bh, bd] of [
-    [-645, -1040, 48, 14, 42],
-    [-735, -1100, 52, 16, 46],
-    [-650, -1190, 46, 13, 40],
-    [-745, -1250, 54, 15, 44],
-    [-645, -1320, 45, 14, 40],
-    [-655, -1620, 50, 14, 44],
-    [-745, -1690, 52, 16, 46],
-    [-660, -1810, 48, 13, 44],
-    [-750, -1920, 55, 15, 48],
+  // テクノタワーホテル周辺 (金沢区福浦1〜3丁目・金沢産業振興センター・MDC物流センター・日本発条・研究所群・シーサイドライン高架)
+  const fukuColors = [0xf8fafc, 0xe2e8f0, 0xf1f5f9, 0xdbeafe, 0xe5e7eb, 0xd6d3d1];
+  const fukuRoofMat = new THREE.MeshLambertMaterial({ color: 0x64748b });
+  const fukuStripeBlue = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+  const fukuStripeNavy = new THREE.MeshLambertMaterial({ color: 0x1e3a8a });
+  const fukuWinMat = new THREE.MeshLambertMaterial({ color: 0x38bdf8, emissive: 0x082f49 });
+
+  // 1) テクノタワー直近の金沢産業振興センター本館・ホール棟・研究所ビル群 & 周辺工場・物流倉庫群
+  for (const [bx, bz, bw, bh, bd, ci, hasStripe] of [
+    // 福浦1丁目 (市大医学部北〜福浦駅周辺: 研究所・製薬・精密工場群)
+    [-635, -960, 66, 26, 56, 0, 1],
+    [-735, -980, 74, 32, 62, 1, 0],
+    [-640, -1065, 68, 24, 58, 2, 1],
+    [-750, -1095, 82, 34, 66, 3, 2],
+    [-635, -1175, 64, 22, 54, 0, 0],
+    [-745, -1210, 78, 30, 64, 1, 1],
+    [-640, -1290, 70, 26, 58, 4, 0],
+    // テクノタワーホテル(x=-760, z=-1460)を取り囲む産業振興センター附属棟・ハイテクセンター・企業ビル群
+    [-650, -1385, 68, 28, 56, 0, 2],
+    [-865, -1380, 76, 34, 62, 3, 1],
+    [-645, -1475, 62, 24, 58, 2, 1],  // テクノタワー海側(東隣)のホール・展示棟
+    [-875, -1470, 82, 36, 68, 1, 2],  // テクノタワー内陸側(西隣)のオフィス・研究棟
+    [-650, -1565, 70, 28, 60, 0, 1],
+    [-765, -1585, 78, 32, 62, 2, 0],
+    [-880, -1580, 84, 30, 66, 4, 1],
+    // 福浦2丁目・3丁目 (テクノタワー北側〜ヤグラ煙突: 日本発条本社工場・MDC大型物流センター・大型倉庫群)
+    [-645, -1675, 76, 26, 64, 0, 1],
+    [-765, -1700, 92, 36, 74, 1, 2],
+    [-895, -1695, 88, 30, 70, 5, 0],
+    [-640, -1795, 74, 24, 62, 2, 1],
+    [-760, -1825, 96, 38, 78, 0, 2],  // 大型マルチテナント物流施設(MDC)
+    [-900, -1820, 86, 28, 72, 1, 0],
+    [-645, -1920, 72, 25, 60, 4, 1],
+    [-765, -1950, 90, 34, 74, 3, 2],
+    [-895, -1945, 84, 26, 68, 0, 0],
+    [-645, -2040, 76, 28, 64, 1, 1],
+    [-770, -2075, 88, 32, 70, 2, 2],
+    [-895, -2070, 82, 26, 66, 5, 0],
+    [-775, -2175, 78, 26, 62, 0, 1],
+    // さらに内陸側(第3列: x=-1020〜-1220)の工場・物流倉庫群で奥行きのスカイラインを形成
+    [-1015, -1040, 88, 28, 72, 1, 0],
+    [-1025, -1180, 92, 32, 76, 0, 1],
+    [-1020, -1330, 86, 26, 70, 4, 0],
+    [-1025, -1470, 96, 38, 80, 2, 2],
+    [-1020, -1620, 90, 30, 74, 1, 1],
+    [-1030, -1770, 98, 36, 82, 0, 2],
+    [-1020, -1920, 92, 28, 76, 5, 0],
+    [-1025, -2060, 88, 30, 72, 2, 1],
+    [-1170, -1120, 84, 24, 68, 4, 0],
+    [-1175, -1300, 90, 28, 74, 1, 0],
+    [-1170, -1480, 94, 32, 78, 0, 1],
+    [-1175, -1660, 88, 26, 72, 2, 0],
+    [-1170, -1840, 92, 30, 76, 1, 1],
   ]) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), new THREE.MeshLambertMaterial({ color: fukuColors[ci] }));
     m.position.set(bx, bh / 2 + 3, bz); fukuura.add(m);
+    const rf = new THREE.Mesh(new THREE.BoxGeometry(bw + 2, 1.6, bd + 2), fukuRoofMat);
+    rf.position.set(bx, bh + 3.6, bz); fukuura.add(rf);
+    if (hasStripe > 0) {
+      const stMat = hasStripe === 2 ? fukuStripeNavy : fukuStripeBlue;
+      const st = new THREE.Mesh(new THREE.BoxGeometry(bw + 1.2, 2.6, bd + 1.2), stMat);
+      st.position.set(bx, bh - 1.5, bz); fukuura.add(st);
+      const winBand = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.8, 3.2, bd * 0.82), fukuWinMat);
+      winBand.position.set(bx, bh * 0.62 + 3, bz); fukuura.add(winBand);
+    }
+  }
+
+  // 2) 金沢シーサイドラインの高架軌道と駅舎 (市大医学部駅〜福浦駅〜産業振興センター駅〜幸浦駅: x=-825付近を南北に貫く)
+  const viaductMat = new THREE.MeshLambertMaterial({ color: 0xcbd5e1 });
+  const pierMat = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
+  const viaBeam = new THREE.Mesh(new THREE.BoxGeometry(9.5, 3.2, 1680), viaductMat);
+  viaBeam.position.set(-825, 12.5, -1540); fukuura.add(viaBeam);
+  for (let pz = -740; pz >= -2340; pz -= 60) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(3.6, 11, 4.2), pierMat);
+    pier.position.set(-825, 6.5, pz); fukuura.add(pier);
+  }
+  for (const stZ of [-820, -1180, -1480, -1920]) {
+    const stBox = new THREE.Mesh(new THREE.BoxGeometry(18, 7.5, 58), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+    stBox.position.set(-825, 16.2, stZ); fukuura.add(stBox);
+    const stRoof = new THREE.Mesh(new THREE.BoxGeometry(20, 1.5, 60), fukuStripeBlue);
+    stRoof.position.set(-825, 20.4, stZ); fukuura.add(stRoof);
+  }
+
+  // 3) 福浦岸壁プロムナード沿いの防風林(緑地帯)と球形ガスタンク・サイロ群
+  const treeMatF = new THREE.MeshLambertMaterial({ color: 0x166534 });
+  for (let tz = -920; tz >= -2120; tz -= 48) {
+    const tr = new THREE.Mesh(new THREE.ConeGeometry(8.5, 16, 7), treeMatF);
+    tr.position.set(-582, 10, tz); fukuura.add(tr);
+  }
+  for (const [tx, tz] of [[-625, -1625], [-625, -1655], [-630, -2120], [-660, -2120]]) {
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 20, 14), new THREE.MeshLambertMaterial({ color: 0xf1f5f9 }));
+    tank.position.set(tx, 13, tz); fukuura.add(tank);
   }
 
   // 八景大橋(x≈-1670)と横浜市大医学部病院(x=-635, z=-800)の間の海岸・キャンパス・駅周辺の建物群
