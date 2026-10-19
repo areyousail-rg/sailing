@@ -8,25 +8,27 @@ const START_T = -60;
 export class AI {
   constructor(b, rng) {
     this.b = b; this.rng = rng;
-    // クローズホールド角度: 風速に応じたスナイプのベスト角度(強風38°・中風40°・軽風45°)＋わずかな個性差
-    this.closeAngleOffset = ((rng() - 0.3) * 1.6 * Math.PI) / 180;
+    // スキル差に応じたクローズ角度・スタート精度・レイライン余白のばらつき(1マークでの密集を防ぐ)
+    const skillGap = clamp(1.08 - (b.skill || 1), 0, 0.22);
+    // クローズホールド角度: 上位艇はベスト角度に近く、中〜下位艇は少し角度が甘くなる個性差
+    this.closeAngleOffset = (((rng() - 0.25) * 1.8 + skillGap * (4.5 + rng() * 4.0)) * Math.PI) / 180;
     this.closeAngle = (bestCloseDeg(BASE_WIND_KT) * Math.PI) / 180 + this.closeAngleOffset;
     // ランニング角度(下レグで180°の真後ろではなく170°付近を走行してVMGを稼ぐ)
-    this.runAngle = ((168.5 + rng() * 3.0) * Math.PI) / 180;
+    this.runAngle = ((168.0 + rng() * 4.0) * Math.PI) / 180;
     this.targetStartC = b.startTargetC ?? b.c;
-    this.cLim = 100 + rng() * 40;
+    this.cLim = 92 + rng() * 52;
     this.lastTack = -99;
-    // ラインを切る目標時刻(号砲=0秒の後)。ほとんどは0.3〜2秒後、一部は遅れてスタート、稀にOCS。
+    // ラインを切る目標時刻(号砲=0秒の後): スキルや乱数に応じてスタートダッシュにも適度なばらつきを持たせる
     const r = rng();
-    this.tc = r < 0.02 ? -0.5 - rng() * 0.8 : r < 0.07 ? 2.5 + rng() * 3.5 : 0.6 + rng() * 2.0;
+    this.tc = r < 0.02 ? -0.5 - rng() * 0.8 : r < 0.12 ? 2.5 + rng() * 4.0 : 0.4 + rng() * 2.2 + skillGap * (6.0 + rng() * 6.0);
     this.go = false;
-    this.layMargin = 0.02 + rng() * 0.07;
+    this.layMargin = 0.015 + rng() * 0.085 + skillGap * 0.12;
     this.penDir = rng() < 0.5 ? 1 : -1;
     this.jit = (rng() - 0.5) * 14;
     this.vmgAt = 0;
     // スタート前: ラインの手前 goDist[m] から加速を開始。それまでは少しずつ前進(creepExp が大きいほど後半に詰める)
-    this.goDist = 9 + rng() * 8;
-    this.creepExp = 1.5 + rng() * 0.8;
+    this.goDist = 9 + rng() * 9;
+    this.creepExp = 1.4 + rng() * 0.9;
     this.gap0 = null;
     this.avoidUntil = 0; this.avoidH = 0;
     this.roundR = 6.6 + rng() * 1.0; // マーク進入半径(ワイドイン)
