@@ -688,14 +688,13 @@ export function createWorld(scene) {
 
   const updateFavBadge = () => {
     const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-    const favSideTxt = FAVORED === 'com' ? '上有利' : '下有利';
-    const labelStr = `${skewDeg}°${favSideTxt}`;
+    const labelStr = FAVORED === 'even' || skewDeg === 0 ? '0°有利なし' : `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
     const ctx = favCanvas.getContext('2d');
     ctx.clearRect(0, 0, 384, 112);
-    ctx.fillStyle = 'rgba(185, 28, 28, 0.90)';
+    ctx.fillStyle = FAVORED === 'even' || skewDeg === 0 ? 'rgba(120, 35, 35, 0.82)' : 'rgba(185, 28, 28, 0.90)';
     ctx.beginPath(); ctx.roundRect(6, 6, 372, 100, 20); ctx.fill();
     ctx.strokeStyle = '#fde047'; ctx.lineWidth = 6; ctx.stroke();
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 54px sans-serif';
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 52px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(labelStr, 192, 58);
     favTex.needsUpdate = true;
@@ -765,8 +764,12 @@ export function createWorld(scene) {
 
     // スタート前ガイド: 有利サイド赤バッジの位置とテキスト更新
     updateFavBadge();
-    const favPt = FAVORED === 'com' ? pb : pa;
-    favEndBadge.position.set(favPt.x, 12.5, favPt.z);
+    if (FAVORED === 'even') {
+      favEndBadge.position.set(lcx, 17.2, lcz);
+    } else {
+      const favPt = FAVORED === 'com' ? pb : pa;
+      favEndBadge.position.set(favPt.x, 12.5, favPt.z);
+    }
 
     const fpa = toWorld(MARKS.fm.a, MARKS.fm.c), fpb = toWorld(MARKS.fcom.a, MARKS.fcom.c);
     const curFlen = Math.hypot(fpb.x - fpa.x, fpb.z - fpa.z);
@@ -914,6 +917,7 @@ export function createWorld(scene) {
         ar0.position.x = finLabel.position.x;
         ar0.position.z = finLabel.position.z;
         ar0.userData.isFinish = true;
+        ar0.userData.markKey = null;
         targetArrows[1].visible = false;
         return;
       }
@@ -926,8 +930,10 @@ export function createWorld(scene) {
           ar.position.x = markObjs[key].position.x;
           ar.position.z = markObjs[key].position.z;
           ar.userData.isFinish = false;
+          ar.userData.markKey = key;
         } else {
           ar.visible = false;
+          ar.userData.markKey = null;
         }
       }
     },
@@ -961,35 +967,41 @@ export function createWorld(scene) {
         return distFade;
       };
 
-      // マーク上(フィニッシュ時はFINISH看板の上)の赤矢印＋Nextラベル: 遠方でも見やすいよう距離に応じて少し拡大し、カメラ接近・視線重複時は完全透過
-      for (const ar of targetArrows) {
-        if (!ar.visible) continue;
-        const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
-        const arScale = clampN(1.0 + Math.max(0, dCam - 55) * 0.0065, 1.0, 2.8);
-        ar.scale.setScalar(arScale);
-        const baseY = ar.userData.isFinish ? 18.2 : 8.4;
-        ar.position.y = baseY + 0.65 * Math.sin(t * 3.2) + (arScale - 1.0) * 3.2;
-        ar.rotation.y = t * 1.6;
-        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18);
-        ar.userData.mat.opacity = 0.96 * v;
-        if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
-      }
-      // マーク番号ラベル: 遠くにあるマークほど大きく拡大して遠くからでも番号がはっきり判読できるようにし、カメラ接近時は完全に消す
+      // 1) マーク番号ラベル: 遠くにあるマークほど大きく拡大して遠くからでも番号がはっきり判読できるようにし、カメラ接近時は完全に消す
       for (const [k, sp] of Object.entries(markSprites)) {
         const mo = markObjs[k];
         if (!mo.visible) { sp.visible = false; continue; }
         const isAct = activeMarkKeys.includes(k);
         const dCam = Math.hypot(mo.position.x - cx, mo.position.z - cz);
-        // 遠方(dCam > 60m)では距離に比例して最大22倍までスケールアップし、300m〜600m先の1マーク等でも番号がくっきり読めるようにする
         const baseS = isAct ? 4.8 : 4.0;
         const distBoost = Math.max(0, dCam - 50) * (isAct ? 0.048 : 0.040);
         const s = clampN(baseS + distBoost, baseS, isAct ? 22.0 : 18.0);
         sp.scale.set(s, s, 1);
         sp.position.y = 4.2 + (s - baseS) * 0.38;
-        // 次に向かうマーク以外は55m以内で完全に消すことで、上マーク回航後に1番・1a番ラベルがカメラと被るのを防ぐ
         const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 26 : 55, 22);
         sp.material.opacity = 0.94 * v;
         sp.visible = v > 0.02;
+      }
+
+      // 2) マークの数字ラベルの「さらに上」に赤矢印＋Next表記を配置 (数字と重ならないよう番号サークルの最上部より上にオフセット)
+      for (const ar of targetArrows) {
+        if (!ar.visible) continue;
+        const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
+        const arScale = clampN(1.0 + Math.max(0, dCam - 55) * 0.0065, 1.0, 2.8);
+        ar.scale.setScalar(arScale);
+        if (ar.userData.isFinish) {
+          ar.position.y = 18.8 + 0.65 * Math.sin(t * 3.2) + (arScale - 1.0) * 3.2;
+        } else {
+          const mk = ar.userData.markKey;
+          const sp = mk && markSprites[mk];
+          // マーク番号サークルの上端(sp.position.y + sp.scale.y * 0.56)のさらに上に矢印先端(local y=-3.45*arScale)が来るように配置
+          const spTopY = sp ? (sp.position.y + sp.scale.y * 0.56) : 7.5;
+          ar.position.y = spTopY + 3.85 * arScale + 0.55 * Math.sin(t * 3.2);
+        }
+        ar.rotation.y = t * 1.6;
+        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18);
+        ar.userData.mat.opacity = 0.96 * v;
+        if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
       }
       for (const lb of [startLabel, finLabel]) {
         if (!lb) continue;
