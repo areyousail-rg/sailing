@@ -6,7 +6,7 @@ import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
-import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, updateProgress, progressOf, toCourse, toWorld } from './course.js';
+import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
 import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -27,8 +27,8 @@ const VENUES = [
   { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
 ];
 const COURSE_MODES = [
-  { id: 'trapezoid', label: 'トラペゾイド (インナーループ)', icon: '⛵' },
-  { id: 'upwind', label: '上マークフィニッシュ (上レグ2倍・RRS規則32.2 S旗)', icon: '🏁' },
+  { id: 'trapezoid', label: 'トラペゾイド', icon: '⛵' },
+  { id: 'upwind', label: '上マークフィニッシュ', icon: '🏁' },
 ];
 const PENALTY_MODES = [
   { id: 'off', label: 'ペナルティ無 (違反表示のみ・レース続行)', icon: '🟢' },
@@ -138,7 +138,7 @@ function rebuildPlayerModel() {
 const hud = {
   clock: $('clock'), phase: $('phase'), big: $('bigCount'), wkt: $('windKt'), wdir: $('windDir'), needle: $('needle'), spd: $('spd'), hdg: $('hdg'), twa: $('twa'),
   tack: $('tackLbl'), sheet: $('sheetFill'), pen: $('penBadge'), leg: $('legLbl'), legDist: $('legDist'), legArrow: $('legArrow'), leaders: $('leaders'), rank: $('rank'),
-  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'),
+  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), blkTxt: $('blkTxt'), blkFill: $('blkFill'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'),
 };
 function toast(text, kind = 'info', ms = 5200) {
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = text;
@@ -191,26 +191,20 @@ function drawMinimap() {
     : [[0, 0], [M.m1.a, M.m1.c], [M.m1a.a, M.m1a.c], [40, 0], [M.m1.a, M.m1.c], [M.m2.a, M.m2.c], [M.m3.a, M.m3.c], [(M.fcom.a + M.fm.a) / 2, (M.fcom.c + M.fm.c) / 2]];
   mctx.beginPath(); path.forEach(([a, c], i) => (i ? mctx.lineTo(X(c), Y(a)) : mctx.moveTo(X(c), Y(a)))); mctx.stroke(); mctx.setLineDash([]);
   mctx.strokeStyle = '#ffe36a'; mctx.lineWidth = 2; mctx.beginPath(); mctx.moveTo(X(M.pin.c), Y(M.pin.a)); mctx.lineTo(X(M.com.c), Y(M.com.a)); mctx.stroke();
-  // スタート前のみ: スタートラインの傾き(風に対する直角基準破線)と有利サイド(★＋角度)をミニマップにも表示
+  // スタート前のみ: 有利サイド(赤丸＋「5°下有利」等のコンパクト表記)をミニマップに表示
   const isPreStart = (state.phase === 'race' && state.t < 0) || state.phase === 'menu';
   if (isPreStart) {
-    const unfavA = Math.min(M.pin.a, M.com.a);
     mctx.save();
-    mctx.strokeStyle = 'rgba(56,189,248,0.85)';
-    mctx.lineWidth = 1.4;
-    mctx.setLineDash([3, 3]);
-    mctx.beginPath(); mctx.moveTo(X(M.pin.c), Y(unfavA)); mctx.lineTo(X(M.com.c), Y(unfavA)); mctx.stroke();
-    mctx.setLineDash([]);
     const favM = FAVORED === 'com' ? M.com : M.pin;
     mctx.fillStyle = '#ff3b3b';
-    mctx.beginPath(); mctx.arc(X(favM.c), Y(favM.a), 5.2, 0, Math.PI * 2); mctx.fill();
-    mctx.strokeStyle = '#fde047'; mctx.lineWidth = 1.6; mctx.stroke();
-    const skewDeg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(1);
-    const favTxt = FAVORED === 'com' ? `★本部船(右) +${skewDeg}°有利` : `★ピン(左) +${skewDeg}°有利`;
-    mctx.fillStyle = '#fde047';
+    mctx.beginPath(); mctx.arc(X(favM.c), Y(favM.a), 4.6, 0, Math.PI * 2); mctx.fill();
+    mctx.strokeStyle = '#fde047'; mctx.lineWidth = 1.4; mctx.stroke();
+    const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
+    const favTxt = `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
+    mctx.fillStyle = '#fca5a5';
     mctx.font = 'bold 10px sans-serif';
     mctx.textAlign = 'center';
-    mctx.fillText(favTxt, X(0), Y(Math.max(M.pin.a, M.com.a)) - 7);
+    mctx.fillText(favTxt, X(0), Y(Math.max(M.pin.a, M.com.a)) - 6);
     mctx.restore();
   }
   mctx.strokeStyle = '#6ab4ff'; mctx.beginPath(); mctx.moveTo(X(M.fcom.c), Y(M.fcom.a)); mctx.lineTo(X(M.fm.c), Y(M.fm.a)); mctx.stroke();
@@ -291,9 +285,10 @@ function updateMarkPointer(b) {
   if (markPtr.label) markPtr.label.textContent = `${shortName} ${distM}m`;
 }
 
-// ---------- 艇内カメラ(COCKPIT)専用: 接近する他艇の方向＆距離を画面端に常時表示 ----------
+// ---------- 艇内カメラ(COCKPIT)専用: カメラ視界外(死角)から近づいている他艇のみ画面端に表示 ----------
 const nearBoatsBox = $('nearBoats');
 const nearBoatPool = [];
+const nearBoatV3 = new THREE.Vector3();
 function updateNearBoatsHUD(b) {
   if (!nearBoatsBox) return;
   if (!b || cam.mode !== COCKPIT || b.finished || b.dsq) {
@@ -305,10 +300,16 @@ function updateNearBoatsHUD(b) {
     if (o === b || o.dsq) continue;
     const dx = o.x - b.x, dz = o.z - b.z;
     const distM = Math.hypot(dx, dz) / 1.5; // ワールド距離(1.5x)から実距離[m]へ換算
-    if (distM <= 36) near.push({ o, dx, dz, distM });
+    if (distM > 24) continue;
+    // カメラ視界内に入っている他艇は直接見えるため表示せず、カメラに見えない(画面外の)接近艇だけ表示する
+    nearBoatV3.set(o.x, 1.8, o.z).project(camera);
+    const behind = nearBoatV3.z > 1;
+    const inView = !behind && Math.abs(nearBoatV3.x) <= 0.90 && Math.abs(nearBoatV3.y) <= 0.84;
+    if (inView) continue;
+    near.push({ o, dx, dz, distM });
   }
   near.sort((a, c) => a.distM - c.distM);
-  const count = Math.min(near.length, 5);
+  const count = Math.min(near.length, 3);
   const W = window.innerWidth, H = window.innerHeight;
   const viewHdg = b.h + (cam.yaw || 0); // 現在のカメラ視線方位
 
@@ -321,12 +322,10 @@ function updateNearBoatsHUD(b) {
       nearBoatPool.push(el);
     }
     const { o, dx, dz, distM } = near[i];
-    // カメラ視線に対する相対方位 relAng (0=正面, +π/2=右, -π/2=左, ±π=後方)
     const brg = Math.atan2(dx, -dz);
-    const relB = wrap(brg - b.h);      // 自艇船首基準の相対角(左舷/右舷表現用)
+    const relB = wrap(brg - b.h);       // 自艇船首基準の相対角(左舷/右舷表現用)
     const relCam = wrap(brg - viewHdg); // カメラ画面基準の方向角(画面端の配置用)
 
-    // 画面端の楕円・矩形フレームに沿って配置 (視界を邪魔せず端っこで直感的に位置と距離がわかる)
     const dirX = Math.sin(relCam);
     const dirY = Math.cos(relCam);
     const edgeX = 0.85, edgeY = 0.76;
@@ -337,7 +336,7 @@ function updateNearBoatsHUD(b) {
     const sy = clamp((-ny * 0.5 + 0.5) * H, 58, H - 58);
 
     const degB = (relB * 180) / Math.PI;
-    let sector = '正面';
+    let sector = '後方';
     if (degB >= -22 && degB <= 22) sector = '前方';
     else if (degB > 22 && degB <= 68) sector = '右前';
     else if (degB > 68 && degB <= 115) sector = '右横';
@@ -345,11 +344,10 @@ function updateNearBoatsHUD(b) {
     else if (degB < -22 && degB >= -68) sector = '左前';
     else if (degB < -68 && degB >= -115) sector = '左横';
     else if (degB < -115 && degB >= -158) sector = '左後';
-    else sector = '後方';
 
     const distStr = distM < 10 ? `${distM.toFixed(1)}m` : `${Math.round(distM)}m`;
     const colHex = '#' + o.color.toString(16).padStart(6, '0');
-    const lv = distM < 7.5 ? ' danger' : distM < 15 ? ' warn' : '';
+    const lv = distM < 7.5 ? ' danger' : distM < 14 ? ' warn' : '';
     el.className = 'nearBoatTag' + lv;
     el.style.display = 'flex';
     el.style.left = `${sx}px`;
@@ -366,10 +364,10 @@ function updateHUD(sorted) {
   const isPrac = state.phase === 'menu' || state.phase === 'practice';
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const nextMarkTxt = L.type === 'finish' ? 'フィニッシュ' : L.type === 'gate' ? '4ゲート(4S/4P)' : `${L.name}マーク`;
-  const skewDeg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(1);
-  const favEndName = FAVORED === 'com' ? '本部船(右)' : 'ピン(左)';
+  const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
+  const favShort = `${skewDeg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
   hud.clock.textContent = isPrac ? '練習中' : fmt(t);
-  hud.phase.textContent = isPrac ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `スタート前 [ライン傾き: ${favEndName} +${skewDeg}°有利] ― 次: 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
+  hud.phase.textContent = isPrac ? `練習航行モード ― 次: ${nextMarkTxt}` : t < 0 ? `スタート前 (${favShort}) ― 次: 1マーク` : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ!' : `レース中 ― 次: ${nextMarkTxt}`;
   hud.wkt.textContent = (BASE_WIND_KT * b.windF).toFixed(1);
   const wd = ((b.windFrom * 180) / Math.PI + 360) % 360;
   hud.wdir.textContent = Math.round(wd) + '°';
@@ -386,19 +384,18 @@ function updateHUD(sorted) {
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
-  if (b.aeroTag === 'leebow' && b.windBend > 0.012) {
-    hud.blk.style.display = 'block';
-    hud.blk.textContent = `リーバウ効果 (風上へリフト +${((b.windBend * 180) / Math.PI).toFixed(1)}°)`;
-  } else if (b.aeroTag === 'sternlift' && b.windBend > 0.012) {
-    hud.blk.style.display = 'block';
-    hud.blk.textContent = `スターン通過リフト (一瞬のぼせ +${((b.windBend * 180) / Math.PI).toFixed(1)}°)`;
-  } else if (b.cover > 0.25) {
-    hud.blk.style.display = 'block';
-    hud.blk.textContent = b.aeroTag === 'backwind' ? `リーバウ悪風(バックウィンド) ${Math.round(b.cover * 100)}%` : `ブランケット(風影)中 ${Math.round(b.cover * 100)}%`;
+  // ブランケット表示: 「ブランケット XX%」と横長ゲージバーのみ (リーバウ効果は文字列表示せずテルテールのみに反映)
+  const blkPct = Math.round(b.cover * 100);
+  if (blkPct >= 5) {
+    hud.blk.style.display = 'flex';
+    if (hud.blkTxt) hud.blkTxt.textContent = `ブランケット ${blkPct}%`;
+    if (hud.blkFill) hud.blkFill.style.width = `${blkPct}%`;
+    hud.blk.classList.toggle('mid', blkPct >= 35 && blkPct < 65);
+    hud.blk.classList.toggle('high', blkPct >= 65);
   } else {
     hud.blk.style.display = 'none';
   }
-  hud.leg.textContent = isPrac ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? `スタート前 (★${favEndName} +${skewDeg}°有利)` : L.label;
+  hud.leg.textContent = isPrac ? '練習航行' : b.dsq ? 'DSQ (失格)' : b.finished ? 'フィニッシュ' : t < 0 ? `スタート前 (${favShort})` : L.label;
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
   const brg = Math.atan2(tw.x - b.x, -(tw.z - b.z));
@@ -504,6 +501,7 @@ function handleCollision(e) {
 // ---------- レース進行 ----------
 function startRace() {
   initAudio();
+  randomizeStartLine();
   applyVenue();
   makeFleet();
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
@@ -511,8 +509,8 @@ function startRace() {
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden');
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
   document.body.classList.add('hintOn'); clearTimeout(window.__hintT); window.__hintT = setTimeout(() => document.body.classList.remove('hintOn'), 5000);
-  const deg = Math.abs((LINE_SKEW * 180) / Math.PI).toFixed(0);
-  toast(`スタート1分前、${FAVORED === 'pin' ? 'ピン(左端)' : '本部船(右端)'}側が${deg}度有利`, 'info', 6500);
+  const deg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
+  toast(`スタート1分前 (${deg}°${FAVORED === 'com' ? '上有利' : '下有利'})`, 'info', 6500);
 }
 function startPractice() {
   initAudio();
@@ -956,21 +954,21 @@ let pv = null;
 function initPreview() {
   const cv = $('preview');
   const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
-  r.setSize(300, 220, false); r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  r.setSize(220, 156, false); r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   const sc = new THREE.Scene();
   sc.add(new THREE.HemisphereLight(0xffffff, 0x446677, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 2); dl.position.set(2, 4, 3); sc.add(dl);
-  const cm = new THREE.PerspectiveCamera(35, 300 / 220, 0.1, 50); cm.position.set(0, 0.85, 3.05); cm.lookAt(0, 0.45, 0);
+  const cm = new THREE.PerspectiveCamera(35, 220 / 156, 0.1, 50); cm.position.set(0, 0.85, 3.05); cm.lookAt(0, 0.45, 0);
   pv = { r, sc, cm, g: new THREE.Group() }; sc.add(pv.g);
   updatePreview();
-  const spin = () => { requestAnimationFrame(spin); if (state.phase !== 'menu') return; pv.g.rotation.y += 0.012; r.render(sc, cm); };
-  spin();
 }
 function updatePreview() {
   if (!pv) return;
   pv.g.clear();
   const st = { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat), jacket: 0xff7a1a };
-  const a = buildFigure(cfg.helm, st); a.position.set(-0.5, a.userData.upper ? 0.16 : 0, 0); pv.g.add(a);
-  const b = buildFigure(cfg.crew, st); b.position.set(0.5, b.userData.upper ? 0.16 : 0, 0); pv.g.add(b);
+  const a = buildFigure(cfg.helm, st); a.position.set(-0.5, a.userData.upper ? 0.16 : 0, 0); a.rotation.y = 0.25; pv.g.add(a);
+  const b = buildFigure(cfg.crew, st); b.position.set(0.5, b.userData.upper ? 0.16 : 0, 0); b.rotation.y = -0.25; pv.g.add(b);
+  pv.g.rotation.y = 0;
+  pv.r.render(pv.sc, pv.cm);
 }
 function initMenu() {
   applyVenue();
