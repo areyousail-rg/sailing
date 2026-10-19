@@ -125,12 +125,12 @@ export class DroneCam {
       this.cam.position.copy(this.cp); this.cam.quaternion.copy(this.cq);
       this.cam.rotateY(this.yaw); this.cam.rotateX(0.13 - this.pitch * 0.6); this.cam.rotateZ(-boat.heel * 0.45);
       
-      if (this.cam.near !== 0.08) { this.cam.near = 0.08; this.cam.updateProjectionMatrix(); }
+      if (this.cam.near !== 0.20) { this.cam.near = 0.20; this.cam.updateProjectionMatrix(); }
       if (Math.abs(this.cam.fov - 114) > 0.05) { this.cam.fov += (114 - this.cam.fov) * 0.2; this.cam.updateProjectionMatrix(); }
       return;
     }
 
-    if (this.cam.near !== 0.5) { this.cam.near = 0.5; this.cam.updateProjectionMatrix(); }
+    if (this.cam.near !== 1.0) { this.cam.near = 1.0; this.cam.updateProjectionMatrix(); }
     const w = this.want, lk = this.wantLook;
     const follow = 2.4, lookRate = 5.5;
     const wob = (a) => Math.sin(t * 0.9 * a + a) * 0.4 + Math.sin(t * 2.3 * a) * 0.2;
