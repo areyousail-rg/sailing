@@ -310,12 +310,18 @@ export function buildFigure(type, style = {}) {
   const bodyM = smat(A.body, 0.72);
   const bellyM = smat(A.belly, 0.75);
 
-  // 1) 下半身・短い足 (サイドデッキにちょこんと座り、短いあんよを船内側へ揃えるかわいい姿勢)
-  ell(g, bodyM, 0.17, 0.10, 0.14, 0, 0.06, 0.01);
+  // 1) 下半身・まるっこい足 (もとのまるっこいフォルムと丸いおてて・あんよ)
+  ell(g, bodyM, 0.19, 0.11, 0.16, 0, 0.06, 0.01);
   for (const s of [-1, 1]) {
-    // 短くて丸みのあるかわいい後ろ足と肉球
-    cap(g, A.body, 0.048, 0.065, s * 0.095, 0.025, -0.10, 0.55, 0, 0);
-    ell(g, bellyM, 0.044, 0.032, 0.052, s * 0.095, -0.015, -0.155);
+    if (type === 'cat') {
+      // ネコはもとのまるっこい球状のあんよ＋ピンクの丸肉球
+      sph(g, A.body, 0.068, 0.060, 0.072, s * 0.105, 0.025, -0.125);
+      sph(g, A.belly, 0.052, 0.044, 0.036, s * 0.105, 0.022, -0.175);
+      sph(g, 0xff8fa3, 0.024, 0.020, 0.016, s * 0.105, 0.018, -0.198);
+    } else {
+      cap(g, A.body, 0.048, 0.065, s * 0.095, 0.025, -0.10, 0.55, 0, 0);
+      ell(g, bellyM, 0.044, 0.032, 0.052, s * 0.095, -0.015, -0.155);
+    }
   }
 
   // 2) 上半身グループ (風速に応じて腰から上を海側へ反らせてハイクアウトする)
@@ -324,72 +330,77 @@ export function buildFigure(type, style = {}) {
   g.add(upper);
   g.userData.upper = upper;
 
-  sph(upper, A.body, 0.22, 0.25, 0.19, 0, 0.23, -0.01);
-  sph(upper, A.belly, 0.14, 0.16, 0.08, 0, 0.23, -0.15);
+  if (type === 'cat') {
+    // ネコはもとのまるっこい胴体とおなか
+    sph(upper, A.body, 0.255, 0.275, 0.235, 0, 0.23, 0.0);
+    sph(upper, A.belly, 0.175, 0.19, 0.11, 0, 0.23, -0.155);
+  } else {
+    sph(upper, A.body, 0.22, 0.25, 0.19, 0, 0.23, -0.01);
+    sph(upper, A.belly, 0.14, 0.16, 0.08, 0, 0.23, -0.15);
+  }
 
   if (type === 'cat') {
-    // 画像の Gill 赤ライフジャケット(PFD)を忠実に再現:
-    // 深いU字ネック＆黒インナー・黒い肩パッドストラップ・胸の白「Gill」ロゴ・角丸フロントポケット・下部黒ベルト＆バックル
+    // 画像の Gill 赤ライフジャケット(PFD)をまるっこい胴体にフィットさせて再現:
     const gillRed = smat(0xd8261c, 0.62);
     const gillDark = smat(0x181b20, 0.82);
     const gillPocketRed = smat(0xc81e14, 0.68);
     const gillFrontMat = new THREE.MeshStandardMaterial({ map: getGillPfdTex(), roughness: 0.58, metalness: 0.02 });
 
-    // 赤いPFD本体(胴回り)
-    ell(upper, gillRed, 0.236, 0.195, 0.195, 0, 0.245, -0.005);
+    // 赤いPFD本体(まるっこい胴回り)
+    ell(upper, gillRed, 0.264, 0.205, 0.232, 0, 0.245, -0.005);
     // 首元の黒いインナーライニング
-    ell(upper, gillDark, 0.135, 0.075, 0.125, 0, 0.375, -0.035);
+    ell(upper, gillDark, 0.148, 0.078, 0.142, 0, 0.382, -0.035);
     // 前面パネル (Gillロゴ・ポケット・ベルト描画テクスチャ付き曲面)
     const frontPanel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.215, 0.228, 0.31, 24, 1, true, -Math.PI * 0.32, Math.PI * 0.64),
+      new THREE.CylinderGeometry(0.242, 0.255, 0.315, 24, 1, true, -Math.PI * 0.32, Math.PI * 0.64),
       gillFrontMat
     );
     frontPanel.rotation.y = Math.PI;
-    frontPanel.scale.set(1.06, 1, 0.88);
+    frontPanel.scale.set(1.06, 1, 0.94);
     frontPanel.position.set(0, 0.245, -0.012);
     upper.add(frontPanel);
 
     // 立体感のあるフロント角丸ポケットの膨らみ & 上部黒ジッパー
-    const pocket3D = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.115, 0.028), gillPocketRed);
-    pocket3D.position.set(0, 0.215, -0.195);
+    const pocket3D = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.115, 0.028), gillPocketRed);
+    pocket3D.position.set(0, 0.215, -0.228);
     pocket3D.rotation.x = 0.05;
     upper.add(pocket3D);
-    const zipLine = new THREE.Mesh(new THREE.BoxGeometry(0.195, 0.012, 0.032), gillDark);
-    zipLine.position.set(0, 0.270, -0.193);
+    const zipLine = new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.012, 0.032), gillDark);
+    zipLine.position.set(0, 0.270, -0.226);
     upper.add(zipLine);
 
     // 左右の黒いパッド入りショルダーストラップ + 赤いチェストパネル上部
     for (const s of [-1, 1]) {
-      const redShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.095, 0.13), gillRed);
-      redShoulder.position.set(s * 0.118, 0.375, -0.045);
+      const redShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.095, 0.14), gillRed);
+      redShoulder.position.set(s * 0.128, 0.380, -0.048);
       redShoulder.rotation.z = -s * 0.12;
       upper.add(redShoulder);
 
-      const blkStrap = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.058, 0.145), gillDark);
-      blkStrap.position.set(s * 0.115, 0.428, -0.015);
+      const blkStrap = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.058, 0.155), gillDark);
+      blkStrap.position.set(s * 0.124, 0.432, -0.015);
       blkStrap.rotation.z = -s * 0.10;
       upper.add(blkStrap);
     }
 
     // 下部の黒いウェビングベルト & 左寄り(向かって左)の黒バックルとベルトループ
     const waistBelt = new THREE.Mesh(cylG, gillDark);
-    waistBelt.scale.set(0.242, 0.034, 0.204);
+    waistBelt.scale.set(0.268, 0.034, 0.238);
     waistBelt.position.set(0, 0.128, -0.008);
     upper.add(waistBelt);
 
     const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.044, 0.024), smat(0x111318, 0.4, 0.2));
-    buckle.position.set(-0.055, 0.128, -0.205);
+    buckle.position.set(-0.058, 0.128, -0.238);
     upper.add(buckle);
     const keeper = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.046, 0.026), gillDark);
-    keeper.position.set(-0.105, 0.128, -0.192);
+    keeper.position.set(-0.110, 0.128, -0.225);
     upper.add(keeper);
   } else {
     const band = new THREE.Mesh(cylG, mat(jacket)); band.scale.set(0.235, 0.1, 0.215); band.position.set(0, 0.24, 0); upper.add(band);
   }
 
-  const head = new THREE.Group(); head.position.set(0, 0.61, -0.02); upper.add(head);
+  const head = new THREE.Group(); head.position.set(0, 0.61, -0.01); upper.add(head);
   g.userData.head = head;
-  const hs = type === 'capybara' ? [0.22, 0.2, 0.26] : [0.24, 0.21, 0.22];
+  const hs = type === 'capybara' ? [0.22, 0.2, 0.26] : type === 'cat' ? [0.26, 0.23, 0.245] : [0.24, 0.21, 0.22];
   sph(head, A.body, hs[0], hs[1], hs[2], 0, 0, 0);
   // 目
   sph(head, 0x111111, 0.034, 0.045, 0.02, -0.09, 0.02, -hs[2] + 0.01);
@@ -399,15 +410,22 @@ export function buildFigure(type, style = {}) {
   if (type !== 'penguin') sph(head, A.nose, 0.032, 0.024, 0.026, 0, -0.04, -hs[2] - 0.005);
   sph(head, 0xff9db0, 0.04, 0.025, 0.01, -0.15, -0.03, -hs[2] + 0.06); // ほっぺ
   sph(head, 0xff9db0, 0.04, 0.025, 0.01, 0.15, -0.03, -hs[2] + 0.06);
-  // 前足(腕): 上半身に追従してシートを構えるポーズ
-  cap(upper, A.body, 0.048, 0.14, -0.22, 0.28, -0.13, Math.PI / 2.3, 0, -0.45);
-  cap(upper, A.body, 0.048, 0.14, 0.22, 0.28, -0.13, Math.PI / 2.3, 0, 0.45);
+  // 前足(おてて): ネコはもとの丸い球状のおてて、他動物はカプセル前足
+  if (type === 'cat') {
+    for (const s of [-1, 1]) {
+      sph(upper, A.body, 0.066, 0.062, 0.072, s * 0.235, 0.265, -0.145);
+      sph(upper, A.belly, 0.050, 0.046, 0.042, s * 0.235, 0.260, -0.192);
+    }
+  } else {
+    cap(upper, A.body, 0.048, 0.14, -0.22, 0.28, -0.13, Math.PI / 2.3, 0, -0.45);
+    cap(upper, A.body, 0.048, 0.14, 0.22, 0.28, -0.13, Math.PI / 2.3, 0, 0.45);
+  }
   switch (type) {
     case 'cat':
-      cone(head, A.body, 0.07, 0.14, -0.14, 0.2, 0, 0, 0.35); cone(head, A.body, 0.07, 0.14, 0.14, 0.2, 0, 0, -0.35);
-      cone(head, 0xff8fa3, 0.04, 0.09, -0.14, 0.19, -0.03, 0, 0.35); cone(head, 0xff8fa3, 0.04, 0.09, 0.14, 0.19, -0.03, 0, -0.35);
-      cap(upper, A.body, 0.032, 0.09, 0.0, 0.14, 0.21, 0.85, 0, 0);
-      g.scale.setScalar(0.90); // ネコは人間より少しだけ小さめのほどよいサイズ感に調整
+      cone(head, A.body, 0.075, 0.145, -0.145, 0.21, 0, 0, 0.35); cone(head, A.body, 0.075, 0.145, 0.145, 0.21, 0, 0, -0.35);
+      cone(head, 0xff8fa3, 0.042, 0.095, -0.145, 0.20, -0.03, 0, 0.35); cone(head, 0xff8fa3, 0.042, 0.095, 0.145, 0.20, -0.03, 0, -0.35);
+      cap(upper, A.body, 0.036, 0.10, 0.0, 0.14, 0.24, 0.85, 0, 0);
+      g.scale.setScalar(0.92); // もとのまるっこいフォルムが映えるサイズ感
       break;
     case 'shiba':
       cone(head, A.body, 0.075, 0.13, -0.14, 0.19, 0, 0, 0.3); cone(head, A.body, 0.075, 0.13, 0.14, 0.19, 0, 0, -0.3);
