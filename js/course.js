@@ -40,18 +40,22 @@ export const MARKS = {
 };
 
 export function randomizeStartLine() {
-  let sign = Math.random() < 0.5 ? -1 : 1;
-  try {
-    const prev = sessionStorage.getItem('snipe-last-fav');
-    // 連続して同じサイドばかりにならないよう、前回記録がある場合は65%の確率で反対側にして体感でもしっかり半々にする
-    if (prev === 'com') sign = Math.random() < 0.65 ? -1 : 1;
-    else if (prev === 'pin') sign = Math.random() < 0.65 ? 1 : -1;
-    sessionStorage.setItem('snipe-last-fav', sign > 0 ? 'com' : 'pin');
-  } catch (e) {}
-  const deg = Math.round(4 + Math.random() * 4); // 4°〜8°の整数角度
-  LINE_SKEW = sign * ((deg * Math.PI) / 180);
+  // -15°〜+15°の範囲で確率的にライン傾きを決定 (約20%の確率で0°=有利サイドなし、残りは上有利・下有利が半々)
+  let deg = 0;
+  if (Math.random() >= 0.20) {
+    let sign = Math.random() < 0.5 ? -1 : 1;
+    try {
+      const prev = sessionStorage.getItem('snipe-last-fav');
+      if (prev === 'com') sign = Math.random() < 0.62 ? -1 : 1;
+      else if (prev === 'pin') sign = Math.random() < 0.62 ? 1 : -1;
+      sessionStorage.setItem('snipe-last-fav', sign > 0 ? 'com' : 'pin');
+    } catch (e) {}
+    // 1°〜15°の範囲でランダムに選出
+    deg = sign * (1 + Math.floor(Math.random() * 15));
+  }
+  LINE_SKEW = (deg * Math.PI) / 180;
   LINE_T = Math.tan(LINE_SKEW);
-  FAVORED = LINE_SKEW > 0 ? 'com' : 'pin';
+  FAVORED = deg > 0 ? 'com' : deg < 0 ? 'pin' : 'even';
   MARKS.pin.a = lineA(-LINE_HALF);
   MARKS.pin.c = -LINE_HALF;
   MARKS.com.a = lineA(LINE_HALF);
