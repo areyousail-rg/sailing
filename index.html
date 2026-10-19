@@ -67,7 +67,10 @@
     <div id="nearBoats" class="nearBoats"></div>
     <div id="penBadge" class="badge bad" style="display:none"></div>
     <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
-    <div id="blkBadge" class="badge warn" style="display:none">ブランケット(風影)中</div>
+    <div id="blkBadge" class="blkGauge" style="display:none">
+      <span id="blkTxt" class="blkTxt">ブランケット 0%</span>
+      <div class="blkTrack"><div id="blkFill" class="blkFill"></div></div>
+    </div>
     <button id="pauseBtn" class="pauseBtn" type="button">⏸ 中断</button>
 
     <div id="bigCount"></div>
@@ -124,41 +127,48 @@
 
   <section id="menu" class="overlay menu menuPractice">
     <div class="card menuCard">
-      <p class="eyebrow" id="menuEyebrow">SNIPE CLASS ・ ENOSHIMA / HAKKEIJIMA</p>
-      <h1>スナイプカップ</h1>
-      <div class="menuGrid">
-        <div class="col">
+      <div class="menuTitleRow">
+        <h1>スナイプカップ</h1>
+        <p class="eyebrow" id="menuEyebrow">SNIPE CLASS ・ ENOSHIMA / HAKKEIJIMA</p>
+      </div>
+      <div class="menuTopRow">
+        <div class="menuGroup">
           <h2>レース海面</h2>
           <div id="venueChoices" class="choices venueChoices"></div>
+        </div>
+        <div class="menuGroup">
           <h2>コースモード</h2>
           <div id="courseChoices" class="choices venueChoices"></div>
-          <h2>風・海面モード</h2>
-          <div id="realWeatherInfo" class="weatherInfoBox"></div>
-          <h2>ペナルティ設定 (RRS規則)</h2>
-          <div id="penaltyChoices" class="choices venueChoices"></div>
-          <div class="crewRow">
-            <div>
-              <h2>ヘルムスマン(舵手)</h2>
-              <div id="helmChoices" class="choices"></div>
-            </div>
-            <div>
-              <h2>クルー</h2>
-              <div id="crewChoices" class="choices"></div>
-            </div>
-            <div class="colors">
-              <label>セールNo <input type="text" id="sailNo" maxlength="5" inputmode="numeric"></label>
-            </div>
+        </div>
+      </div>
+      <div class="menuGroup">
+        <h2>ペナルティ設定 (RRS規則)</h2>
+        <div id="penaltyChoices" class="choices venueChoices"></div>
+      </div>
+      <div class="crewPreviewRow">
+        <div class="crewRow">
+          <div>
+            <h2>ヘルムスマン</h2>
+            <div id="helmChoices" class="choices"></div>
+          </div>
+          <div>
+            <h2>クルー</h2>
+            <div id="crewChoices" class="choices"></div>
+          </div>
+          <div class="colors">
+            <label>セールNo <input type="text" id="sailNo" maxlength="5" inputmode="numeric"></label>
           </div>
         </div>
-        <div class="col pv">
-          <canvas id="preview" width="240" height="176"></canvas>
+        <div class="pv">
+          <canvas id="preview" width="160" height="112"></canvas>
         </div>
       </div>
       <div class="startActions">
         <button id="startBtn" class="cta" type="button">レーススタート</button>
         <button id="practiceBtn" class="btnPractice" type="button">⛵ 練習モード</button>
       </div>
-      <p class="keys">💡 この画面のままでも裏で操作できます。「練習モード」で画面を閉じて自由に練習できます</p>
+      <p class="keys">💡 そのまま裏で操作可能・「練習モード」で画面を閉じて自由練習</p>
+      <div id="realWeatherInfo" class="weatherInfoBottom"></div>
     </div>
   </section>
 
