@@ -381,6 +381,7 @@ export class Boat {
     this.sOpt = 1; this.luff = 0; this.stall = 0;
     this.cover = 0; this.coverT = 0; this.back = 0; this.backT = 0;
     this.waveF = 1; this.waveH = 0; this.waveSlope = 0; this.waveLoss = 0;
+    this.waveSlam = 0; this.waveSlamCD = 0; this._prevClimb = 0;
     this.windBend = 0; this.windBendT = 0;
     this.flowBoost = 0; this.flowBoostT = 0;
     this.aeroTag = ''; this.aeroClimb = 0;
@@ -403,12 +404,13 @@ export class Boat {
     if (this.maneuver) return false;
     const k = kind || (this.twa < Math.PI / 2 ? 'tack' : 'gybe');
     if (k === 'tack' && this.pole) return false; // ランチャーを上げたまま風上へは回れない
-    if (k === 'gybe') this.pole = false; // ジャイブ時はランチャーを下ろす
+    const restorePole = k === 'gybe' && this.pole;
+    if (k === 'gybe') this.pole = false; // ジャイブ回頭中は一旦ランチャーを下ろし、ジャイブ後に自動で再アップする
     const s0 = this.tack || (Math.sign(this.rel) || 1);
     // ジャイブは180°ちょうどではなくセールが出ているため160°(旧タックから見て200°)付近で返して安定させる
     const gybeTargetRad = (162 * Math.PI) / 180;
     const relNew = k === 'tack' ? -s0 * clamp(Math.abs(this.rel), 0.68, 0.86) : -s0 * gybeTargetRad;
-    this.maneuver = { relNew, kind: k, s0, dir: k === 'tack' ? s0 : -s0, t: 0, flipped: false };
+    this.maneuver = { relNew, kind: k, s0, dir: k === 'tack' ? s0 : -s0, t: 0, tCross: 0, flipped: false, restorePole };
     this.maneuverStarted = k;
     return true;
   }
@@ -456,16 +458,27 @@ export class Boat {
       const err = wrap(m.relNew - relNow);
       if (m.kind === 'tack') {
         const crossed = relNow * m.s0 < 0;
-        // タック時は最初にオーバーヒール(風下へ傾ける)をかけてウェザーヘルムを作ってから登り始める
-        if (m.t < 0.36) {
-          rollCmd = m.s0 * 0.21;
-          steer = m.dir * clamp(m.t / 0.32, 0.25, 1.0);
-        } else if (!crossed) {
-          rollCmd = m.s0 * 0.14;
-          steer = m.dir;
+        const absRel = Math.abs(relNow);
+        // ロールタックの3段階ヒール挙動:
+        // 1) ラフ開始時: 風下へオーバーヒール(+s0)をかけてウェザーヘルムを作る
+        // 2) 風軸(0°)を超える直前(absRel < 0.38): オーバーヒールを起こしてアンヒール(-s0)させる
+        // 3) 風軸を超えた後(crossed): タック後の重心移動で新タックから見てオーバーヒール(-s0 = +newTack)を起こし、その後フラットに起こす
+        if (!crossed) {
+          if (m.t < 0.28 || absRel > 0.38) {
+            rollCmd = m.s0 * 0.19;
+            steer = m.dir * clamp(m.t / 0.28, 0.28, 1.0);
+          } else {
+            const unheelF = clamp((0.38 - absRel) / 0.28, 0, 1);
+            rollCmd = m.s0 * (0.14 * (1 - unheelF) - 0.16 * unheelF);
+            steer = m.dir;
+          }
         } else {
-          // 風をまたいだ直後は旧風下ヒールから新タック側へロールを起こす
-          rollCmd = -m.s0 * 0.08 * Math.max(0, 1 - (m.t - 1.0) * 0.8);
+          m.tCross = (m.tCross || 0) + dt;
+          if (m.tCross < 0.72) {
+            rollCmd = -m.s0 * 0.24 * Math.sin(clamp(m.tCross / 0.72, 0.15, 1) * Math.PI * 0.82);
+          } else {
+            rollCmd = -m.s0 * 0.20 * Math.max(0, 1 - (m.tCross - 0.72) / 0.65);
+          }
           steer = -clamp(err * 2.5, -1, 1);
           if (Math.abs(steer) < 0.5) steer = -0.5 * Math.sign(err || 1);
         }
@@ -474,7 +487,10 @@ export class Boat {
         // ジャイブ時は最初にアンヒール(風上側へ傾ける)をかけてリーヘルムを作ってから落とし、
         // セールが出ているため180°ではなく160°〜200°(新タック側160°〜168°)でセールを返す
         const crossed160 = relNow * m.s0 < 0 && Math.abs(relNow) <= (168 * Math.PI) / 180;
-        if (crossed160) m.flipped = true;
+        if (crossed160 && !m.flipped) {
+          m.flipped = true;
+          if (m.restorePole && !this.penalty) { this.pole = true; m.restorePole = false; }
+        }
         if (m.t < 0.38) {
           rollCmd = -m.s0 * 0.19; // アンヒール(風上側へ起こす/逆ヒール)をかけてから落とす
           steer = m.dir * clamp(m.t / 0.34, 0.22, 0.95);
@@ -485,13 +501,24 @@ export class Boat {
           rollCmd = 0;
           steer = -clamp(err * 2.4, -1, 1);
         }
-        if ((m.flipped && Math.abs(err) < 0.08) || m.t > 8) { this.maneuver = null; steer = 0; }
+        if ((m.flipped && Math.abs(err) < 0.08) || m.t > 8) {
+          if (m.restorePole && !this.penalty && Math.abs(relNow) >= POLE_MIN) this.pole = true;
+          this.maneuver = null; steer = 0;
+        }
       }
     } else if (!this.penalty) {
-      // 通常操舵時: 急激に上す際にはオーバーヒールをかけてから登り、落とす際にはアンヒールをかけてから落とす
+      // 通常操舵時: 急激に上す際にはオーバーヒール → 風軸直前はアンヒール → タック直後は新タック側オーバーヒール、落とす際にはアンヒール
       const turnUp = steer * this.tack; // +ならラフ(上す)、-ならベア(落とす)
-      if (turnUp > 0.18) {
-        rollCmd = this.tack * clamp((turnUp - 0.15) * 0.22, 0, 0.17);
+      const absRelNow = Math.abs(wrap(w.from - this.h));
+      if (this.tacking && this.tackTimer > 0.55) {
+        const tc = 1.8 - this.tackTimer;
+        rollCmd = this.tack * 0.22 * Math.sin(clamp(tc / 1.25, 0, 1) * Math.PI);
+      } else if (turnUp > 0.18) {
+        if (absRelNow < 0.36) {
+          rollCmd = -this.tack * clamp((0.36 - absRelNow) * 0.45, 0, 0.15);
+        } else {
+          rollCmd = this.tack * clamp((turnUp - 0.15) * 0.22, 0, 0.17);
+        }
       } else if (turnUp < -0.18) {
         rollCmd = -this.tack * clamp((-turnUp - 0.15) * 0.22, 0, 0.17);
       }
@@ -572,7 +599,10 @@ export class Boat {
       } else if (twa <= gybeManThresh) {
         this.v *= 0.92;
         this.tack = rawSign;
-        if (this.pole) this.pole = false;
+        if (this.pole) {
+          if (this.maneuver && this.maneuver.kind === 'gybe') this.pole = false;
+          else this.poleK = 0.08; // 手動ジャイブでもランチャーアップ状態を維持し反対舷へ自動再アップ
+        }
         if (t >= 0 && !this.finished && !this.dsq && !this.penalty) this.gybeCount++;
       }
     }
@@ -621,22 +651,40 @@ export class Boat {
     // ランチャー: 下レグ(深い角度)でジブが開いて若干速くなる。リーチより上では逆効果
     const poleF = 1 + this.poleK * (0.065 * smoothstep(1.85, 2.6, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
     let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : 0.18) * Math.abs(steer)) * this.throttle;
-    // 波: 上りでは波面を登るたびに叩かれて失速(短く急な波ほど大きい)、リーチング〜ランニングでは波の前面を滑り降りて加速(サーフィン)
+    // 波: 艇速がない時は波にしっかりはたかれ、クローズで艇速がある時は少し抑え目に、リーチング等で艇速が出ている時は波頭を切るためはたかれにくくする
     {
       const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));
       this.waveH = ws.h; this.waveSlope = ws.slope;
       const Hn = SEA.H / 0.5;
       const climb = clamp(ws.slope / SEA.maxSlope, -1, 1);
+      const speedNorm = clamp(Math.abs(this.v) / (2.0 * SPEED_SCALE), 0, 1);
+      const slowFactor = 1 - speedNorm; // 艇速がない時は 1.0 (従来通りはたかれる)
+      const isReach = smoothstep(0.92, 1.28, twa) * (1 - smoothstep(2.35, 2.75, twa));
       const upw = 1 - smoothstep(0.95, 1.65, twa);
       const down = smoothstep(1.15, 1.9, twa);
-      let wf = 1 - upw * 0.10 * Hn * SEA.steep * (0.55 + 0.9 * Math.max(0, climb));
-      if (turning) wf -= 0.10 * Hn * SEA.steep; // 波の中でのタックは行き足が止まりやすい
+      const poundScale = (0.56 + 0.44 * slowFactor) * (1 - 0.72 * isReach * speedNorm);
+      let wf = 1 - upw * 0.10 * Hn * SEA.steep * (0.55 + 0.9 * Math.max(0, climb)) * poundScale;
+      if (turning) wf -= 0.08 * Hn * SEA.steep * (0.65 + 0.35 * slowFactor); // 波の中でのタックは行き足が止まりやすい
       const windOk = clamp((localWindKt - 5.5) / 6, 0, 1);
       wf += down * SEA.surf * Math.max(0, -climb) * (0.3 + 0.7 * windOk) * clamp(this.v / (2.2 * SPEED_SCALE), 0.3, 1);
-      if (SEA.type === 'chop') wf -= down * 0.035 * Hn * (0.5 + 0.5 * Math.abs(climb)); // 三角波は追い波でも乗りにくく揺さぶられる
+      if (SEA.type === 'chop') wf -= down * 0.035 * Hn * (0.5 + 0.5 * Math.abs(climb)) * (0.22 + 0.78 * slowFactor) * (1 - 0.75 * isReach * speedNorm);
       this.waveF = wf;
       this.waveLoss = Math.max(0, 1 - wf);
       target *= wf;
+      // 波にはたかれた際の水面叩きつけイベント(海に船がたたきつけられる控えめな音用)
+      this.waveSlamCD = Math.max(0, (this.waveSlamCD || 0) - dt);
+      const prevClimb = this._prevClimb || 0;
+      this._prevClimb = climb;
+      if (this.waveSlamCD <= 0 && SEA.steep >= 0.65 && Math.abs(this.v) > 0.35) {
+        const drop = prevClimb - climb;
+        if ((prevClimb > 0.24 && drop > 0.18) || (climb > 0.58 && prevClimb <= 0.58)) {
+          const slam = clamp((drop * 0.85 + Math.max(0, climb) * 0.45) * (SEA.steep / 1.1) * (1 - 0.65 * isReach * speedNorm), 0, 1);
+          if (slam > 0.22) {
+            this.waveSlam = slam;
+            this.waveSlamCD = 1.25 + Math.random() * 1.1;
+          }
+        }
+      }
     }
     // 完全風上(0°〜5° / 355°〜360°付近)に向くと風圧で少しずつバック(後退)する
     if (twaDeg < 12 && !turning) {
