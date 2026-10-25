@@ -297,13 +297,12 @@ export function computeBlanket(boats) {
       const leeDist = rx * lx + rz * lz;
 
       // 2) リーバウ効果(Lee-Bow / Safe Leeward):
-      // クローズ〜クローズリーチで同タックの2艇において、B艇がA艇の風下側(leeDist: 1.2〜12.5m)かつ
-      // ほぼ横〜斜め前方(ahead: -1.2〜11.0m)にいるとき:
+      // クローズ〜クローズリーチで同タックの2艇において、B艇がA艇の風下側かつ斜め前方にいるとき:
       // ・風下艇BはA艇セールの循環によるアップウォッシュ(吹き上げ)とスロット効果で「わずかにのぼせる」(効果は従来の1/3に抑制)
-      // ・風上艇AはB艇セールリーチからのバックウィンド(排気)を浴びてヘダー＆減速を受ける
+      // ・風上艇AはB艇セールリーチからのバックウィンド(排気)を浴びてヘダー＆減速を受ける(風上側への影響範囲は短くし、少し風上に離れれば影響なし)
       if (A.tack === B.tack && A.twa > 0.48 && A.twa < 1.42 && B.twa > 0.48 && B.twa < 1.42) {
-        if (leeDist > 1.2 && leeDist < 12.5 && ahead > -1.2 && ahead < 11.0) {
-          const kLee = Math.exp(-Math.pow((leeDist - 4.2) / 3.8, 2)) * Math.exp(-Math.pow((ahead - 2.8) / 4.2, 2));
+        if (leeDist > 1.2 && leeDist < 9.5 && ahead > -1.0 && ahead < 9.5) {
+          const kLee = Math.exp(-Math.pow((leeDist - 3.6) / 3.0, 2)) * Math.exp(-Math.pow((ahead - 2.6) / 3.6, 2));
           if (kLee > 0.06) {
             // 風下前方のB艇(リーバウ艇): 従来の1/3の控えめなリフトと微増速
             const liftRad = 0.026 * kLee;
@@ -312,9 +311,12 @@ export function computeBlanket(boats) {
               B.flowBoostT = Math.max(B.flowBoostT, 0.013 * kLee);
               if (kLee > 0.22) B.aeroTag = 'leebow';
             }
-            // 風上後方のA艇(被リーバウ艇): バックウィンドによるヘダーと悪風
-            if (ahead > -0.2) {
-              const backK = kLee * smoothstep(-0.2, 2.0, ahead);
+          }
+          // 風上後方のA艇(被リーバウ艇): バックウィンドの影響範囲は風上側へ短く(leeDist < 5.4m)限定
+          if (leeDist < 5.4 && ahead > -0.1 && ahead < 7.5) {
+            const kBack = Math.exp(-Math.pow((leeDist - 2.35) / 1.70, 2)) * Math.exp(-Math.pow((ahead - 2.2) / 2.8, 2));
+            if (kBack > 0.08) {
+              const backK = kBack * smoothstep(-0.1, 1.6, ahead);
               A.windBendT -= 0.055 * backK;
               A.coverT = clamp(A.coverT + 0.65 * backK, 0, 1.0);
               A.backT = clamp(A.backT + 0.65 * backK, 0, 1.0);
@@ -388,6 +390,7 @@ export class Boat {
     this.awa = 0; this.aws = 0; this.awx = -Math.sin(W0); this.awz = Math.cos(W0);
     this.dnf = false; this.dsq = false; this.dsqReason = '';
     this.pole = false; this.poleK = 0; // ランチャー(上げる指示 / 展開度0..1)
+    this.rudderDrag = 0; this.snagCD = 0; // 急舵時のラダー抵抗白波強度 / アンカーロープ引っかかりCD
   }
   place(x, z, h) {
     this.x = x; this.z = z; this.h = h;
@@ -544,6 +547,14 @@ export class Boat {
     }
     this.h = wrap(this.h + dh + this.aeroClimb);
     this.turned += Math.abs(dh);
+    // 急激に角度を変えたりタック・ジャイブした際のラダー抵抗(乱流・白泡発生度 0..1)
+    const turnRate = Math.abs(dh) / Math.max(dt, 1e-4);
+    const steerEffort = Math.max(Math.abs(steer), clamp(turnRate / 0.52, 0, 1));
+    const speedF = clamp(Math.abs(this.v) / 1.15, 0.2, 1.25);
+    const rudderTarget = steerEffort > 0.20
+      ? clamp(Math.pow((steerEffort - 0.16) / 0.72, 1.22) * speedF + (this.maneuver ? 0.38 * speedF : 0), 0, 1)
+      : 0;
+    this.rudderDrag += (rudderTarget - this.rudderDrag) * (1 - Math.exp(-dt * (rudderTarget > this.rudderDrag ? 8.5 : 3.2)));
     if (this.penalty) {
       this.penalty.turned += Math.abs(dh);
       // 他艇が2艇身(約9.5m)以内にいる間は「クリアウオーター確保中」としてタイマー減少を0.25倍に緩和、回頭中も0.2倍に緩和
@@ -715,13 +726,15 @@ export class Boat {
     const windPress = Math.pow(clamp(localWindKt / 9.2, 0.25, 1.85), 1.25);
     const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
     const rawHeelPress = anglePress * windPress * speedPress;
-    const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.18 + Math.abs(this.heel) * 1.35, 0.05, 1.0);
+    const strongWindBoost = smoothstep(8.8, 13.8, localWindKt) * 0.34 * anglePress;
+    const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.28 + Math.abs(this.heel) * 1.45 + strongWindBoost, 0.05, 1.38);
     this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
     const netHeel = Math.max(0.012, rawHeelPress * 0.24 - this.hike * 0.145);
     const heelT = clamp(nt * clamp(netHeel, 0, 0.23) + this.rollBias, -0.32, 0.32);
     this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.2));
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
+    this.snagCD = Math.max(0, (this.snagCD || 0) - dt);
   }
 }
 
@@ -732,8 +745,8 @@ export function rebuildObstacles() {
   // マークの当たり判定は水線位置のブイの太さ(半径約1.3m)に合わせる (上マークフィニッシュ時は1マークのみ)
   const markKeys = COURSE_MODE === 'upwind' ? ['m1'] : ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm'];
   for (const k of markKeys) { const p = toWorld(MARKS[k].a, MARKS[k].c); OBSTACLES.push({ key: k, x: p.x, z: p.z, r: 1.35 }); }
-  // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)。本部船は全長約16mのクルーザー
-  for (const [k, sp, n, r, gap] of [['com', MARKS.com, 4, 2.4, 4.0], ['pin', MARKS.pin, 2, 2.2, 4.5], ['com', MARKS.fcom, 4, 2.4, 4.0]]) {
+  // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)。本部船は全長約12mのセーリングクルーザー、アウターは全長約7.8mの和船型サポートボート
+  for (const [k, sp, n, r, gap] of [['com', MARKS.com, 3, 2.2, 3.8], ['pin', MARKS.pin, 2, 2.0, 3.8], ['com', MARKS.fcom, 3, 2.2, 3.8]]) {
     for (let i = -(n - 1) / 2; i <= (n - 1) / 2; i++) { const p = toWorld(sp.a + i * gap, sp.c); OBSTACLES.push({ key: k, x: p.x, z: p.z, r }); }
   }
 }
@@ -781,6 +794,30 @@ export function resolveCollisions(boats, t) {
         if (pp > 0) {
           A.x += (dx / d) * pp; A.z += (dz / d) * pp; A.v *= 0.97;
           if (A.touchCD <= 0 && !A.finished) { A.touchCD = 6; ev.push({ type: 'touch', boat: A, mark: o.key }); }
+        }
+      }
+    }
+    // アウター艇(pin)および本部船(com)の船首前方から海底へ伸びるアンカー係留ロープへの引っかかり判定:
+    // スタート前後〜スタート直後にアウター艇や本部船の船首すぐ前(アンカーロープ水面下領域)を横切るとセンターボードがロープに引っかかり急減速する
+    if (!A.finished && !A.dsq) {
+      const cp = toCourse(A.x, A.z);
+      const anchorZones = [
+        { key: 'pin', aMin: MARKS.pin.a + 3.5, aMax: MARKS.pin.a + 8.4, cCenter: MARKS.pin.c, halfC: 1.38 },
+        { key: 'com', aMin: MARKS.com.a + 5.2, aMax: MARKS.com.a + 10.6, cCenter: MARKS.com.c, halfC: 1.48 },
+      ];
+      for (const az of anchorZones) {
+        if (cp.a >= az.aMin && cp.a <= az.aMax && Math.abs(cp.c - az.cCenter) <= az.halfC) {
+          A.v *= 0.26; // アンカーロープに引っかかって大きく減速
+          A.rudderDrag = Math.max(A.rudderDrag || 0, 0.85);
+          // ロープに引かれて船首がわずかにアンカー側へ振られる
+          const ropeW = toWorld((az.aMin + az.aMax) * 0.5, az.cCenter);
+          const brgRope = Math.atan2(ropeW.x - A.x, -(ropeW.z - A.z));
+          A.h = wrap(A.h + wrap(brgRope - A.h) * 0.16);
+          if ((A.snagCD || 0) <= 0) {
+            A.snagCD = 4.5;
+            ev.push({ type: 'anchorSnag', boat: A, mark: az.key });
+          }
+          break;
         }
       }
     }
