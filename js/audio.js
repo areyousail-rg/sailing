@@ -503,82 +503,137 @@ export function sailFlog(vol = 0.8) {
   og.gain.setValueAtTime(0.0001, t0 + 0.06); og.gain.linearRampToValueAtTime(0.28 * vol, t0 + 0.09); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
   o.connect(og); og.connect(master); o.start(t0 + 0.06); o.stop(t0 + 0.32);
 }
-// ランチャー上げ下げの「シャキン！＋セールが少しバサッ」: 金属ポールのスライド＆ロック共鳴音 + ジブが張り出す布音
+// ランチャー上げ下げの実艇音「シャキンッ！＋バサッ！」:
+// 電子音のような笛スイープや長い鐘の残響を排し、①アルミポールとランチャーロープがマストリングを滑る乾いた「シャ」→
+// ②ストッパー金具とカムクリートが噛み合う短く鋭い金属ロック音「キンッ」→ ③ジブが風をはらんで張るダクロン布の「バサッ」を再現
 export function poleClank(up = true, vol = 0.85) {
   if (!ctx || vol <= 0.02) return;
-  const t = ctx.currentTime, slide = 0.15;
-  // 1) 「シャ」: アルミポールがリングを滑る金属スライド音
-  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-  const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.Q.value = 7.5;
-  hp.frequency.setValueAtTime(up ? 2400 : 6400, t);
-  hp.frequency.exponentialRampToValueAtTime(up ? 6800 : 2400, t + slide);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(0.58 * vol, t + 0.018);
-  g.gain.setValueAtTime(0.52 * vol, t + slide - 0.018);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + slide + 0.035);
-  s.connect(hp); hp.connect(g); g.connect(master);
-  s.start(t, Math.random() * 1.2); s.stop(t + slide + 0.05);
+  const t = ctx.currentTime;
+  const slideDur = 0.082;
 
-  // スライド中の金属倍音グライド
-  const sw = ctx.createOscillator(), swg = ctx.createGain();
-  sw.type = 'triangle';
-  sw.frequency.setValueAtTime(up ? 1350 : 3200, t);
-  sw.frequency.exponentialRampToValueAtTime(up ? 3600 : 1350, t + slide);
-  swg.gain.setValueAtTime(0.0001, t);
-  swg.gain.linearRampToValueAtTime(0.14 * vol, t + 0.02);
-  swg.gain.exponentialRampToValueAtTime(0.0001, t + slide + 0.02);
-  sw.connect(swg); swg.connect(master);
-  sw.start(t); sw.stop(t + slide + 0.03);
+  // 1) 「シャ」: アルミポール＆ダイニーマロープがフェアリード・マストリングを高速で滑る乾いた金属擦過音
+  const sSlide = ctx.createBufferSource(); sSlide.buffer = noiseBuf;
+  sSlide.playbackRate.value = up ? 1.08 : 0.92;
+  const bpSlide = ctx.createBiquadFilter(); bpSlide.type = 'bandpass'; bpSlide.Q.value = 2.6;
+  bpSlide.frequency.setValueAtTime(up ? 2100 : 3800, t);
+  bpSlide.frequency.exponentialRampToValueAtTime(up ? 4400 : 1950, t + slideDur);
+  const gSlide = ctx.createGain();
+  gSlide.gain.setValueAtTime(0.0001, t);
+  gSlide.gain.linearRampToValueAtTime(0.46 * vol, t + 0.012);
+  gSlide.gain.setValueAtTime(0.42 * vol, t + slideDur - 0.012);
+  gSlide.gain.exponentialRampToValueAtTime(0.0001, t + slideDur + 0.018);
+  sSlide.connect(bpSlide); bpSlide.connect(gSlide); gSlide.connect(master);
+  sSlide.start(t, Math.random() * 1.2); sSlide.stop(t + slideDur + 0.025);
 
-  // 2) 「キン！」: ロックした瞬間の澄んだ金属共鳴(非整数倍音)
-  const tk = t + slide * 0.92;
+  // 2) 「キンッ！」: ポール先端金具とカムクリートがカチッとロックする短く歯切れの良い金属打撃音 (余韻を短く切ってリアルな金具音にする)
+  const tk = t + slideDur * 0.88;
+  const sClick = ctx.createBufferSource(); sClick.buffer = noiseBuf;
+  const hpClick = ctx.createBiquadFilter(); hpClick.type = 'bandpass'; hpClick.frequency.value = up ? 4800 : 3900; hpClick.Q.value = 1.8;
+  const gClick = ctx.createGain();
+  gClick.gain.setValueAtTime(0.0001, tk);
+  gClick.gain.linearRampToValueAtTime(0.55 * vol, tk + 0.002);
+  gClick.gain.exponentialRampToValueAtTime(0.0001, tk + 0.026);
+  sClick.connect(hpClick); hpClick.connect(gClick); gClick.connect(master);
+  sClick.start(tk, Math.random() * 1.0); sClick.stop(tk + 0.032);
+
   for (const [f, a, d] of [
-    [2380, 0.28, 0.50],
-    [3690, 0.20, 0.40],
-    [5420, 0.14, 0.30],
-    [7680, 0.09, 0.22],
-    [9450, 0.05, 0.16],
+    [1820, 0.22, 0.055],
+    [3140, 0.26, 0.065],
+    [4720, 0.18, 0.048],
+    [6380, 0.10, 0.035],
   ]) {
     const o = ctx.createOscillator(), og = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(f * (up ? 1.0 : 0.92), tk);
+    o.type = 'triangle';
+    const fStart = f * (up ? 1.0 : 0.88);
+    o.frequency.setValueAtTime(fStart * 1.04, tk);
+    o.frequency.exponentialRampToValueAtTime(fStart, tk + 0.012);
     og.gain.setValueAtTime(0.0001, tk);
-    og.gain.linearRampToValueAtTime(a * vol, tk + 0.0025);
+    og.gain.linearRampToValueAtTime(a * vol, tk + 0.0018);
     og.gain.exponentialRampToValueAtTime(0.0001, tk + d);
     o.connect(og); og.connect(master);
-    const send = ctx.createGain(); send.gain.value = 0.28; og.connect(send); send.connect(fx);
-    o.start(tk); o.stop(tk + d + 0.05);
+    o.start(tk); o.stop(tk + d + 0.01);
   }
-  noiseBurst(0.032, 5200, 'highpass', 0.40 * vol);
 
-  // 3) ランチャーでジブが風上へ張り出すときの「バサッ」という軽いセール音
-  const tf = tk + 0.04;
+  // 3) 「バサッ！」: ポールが突き出てジブセールが風をはらむ(または収納で裏返る)リアルなダクロン布音
+  const tf = tk + 0.038;
+  // 布の先端が弾けるアタック
+  const sSnap = ctx.createBufferSource(); sSnap.buffer = noiseBuf; sSnap.playbackRate.value = 0.82;
+  const bpSnap = ctx.createBiquadFilter(); bpSnap.type = 'bandpass'; bpSnap.frequency.value = up ? 860 : 720; bpSnap.Q.value = 1.1;
+  const gSnap = ctx.createGain();
+  gSnap.gain.setValueAtTime(0.0001, tf);
+  gSnap.gain.linearRampToValueAtTime((up ? 0.52 : 0.38) * vol, tf + 0.008);
+  gSnap.gain.exponentialRampToValueAtTime(0.0001, tf + 0.065);
+  sSnap.connect(bpSnap); bpSnap.connect(gSnap); gSnap.connect(master);
+  sSnap.start(tf, Math.random() * 1.0); sSnap.stop(tf + 0.075);
+
+  // セールクロス全体の「バサッ」という中低域の布擦れ＋膨らみ音
   const sf = ctx.createBufferSource(); sf.buffer = noiseBuf;
-  sf.playbackRate.value = up ? 0.78 : 0.85;
-  const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.Q.value = 0.75;
-  bpf.frequency.setValueAtTime(up ? 380 : 440, tf);
-  bpf.frequency.exponentialRampToValueAtTime(up ? 820 : 620, tf + 0.065);
-  bpf.frequency.exponentialRampToValueAtTime(240, tf + 0.26);
+  sf.playbackRate.value = up ? 0.72 : 0.78;
+  const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.Q.value = 0.70;
+  bpf.frequency.setValueAtTime(up ? 340 : 420, tf);
+  bpf.frequency.exponentialRampToValueAtTime(up ? 680 : 540, tf + 0.055);
+  bpf.frequency.exponentialRampToValueAtTime(210, tf + 0.25);
   const gf = ctx.createGain();
-  const flapVol = (up ? 0.44 : 0.26) * vol;
+  const flapVol = (up ? 0.58 : 0.44) * vol;
   gf.gain.setValueAtTime(0.0001, tf);
-  gf.gain.linearRampToValueAtTime(flapVol * 0.75, tf + 0.025);
-  gf.gain.linearRampToValueAtTime(flapVol, tf + 0.075);
-  gf.gain.exponentialRampToValueAtTime(0.0001, tf + 0.28);
+  gf.gain.linearRampToValueAtTime(flapVol * 0.85, tf + 0.020);
+  gf.gain.linearRampToValueAtTime(flapVol, tf + 0.068);
+  gf.gain.exponentialRampToValueAtTime(0.0001, tf + 0.27);
   sf.connect(bpf); bpf.connect(gf); gf.connect(master);
-  sf.start(tf, Math.random() * 1.0); sf.stop(tf + 0.30);
+  sf.start(tf, Math.random() * 1.0); sf.stop(tf + 0.29);
 
-  // セール布が風をはらむ軽い低音「ボフッ」
-  if (up) {
-    const bf = ctx.createOscillator(), bfg = ctx.createGain();
-    bf.type = 'triangle';
-    bf.frequency.setValueAtTime(105, tf + 0.03);
-    bf.frequency.exponentialRampToValueAtTime(48, tf + 0.20);
-    bfg.gain.setValueAtTime(0.0001, tf + 0.03);
-    bfg.gain.linearRampToValueAtTime(0.20 * vol, tf + 0.055);
-    bfg.gain.exponentialRampToValueAtTime(0.0001, tf + 0.22);
-    bf.connect(bfg); bfg.connect(master);
-    bf.start(tf + 0.03); bf.stop(tf + 0.24);
-  }
+  // セールが風を受け止める低い「ボフッ」という空気圧音
+  const bf = ctx.createOscillator(), bfg = ctx.createGain();
+  bf.type = 'sine';
+  bf.frequency.setValueAtTime(up ? 98 : 84, tf + 0.015);
+  bf.frequency.exponentialRampToValueAtTime(42, tf + 0.19);
+  bfg.gain.setValueAtTime(0.0001, tf + 0.015);
+  bfg.gain.linearRampToValueAtTime((up ? 0.30 : 0.20) * vol, tf + 0.042);
+  bfg.gain.exponentialRampToValueAtTime(0.0001, tf + 0.21);
+  bf.connect(bfg); bfg.connect(master);
+  bf.start(tf + 0.015); bf.stop(tf + 0.23);
+}
+
+// オリエンテーション(スマブラ風 HOW TO PLAY)のステップ切り替え効果音: シャープな風切りスラッシュ＋重厚なインパクト音
+export function orientStepSfx(accent = false) {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  // 1) 高速スラッシュ風切り音
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = 1.15;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.6;
+  bp.frequency.setValueAtTime(650, t);
+  bp.frequency.exponentialRampToValueAtTime(2800, t + 0.055);
+  bp.frequency.exponentialRampToValueAtTime(420, t + 0.16);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.38, t + 0.018);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  s.connect(bp); bp.connect(g); g.connect(master);
+  s.start(t, Math.random() * 0.8); s.stop(t + 0.19);
+
+  // 2) 低域インパクト + キレのあるブラス風コードヒット
+  const punch = ctx.createOscillator(), pg = ctx.createGain();
+  punch.type = 'triangle';
+  punch.frequency.setValueAtTime(accent ? 165 : 135, t);
+  punch.frequency.exponentialRampToValueAtTime(46, t + 0.16);
+  pg.gain.setValueAtTime(0.0001, t);
+  pg.gain.linearRampToValueAtTime(0.42, t + 0.006);
+  pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  punch.connect(pg); pg.connect(master);
+  punch.start(t); punch.stop(t + 0.20);
+
+  const notes = accent ? [523.25, 659.25, 783.99, 1046.5] : [440, 554.37, 659.25];
+  notes.forEach((freq, i) => {
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'sawtooth';
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2600, t);
+    lp.frequency.exponentialRampToValueAtTime(680, t + 0.22);
+    o.frequency.setValueAtTime(freq, t + i * 0.008);
+    og.gain.setValueAtTime(0.0001, t + i * 0.008);
+    og.gain.linearRampToValueAtTime(0.085, t + i * 0.008 + 0.01);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + (accent ? 0.34 : 0.22));
+    o.connect(lp); lp.connect(og); og.connect(master);
+    o.start(t + i * 0.008); o.stop(t + 0.36);
+  });
 }
