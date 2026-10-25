@@ -33,21 +33,23 @@ vec3 skyBase(vec3 d){
 }`;
 export const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
 const SEA_VS = `
-uniform float uWT; uniform float uW0; uniform float uShift; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY;
+uniform float uWT; uniform float uW0; uniform float uShift; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY; uniform vec4 uBoatPos;
 varying vec3 vW; varying float vH;
 void main(){
   vec4 w=modelMatrix*vec4(position,1.0);
   float h=0.0;
 #ifdef PATCH
-  // カメラ周辺の局所パッチでは長周期うねりだけでなく全波浪成分(三角波・風浪を含む)で実際に頂点を上下させ、波の立体感を出す
+  // カメラ周辺の局所パッチでは waveSample と同じ波浪成分で頂点を上下させ、船底・コクピット床を突き抜けないようクランプする
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float wgt=B.z>0.5?1.0:0.62;
+    float wgt=B.z>0.5?0.90:0.36;
     if(A.w>0.001) h+=A.w*wgt*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y);
   }
-  vec2 wd0=vec2(-sin(uW0+uShift),cos(uW0+uShift));
-  vec2 wp0=vec2(-wd0.y,wd0.x);
-  h+=0.08*sin(dot(wd0*0.95+wp0*0.31,w.xz)*0.36-uWT*1.85)+0.05*sin(dot(wd0*0.92-wp0*0.39,w.xz)*0.52-uWT*2.25+1.4);
+  float bd=length(w.xz-uBoatPos.xy);
+  if(bd<3.2){
+    float keepBelow=uBoatPos.z-0.06*(1.0-bd/3.2);
+    h=min(h,keepBelow);
+  }
   float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.70,1.0,r));
 #endif
@@ -61,6 +63,7 @@ const waterMat = new THREE.ShaderMaterial({
     uSeaA: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uSeaB: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uPatchC: { value: new THREE.Vector3() }, uPatchR: { value: 240 }, uBaseY: { value: 0 },
+    uBoatPos: { value: new THREE.Vector4(0, -9999, 0, 0) },
   },
   vertexShader: SEA_VS,
   fragmentShader: `
@@ -958,7 +961,7 @@ export function createWorld(scene) {
           h.pts.unshift({
             x: bx, z: bz,
             bowX: b.x + fx * 0.85, bowZ: b.z + fz * 0.85,
-            h: b.h, age: 0, s: clampN(b.v / 5.5, 0, 1.25),
+            h: b.h, age: 0, s: clampN(b.v / 6.2, 0, 0.90),
           });
           if (h.pts.length > TRAIL_N) h.pts.pop();
         }
@@ -968,33 +971,33 @@ export function createWorld(scene) {
           if (!p || p.age >= LIFE) { for (let j = 0; j < PER; j++) hide(k++); continue; }
           const life = 1 - p.age / LIFE, fade = life * life;
           const ws = waveSample(p.x, p.z, SEA.clock);
-          const py = ws.hLong + (ws.h - ws.hLong) * 0.58; // 立体波浪の上に航跡を沿わせる
+          const py = ws.hLong * 0.90 + (ws.h - ws.hLong) * 0.36; // 立体波浪の上に航跡を沿わせる
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           tq.setFromAxisAngle(yAx, -p.h);
-          // 1) 中央: 艇尾直後の白泡乱流帯
-          ts.set(0.36 + p.age * 0.36, 1, 1.05 + p.age * 0.32);
+          // 1) 中央: 艇尾直後の乱流帯(白飛びしない控えめな明度に抑える)
+          ts.set(0.34 + p.age * 0.34, 1, 1.00 + p.age * 0.30);
           m4.compose(tv.set(p.x, py, p.z), tq, ts); trail.setMatrixAt(k, m4);
-          col.setRGB(0.68, 0.79, 0.84).multiplyScalar(0.24 * fade * p.s); trail.setColorAt(k++, col);
-          // 2, 3) 左右のケルビン波: 艇速に応じて外側へシャープに広がる
-          const off = 0.42 + p.age * (0.68 + p.s * 1.15);
+          col.setRGB(0.55, 0.68, 0.76).multiplyScalar(0.095 * fade * p.s); trail.setColorAt(k++, col);
+          // 2, 3) 左右のケルビン波: 艇速に応じて外側へ広がる控えめな波紋
+          const off = 0.42 + p.age * (0.68 + p.s * 1.10);
           for (const s of [-1, 1]) {
             const a = p.h - s * 0.58;
             tq.setFromAxisAngle(yAx, -a);
-            ts.set(0.09 + p.age * 0.06, 1, 0.68 + p.age * 0.45);
+            ts.set(0.08 + p.age * 0.055, 1, 0.65 + p.age * 0.42);
             m4.compose(tv.set(p.x + rx * s * off, py, p.z + rz * s * off), tq, ts); trail.setMatrixAt(k, m4);
-            col.setRGB(0.75, 0.85, 0.90).multiplyScalar(0.17 * fade * p.s); trail.setColorAt(k++, col);
+            col.setRGB(0.60, 0.73, 0.80).multiplyScalar(0.075 * fade * p.s); trail.setColorAt(k++, col);
           }
-          // 4) 船首〜チャインの高速バウスプレー帯(若いパーティクルほど船体のすぐ脇で白く泡立つ)
-          if (p.age < 0.95 && p.s > 0.35) {
-            const bowFade = Math.pow(1 - p.age / 0.95, 1.6);
+          // 4) 船首〜チャインの控えめなバウスプレー帯
+          if (p.age < 0.90 && p.s > 0.38) {
+            const bowFade = Math.pow(1 - p.age / 0.90, 1.7);
             const sideS = (i % 2 === 0 ? 1 : -1);
-            const bOff = 0.52 + p.age * (1.25 + p.s * 1.1);
+            const bOff = 0.50 + p.age * (1.20 + p.s * 1.0);
             const ba = p.h - sideS * 0.48;
             tq.setFromAxisAngle(yAx, -ba);
-            ts.set(0.12 + p.age * 0.10, 1, 0.65 + p.age * 0.40);
-            m4.compose(tv.set(p.bowX + rx * sideS * bOff, py + 0.02, p.bowZ + rz * sideS * bOff), tq, ts);
+            ts.set(0.11 + p.age * 0.09, 1, 0.60 + p.age * 0.38);
+            m4.compose(tv.set(p.bowX + rx * sideS * bOff, py + 0.015, p.bowZ + rz * sideS * bOff), tq, ts);
             trail.setMatrixAt(k, m4);
-            col.setRGB(0.82, 0.92, 0.96).multiplyScalar(0.26 * bowFade * p.s);
+            col.setRGB(0.65, 0.78, 0.85).multiplyScalar(0.10 * bowFade * p.s);
             trail.setColorAt(k++, col);
           } else {
             hide(k++);
@@ -1079,9 +1082,14 @@ export function createWorld(scene) {
       finCurtainMat.opacity = 0.25 + 0.3 * emph + (emph > 0.5 ? 0.12 * Math.sin(performance.now() / 250) : 0);
       preStartGroup.visible = !!showPreStart;
     },
-    update(t, camera, dt, wt = 0) {
+    update(t, camera, dt, wt = 0, player = null) {
       waterMat.uniforms.uTime.value = t; waterMat.uniforms.uWT.value = wt; waterMat.uniforms.uW0.value = W0; skyMat.uniforms.uTime.value = t;
       waterMat.uniforms.uShift.value = shiftAt(wt);
+      if (player) {
+        const wsB = waveSample(player.x, player.z, SEA.clock);
+        const hB = wsB.hLong * 0.90 + (wsB.h - wsB.hLong) * 0.36;
+        waterMat.uniforms.uBoatPos.value.set(player.x, player.z, hB + 0.08, player.h);
+      }
       sky.position.copy(camera.position);
       sea.position.set(camera.position.x, seaBaseY, camera.position.z);
       if (seaPatch.visible) {
@@ -1182,11 +1190,11 @@ function addTori(scene, x, h, z) {
 // ワールド座標: x=東(+), 西(-), z=南(+), 北(-)。コースは八景島の東側海面(x≈0, z≈0)で北風(15°)スタート(北が風上)。
 function buildHakkeijima(root, surfStrip, fgeo) {
   // 八景島の実際のレース海面は八景島マリーナから北東へ沖出しし、テクノタワーホテル正面沖付近まで出るため、
-  // 陸地・背景グループ全体を南西(西へ280m・南へ980m)へオフセットしてコース(0,0〜北側上マーク)がテクノタワー沖に来るように配置
-  root.position.set(-280, 0, 980);
+  // 八景島本島を以前より少し沖側(+x)・横浜側(-z)へ寄せて配置
+  root.position.set(-210, 0, 860);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), tc = new THREE.Color(), eul = new THREE.Euler();
-  // 八景島本島 (オフセット後のワールド座標では x = -1530, z = +1130 の南西沖合に位置)
-  const H_ISLAND = { x: -1250, z: 150, rx: 430, rz: 460 };
+  // 八景島本島 (従来より沖側+x・横浜側-zへ移動)
+  const H_ISLAND = { x: -1010, z: -60, rx: 430, rz: 460 };
 
   const hakkeiIslandH = (x, z) => {
     const dx = (x - H_ISLAND.x) / H_ISLAND.rx, dz = (z - H_ISLAND.z) / H_ISLAND.rz;
@@ -1737,60 +1745,17 @@ function buildHakkeijima(root, surfStrip, fgeo) {
   }
   root.add(shi);
 
-  // 10) 東京湾の船舶・海上構造物 (八景島遊覧船「パラダイス」・大型商船/コンテナ船・漁船・シーバース・小柴ブイ・沖ノ根)
+  // 10) 東京湾の大型商船・コンテナ船・自動車運搬船と海上標識 (フラットな不自然船やコース近くの小型船・シーバースは除外)
   const bayShips = new THREE.Group();
-
-  // (10-a) 八景島の島回り遊覧船「パラダイス」(写真準拠: 黒×赤の2階建て外輪船・金の丸窓・2本煙突・赤い外輪)
-  const para = new THREE.Group();
   const pBlack = new THREE.MeshLambertMaterial({ color: 0x1e293b });
   const pRed = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
   const pWhite = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
-  const pGold = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
-  // 黒い船体 + 白喫水ライン + 赤いブルワーク縁取り (全長約28mにスケールアップして視認性確保)
-  const pHull = new THREE.Mesh(new THREE.BoxGeometry(7.2, 2.8, 28), pBlack);
-  pHull.position.y = 1.2; para.add(pHull);
-  const pBow = new THREE.Mesh(new THREE.ConeGeometry(5.1, 7.5, 4), pBlack);
-  pBow.rotation.x = Math.PI / 2; pBow.rotation.z = Math.PI / 4; pBow.position.set(0, 1.2, 17.5); para.add(pBow);
-  const pStripe = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.45, 28.2), pWhite);
-  pStripe.position.y = 2.4; para.add(pStripe);
-  const pDeck1 = new THREE.Mesh(new THREE.BoxGeometry(6.6, 2.8, 21), pBlack);
-  pDeck1.position.set(0, 3.8, -0.5); para.add(pDeck1);
-  const pRedBand = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.55, 21.4), pRed);
-  pRedBand.position.set(0, 5.2, -0.5); para.add(pRedBand);
-  // 1階側面の金色の丸窓 (片側5個ずつ)
-  for (const sx of [-3.35, 3.35]) for (let wz = -7.5; wz <= 6.5; wz += 3.5) {
-    const port = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.2, 12), pGold);
-    port.rotation.z = Math.PI / 2; port.position.set(sx, 3.8, wz); para.add(port);
-  }
-  // 2階オープンデッキの屋根と前方の操舵室
-  const pBridge = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.6, 5.5), pBlack);
-  pBridge.position.set(0, 6.6, 6.8); para.add(pBridge);
-  const pBridgeWin = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.1, 5.7), pGold);
-  pBridgeWin.position.set(0, 6.9, 6.8); para.add(pBridgeWin);
-  const pCanopy = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.6, 19.5), pRed);
-  pCanopy.position.set(0, 8.1, -0.2); para.add(pCanopy);
-  // 象徴的な2本の黒い煙突と赤い横連結バー
-  for (const sx of [-1.7, 1.7]) {
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 6.5, 10), pBlack);
-    stack.position.set(sx, 11.2, 2.2); para.add(stack);
-    const sCap = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.7, 10), pRed);
-    sCap.position.set(sx, 13.8, 2.2); para.add(sCap);
-  }
-  const sCross = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.65, 0.65), pRed);
-  sCross.position.set(0, 12.2, 2.2); para.add(sCross);
-  // 船尾の赤い外輪 (パドルホイール)
-  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 4.6, 12), pRed);
-  wheel.rotation.z = Math.PI / 2; wheel.position.set(0, 1.8, -14.8); para.add(wheel);
-  para.position.set(H_ISLAND.x + 640, 0, H_ISLAND.z + 280); // 八景島マリーナ沖を遊覧中
-  para.rotation.y = 0.35;
-  bayShips.add(para);
 
-  // (10-b) 東京湾の大型商船・コンテナ船・自動車運搬船・タンカー (停泊本船・航行船)
+  // (10-b) 東京湾の大型コンテナ船・自動車運搬船 (沖合航路)
   const cargoConfigs = [
-    { x: 1380, z: -850, ry: -0.18, len: 210, w: 32, col: 0x991b1b, type: 'container' },
-    { x: 1950, z: 420, ry: 0.12, len: 195, w: 30, col: 0x1e3a8a, type: 'container' },
-    { x: 720, z: -2750, ry: -0.45, len: 180, w: 28, col: 0x0f172a, type: 'tanker' },   // 三菱沖の停泊本船
-    { x: 1720, z: -2200, ry: 0.05, len: 190, w: 30, col: 0x1d4ed8, type: 'car' },
+    { x: 1680, z: -850, ry: -0.18, len: 210, w: 32, col: 0x991b1b, type: 'container' },
+    { x: 2150, z: 420, ry: 0.12, len: 195, w: 30, col: 0x1e3a8a, type: 'container' },
+    { x: 1920, z: -2200, ry: 0.05, len: 190, w: 30, col: 0x1d4ed8, type: 'car' },
     { x: 2650, z: -1450, ry: -0.1, len: 230, w: 35, col: 0x047857, type: 'container' },
   ];
   const contColors = [0xdc2626, 0x2563eb, 0xd97706, 0x059669, 0x9333ea, 0xe11d48];
@@ -1816,28 +1781,7 @@ function buildHakkeijima(root, surfStrip, fgeo) {
     bayShips.add(sg);
   }
 
-  // (10-c) 柴漁港・金沢の小型漁船群 (白船体・青ライン・船尾スパンカー帆: 沖出ししたレース海面と重ならない位置に配置)
-  const fishCoords = [
-    [-460, -540, 0.8], [-440, -1240, -0.4], [620, 460, 1.2],
-    [740, -140, -1.1], [-320, 740, 0.5], [760, -640, 2.1], [860, 820, -0.7]
-  ];
-  const fBlue = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
-  for (const [fx, fz, fry] of fishCoords) {
-    const fg = new THREE.Group();
-    const fh = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.2, 10.5), pWhite);
-    fh.position.y = 0.5; fg.add(fh);
-    const fb = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.35, 10.6), fBlue);
-    fb.position.y = 1.1; fg.add(fb);
-    const fc = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 3.0), pWhite);
-    fc.position.set(0, 1.9, -0.5); fg.add(fc);
-    const spanker = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.8, 3), pWhite);
-    spanker.position.set(0, 3.2, -3.8); fg.add(spanker);
-    fg.position.set(fx, 0, fz); fg.rotation.y = fry;
-    bayShips.add(fg);
-  }
-
-  // (10-d) セーリングガイド記載の海上標識: シーバース・小柴2/3/4号灯浮標・沖ノ根ビーコン
-  // 沖ノ根 (黒赤二横線の孤立障害標識)
+  // (10-d) 海上標識: 小柴2/3/4号灯浮標・沖ノ根ビーコン
   const oki = new THREE.Group();
   const okiPole = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.6, 11, 10), pBlack);
   okiPole.position.y = 5.5; oki.add(okiPole);
@@ -1845,7 +1789,6 @@ function buildHakkeijima(root, surfStrip, fgeo) {
   okiBand.position.y = 6.0; oki.add(okiBand);
   oki.position.set(-450, 0, 520); bayShips.add(oki);
 
-  // 小柴4(赤)・小柴3(緑)・小柴2(赤) ブイ
   const gMat = new THREE.MeshLambertMaterial({ color: 0x16a34a });
   for (const [bx, bz, mat] of [[680, -420, pRed], [880, -820, gMat], [1120, -1420, pRed]]) {
     const bg = new THREE.Group();
@@ -1855,17 +1798,6 @@ function buildHakkeijima(root, surfStrip, fgeo) {
     tw.position.y = 4.5; bg.add(tw);
     bg.position.set(bx, 0, bz); bayShips.add(bg);
   }
-
-  // 小柴シーバース (沖合のドルフィン桟橋構造物)
-  const sbGroup = new THREE.Group();
-  const sbDeck = new THREE.Mesh(new THREE.BoxGeometry(16, 3.5, 140), new THREE.MeshLambertMaterial({ color: 0xf59e0b }));
-  sbDeck.position.y = 4.5; sbGroup.add(sbDeck);
-  for (let sz = -60; sz <= 60; sz += 30) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 9, 8), pBlack);
-    leg.position.set(0, 2, sz); sbGroup.add(leg);
-  }
-  sbGroup.position.set(1050, 0, -1120); sbGroup.rotation.y = -0.25;
-  bayShips.add(sbGroup);
   root.add(bayShips);
 
   // 11) 北〜北東の遠景: 本牧の赤いクレーン群(手前北側) + 奥はおとなしめの海岸線 + かなり遠くに見える横浜ランドマークタワーと周辺ビル群
