@@ -675,20 +675,25 @@ export class BoatModel {
     const targetCrewSide = isDeepRun ? -sgn : isMidDown ? 0 : sgn;
     this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 3.5));
     const hikeAmt = b.hike !== undefined ? b.hike : 0.35;
-    const lean = isDeepRun ? 0.12 : isMidDown ? 0.18 : clamp(0.10 + hikeAmt * 0.92, 0.10, 1.02);
-    const crewLean = ((isDeepRun || isMidDown) ? 0.08 : clamp(0.08 + hikeAmt * 1.05, 0.08, 1.12)) * (1 - 0.85 * crewPoleAct);
+    const lean = isDeepRun ? 0.12 : isMidDown ? 0.18 : clamp(0.10 + hikeAmt * 0.96, 0.10, 1.36);
+    const crewLean = ((isDeepRun || isMidDown) ? 0.08 : clamp(0.08 + hikeAmt * 1.06, 0.08, 1.44)) * (1 - 0.85 * crewPoleAct);
 
     const sideAbs = Math.abs(this.side);
     const crewSideAbs = Math.abs(this.crewSide);
     const boomLow = clamp(1 - (this.boomA - 0.35) / 0.30, 0, 1);
 
-    // ヘルムスマン(スキッパー): 後部サイドデッキ(z=0.86)に座り、脚はコクピット内へ、腰から上を外へハイクアウト
-    this.helmRig.position.set(this.side * (0.54 + lean * 0.13), 0.35 - (1 - sideAbs) * 0.06, 0.86);
+    // ヘルムスマン(スキッパー): 後部サイドデッキ(z=0.86)に座り、強風時はガンネルから水平近くまで深くハイクアウト
+    const helmPet = !!this.helm.userData.isRoundPet;
+    this.helmRig.position.set(
+      this.side * (0.54 + lean * (helmPet ? 0.17 : 0.155)),
+      0.35 - (1 - sideAbs) * 0.06 - Math.max(0, lean - 0.85) * (helmPet ? 0.01 : 0.035),
+      0.86
+    );
     this.helmRig.rotation.y = this.side * 1.35;
     if (this.helm.userData.upper) {
       this.helmRig.rotation.z = 0;
       const duck = (1 - sideAbs) * 0.42 * boomLow;
-      const hike = lean * 0.86 * sideAbs;
+      const hike = (helmPet ? Math.min(lean * 0.62, 0.76) : lean * 0.96) * sideAbs;
       this.helm.userData.upper.rotation.x = hike - duck;
       this.helm.userData.upper.rotation.z = -this.side * 0.08;
     } else {
@@ -696,13 +701,14 @@ export class BoatModel {
     }
     if (this.helm.userData.head) {
       const uRx = this.helm.userData.upper ? this.helm.userData.upper.rotation.x : 0;
-      this.helm.userData.head.rotation.x = -uRx * 0.65;
+      this.helm.userData.head.rotation.x = -uRx * (helmPet ? 0.55 : 0.68);
       this.helm.userData.head.rotation.y = -this.side * 0.55;
     }
 
-    // クルー(人間・ネコ・イヌとも): 120°〜150°では船の真ん中(x≈0)に座り、ランチャー操作時(crewPoleAct>0)は前方のマスト・センターケース側へ身を乗り出して操作する
-    const baseCrewX = this.crewSide * (0.55 + crewLean * 0.14);
-    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.04;
+    // クルー(人間・ネコ・イヌとも): 120°〜150°では船の真ん中(x≈0)に座り、強風クローズ時は水平近くまでフルハイクアウト
+    const crewPet = !!this.crew.userData.isRoundPet;
+    const baseCrewX = this.crewSide * (0.55 + crewLean * (crewPet ? 0.175 : 0.165));
+    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.04 - Math.max(0, crewLean - 0.85) * (crewPet ? 0.01 : 0.04);
     const baseCrewZ = -0.04;
     const actCrewX = sgn * 0.12;
     const actCrewY = 0.39 + 0.03 * Math.sin(t * 14);
@@ -717,17 +723,26 @@ export class BoatModel {
     if (this.crew.userData.upper) {
       this.crewRig.rotation.z = 0;
       const cDuck = (1 - crewSideAbs) * 0.45 * boomLow;
-      const cHike = crewLean * 0.90 * crewSideAbs;
+      const cHike = (crewPet ? Math.min(crewLean * 0.64, 0.78) : crewLean * 0.98) * crewSideAbs;
       const baseUpperX = cHike - cDuck;
       const actUpperX = -0.52 + 0.14 * Math.sin(t * 16); // マスト・ランチャー側へ前傾して引き出す/収納する動作
-      this.crew.userData.upper.rotation.x = baseUpperX + (actUpperX - baseUpperX) * crewPoleAct;
-      this.crew.userData.upper.rotation.z = -this.crewSide * 0.08 * (1 - crewPoleAct);
+      const cu = this.crew.userData.upper;
+      cu.rotation.x = baseUpperX + (actUpperX - baseUpperX) * crewPoleAct;
+      cu.rotation.z = -this.crewSide * 0.08 * (1 - crewPoleAct);
+      // 強風フルハイク時(crewLean > 0.72)は人間クルーの外側(海面側)の腕を外へ伸ばしてモーメントを稼ぐ(実艇写真準拠)
+      if (cu.userData.armL && cu.userData.armR) {
+        const ext = clamp((crewLean - 0.70) / 0.55, 0, 1) * crewSideAbs * (1 - crewPoleAct);
+        const lOut = this.crewSide > 0 ? ext : 0;
+        const rOut = this.crewSide < 0 ? ext : 0;
+        cu.userData.armL.rotation.set(-0.55 * lOut, 0, -0.82 * lOut);
+        cu.userData.armR.rotation.set(-0.55 * rOut, 0, 0.82 * rOut);
+      }
     } else {
       this.crewRig.rotation.z = -this.crewSide * crewLean * 0.42 * (1 - crewPoleAct);
     }
     if (this.crew.userData.head) {
       const cRx = this.crew.userData.upper ? this.crew.userData.upper.rotation.x : 0;
-      this.crew.userData.head.rotation.x = -cRx * 0.65;
+      this.crew.userData.head.rotation.x = -cRx * (crewPet ? 0.55 : 0.68);
       this.crew.userData.head.rotation.y = -this.crewSide * 0.50 * (1 - crewPoleAct);
     }
 
