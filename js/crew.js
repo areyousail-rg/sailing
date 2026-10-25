@@ -5,6 +5,7 @@ export const CREW_TYPES = [
   { id: 'human_m', label: '男性', icon: '' },
   { id: 'human_f', label: '女性', icon: '' },
   { id: 'cat', label: 'ネコ', icon: '' },
+  { id: 'dog', label: 'イヌ', icon: '' },
 ];
 
 // assets/crew/manifest.json から読み込んだ差し替えモデル
@@ -229,7 +230,8 @@ function buildHuman(g, style, jacket, isFemale = false) {
 
 const ANIMAL = {
   cat: { body: 0xf0a24a, belly: 0xfff0dc, nose: 0xff8fa3 },
-  shiba: { body: 0xd9954a, belly: 0xfff4e6, nose: 0x222222 },
+  dog: { body: 0xd98b3a, belly: 0xfff5e8, nose: 0x1e1b18 },
+  shiba: { body: 0xd98b3a, belly: 0xfff5e8, nose: 0x1e1b18 },
   penguin: { body: 0x27323d, belly: 0xffffff, nose: 0xff9f1c },
   bear: { body: 0x8b5a3c, belly: 0xd8b48c, nose: 0x1a1a1a },
   rabbit: { body: 0xf6f1ee, belly: 0xffffff, nose: 0xff8fa3 },
@@ -310,14 +312,15 @@ export function buildFigure(type, style = {}) {
   const bodyM = smat(A.body, 0.72);
   const bellyM = smat(A.belly, 0.75);
 
+  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba';
   // 1) 下半身・まるっこい足 (もとのまるっこいフォルムと丸いおてて・あんよ)
   ell(g, bodyM, 0.19, 0.11, 0.16, 0, 0.06, 0.01);
   for (const s of [-1, 1]) {
-    if (type === 'cat') {
-      // ネコはもとのまるっこい球状のあんよ＋ピンクの丸肉球
+    if (isRoundPet) {
+      // ネコ・イヌはまるっこい球状のあんよ＋丸肉球
       sph(g, A.body, 0.068, 0.060, 0.072, s * 0.105, 0.025, -0.125);
       sph(g, A.belly, 0.052, 0.044, 0.036, s * 0.105, 0.022, -0.175);
-      sph(g, 0xff8fa3, 0.024, 0.020, 0.016, s * 0.105, 0.018, -0.198);
+      sph(g, type === 'cat' ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.018, -0.198);
     } else {
       cap(g, A.body, 0.048, 0.065, s * 0.095, 0.025, -0.10, 0.55, 0, 0);
       ell(g, bellyM, 0.044, 0.032, 0.052, s * 0.095, -0.015, -0.155);
@@ -330,8 +333,8 @@ export function buildFigure(type, style = {}) {
   g.add(upper);
   g.userData.upper = upper;
 
-  if (type === 'cat') {
-    // ネコはもとのまるっこい胴体とおなか
+  if (isRoundPet) {
+    // ネコ・イヌはまるっこい胴体とおなか
     sph(upper, A.body, 0.255, 0.275, 0.235, 0, 0.23, 0.0);
     sph(upper, A.belly, 0.175, 0.19, 0.11, 0, 0.23, -0.155);
   } else {
@@ -339,7 +342,7 @@ export function buildFigure(type, style = {}) {
     sph(upper, A.belly, 0.14, 0.16, 0.08, 0, 0.23, -0.15);
   }
 
-  if (type === 'cat') {
+  if (isRoundPet) {
     // 画像の Gill 赤ライフジャケット(PFD)をまるっこい胴体にフィットさせて再現:
     const gillRed = smat(0xd8261c, 0.62);
     const gillDark = smat(0x181b20, 0.82);
@@ -400,7 +403,7 @@ export function buildFigure(type, style = {}) {
 
   const head = new THREE.Group(); head.position.set(0, 0.61, -0.01); upper.add(head);
   g.userData.head = head;
-  const hs = type === 'capybara' ? [0.22, 0.2, 0.26] : type === 'cat' ? [0.26, 0.23, 0.245] : [0.24, 0.21, 0.22];
+  const hs = type === 'capybara' ? [0.22, 0.2, 0.26] : isRoundPet ? [0.26, 0.23, 0.245] : [0.24, 0.21, 0.22];
   sph(head, A.body, hs[0], hs[1], hs[2], 0, 0, 0);
   // 目
   sph(head, 0x111111, 0.034, 0.045, 0.02, -0.09, 0.02, -hs[2] + 0.01);
@@ -410,8 +413,8 @@ export function buildFigure(type, style = {}) {
   if (type !== 'penguin') sph(head, A.nose, 0.032, 0.024, 0.026, 0, -0.04, -hs[2] - 0.005);
   sph(head, 0xff9db0, 0.04, 0.025, 0.01, -0.15, -0.03, -hs[2] + 0.06); // ほっぺ
   sph(head, 0xff9db0, 0.04, 0.025, 0.01, 0.15, -0.03, -hs[2] + 0.06);
-  // 前足(おてて): ネコはもとの丸い球状のおてて、他動物はカプセル前足
-  if (type === 'cat') {
+  // 前足(おてて): ネコ・イヌは丸い球状のおてて、他動物はカプセル前足
+  if (isRoundPet) {
     for (const s of [-1, 1]) {
       sph(upper, A.body, 0.066, 0.062, 0.072, s * 0.235, 0.265, -0.145);
       sph(upper, A.belly, 0.050, 0.046, 0.042, s * 0.235, 0.260, -0.192);
@@ -427,12 +430,24 @@ export function buildFigure(type, style = {}) {
       cap(upper, A.body, 0.036, 0.10, 0.0, 0.14, 0.24, 0.85, 0, 0);
       g.scale.setScalar(0.92); // もとのまるっこいフォルムが映えるサイズ感
       break;
+    case 'dog':
     case 'shiba':
-      cone(head, A.body, 0.075, 0.13, -0.14, 0.19, 0, 0, 0.3); cone(head, A.body, 0.075, 0.13, 0.14, 0.19, 0, 0, -0.3);
-      sph(head, A.belly, 0.12, 0.09, 0.09, 0, -0.07, -hs[2] + 0.07);
-      sph(head, 0xfff4e6, 0.03, 0.02, 0.01, -0.09, 0.09, -hs[2] + 0.01);
-      sph(head, 0xfff4e6, 0.03, 0.02, 0.01, 0.09, 0.09, -hs[2] + 0.01);
-      sph(upper, A.body, 0.12, 0.12, 0.12, 0, 0.34, 0.26);
+      // 柴犬風のピンと立った少し厚めの三角耳 + 白い内耳
+      cone(head, A.body, 0.082, 0.14, -0.145, 0.205, 0.01, -0.08, 0.28); cone(head, A.body, 0.082, 0.14, 0.145, 0.205, 0.01, -0.08, -0.28);
+      cone(head, A.belly, 0.046, 0.09, -0.145, 0.195, -0.02, -0.08, 0.28); cone(head, A.belly, 0.046, 0.09, 0.145, 0.195, -0.02, -0.08, -0.28);
+      // ぷっくり丸い白マズル＆白ほっぺ（裏白模様）
+      sph(head, A.belly, 0.115, 0.088, 0.095, 0, -0.062, -hs[2] + 0.055);
+      sph(head, A.belly, 0.155, 0.095, 0.085, -0.085, -0.045, -hs[2] + 0.085);
+      sph(head, A.belly, 0.155, 0.095, 0.085, 0.085, -0.045, -hs[2] + 0.085);
+      // 大きな黒鼻
+      sph(head, A.nose, 0.038, 0.028, 0.032, 0, -0.035, -hs[2] - 0.018);
+      // チャームポイントの白い豆眉（まろ眉）
+      sph(head, A.belly, 0.032, 0.022, 0.015, -0.088, 0.092, -hs[2] + 0.015);
+      sph(head, A.belly, 0.032, 0.022, 0.015, 0.088, 0.092, -hs[2] + 0.015);
+      // 背中にくるんと丸まった可愛い巻きしっぽ
+      sph(upper, A.body, 0.085, 0.095, 0.095, 0, 0.22, 0.255);
+      sph(upper, A.belly, 0.065, 0.065, 0.065, 0, 0.265, 0.245);
+      g.scale.setScalar(0.92);
       break;
     case 'penguin': {
       cone(head, A.nose, 0.04, 0.09, 0, -0.02, -hs[2] - 0.03, -Math.PI / 2, 0);
