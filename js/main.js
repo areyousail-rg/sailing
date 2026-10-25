@@ -1,7 +1,8 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, randomizeWindShifts } from './sim.js';
+import { Recorder, openReview } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
@@ -23,16 +24,16 @@ const rng = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
 
 // ---------- 設定(保存) ----------
 const VENUES = [
-  { id: 'hakkeijima', label: '八景島 (横浜)', icon: '🎢', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
-  { id: 'enoshima', label: '江の島 (湘南)', icon: '🏝️', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
+  { id: 'hakkeijima', label: '八景島 (横浜)', icon: '', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
+  { id: 'enoshima', label: '江の島 (湘南)', icon: '', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
 ];
 const COURSE_MODES = [
-  { id: 'trapezoid', label: 'トラペゾイド', icon: '⛵' },
-  { id: 'upwind', label: '上マークフィニッシュ', icon: '🏁' },
+  { id: 'trapezoid', label: 'トラペゾイド', icon: '' },
+  { id: 'upwind', label: '上マークフィニッシュ', icon: '' },
 ];
 const PENALTY_MODES = [
-  { id: 'off', label: 'ペナルティ無 (違反表示のみ・レース続行)', icon: '🟢' },
-  { id: 'on', label: 'ペナルティ有 (360°/720°回転・DSQ有)', icon: '⚖️' },
+  { id: 'off', label: 'ペナルティなし', icon: '' },
+  { id: 'on', label: 'ペナルティあり (360°/720°・DSQ)', icon: '' },
 ];
 const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
 const defaults = { venue: 'hakkeijima', courseMode: 'trapezoid', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
@@ -65,7 +66,7 @@ window.addEventListener('resize', () => { renderer.setSize(window.innerWidth, wi
 
 // ---------- 状態 ----------
 const state = { phase: 'menu', t: START_T, paused: false, sig: 0, pFinish: null, firstFinish: null, resultShown: false, count: -1, ff: false, pAI: null };
-let autoTrim = true, lastFlap = 0;
+let autoTrim = true, lastFlap = 0, recorder = null;
 let boats = [], ais = [], models = [], player = null, crewOptions = [...CREW_TYPES];
 const keys = new Set();
 
@@ -398,17 +399,18 @@ function updateHUD(sorted) {
   if (hud.tack) { hud.tack.textContent = b.tack > 0 ? '右舷' : '左舷'; hud.tack.className = b.tack > 0 ? 'stbd' : 'port'; }
   hud.sheet.style.width = Math.round(b.sheet * 100) + '%';
   hud.sheetOpt.style.left = Math.round(b.sOpt * 100) + '%';
-  hud.autoLbl.textContent = autoTrim ? 'セールAUTO' : 'MANUAL'; hud.autoLbl.className = autoTrim ? '' : 'off';
+  hud.autoLbl.textContent = autoTrim ? 'AUTO' : 'MANUAL'; hud.autoLbl.className = autoTrim ? '' : 'off';
   if (hud.pole) {
     const st = b.pole ? (b.poleK < 1 ? 'UP…' : 'UP') : b.poleK > 0 ? 'DOWN…' : 'DOWN';
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
-  // ブランケット表示: 「ブランケット XX%」と横長ゲージバーのみ (リーバウ効果は文字列表示せずテルテールのみに反映)
+  // ブランケット/バックウインド表示: 風上艇の風影=ブランケット、風下艇のリーチからの吹き返し(風上側で失速)=バックウインド
   const blkPct = Math.round(b.cover * 100);
   if (blkPct >= 5) {
     hud.blk.style.display = 'flex';
-    if (hud.blkTxt) hud.blkTxt.textContent = `ブランケット ${blkPct}%`;
+    const isBack = b.back > 0.03 && b.back >= (b.cover - b.back);
+    if (hud.blkTxt) hud.blkTxt.textContent = `${isBack ? 'バックウインド' : 'ブランケット'} ${blkPct}%`;
     if (hud.blkFill) hud.blkFill.style.width = `${blkPct}%`;
     hud.blk.classList.toggle('mid', blkPct >= 35 && blkPct < 65);
     hud.blk.classList.toggle('high', blkPct >= 65);
@@ -430,8 +432,8 @@ function updateHUD(sorted) {
     hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に${turns}ターンせよ (${pct}%)${cw}`;
   } else hud.pen.style.display = 'none';
   hud.ocs.style.display = !isPrac && b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
-  hud.cam.textContent = '📷 ' + CAM_MODES[cam.mode] + ' [C]';
-  if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== '📷 ' + nx) hud.tCam.textContent = '📷 ' + nx; }
+  hud.cam.textContent = 'CAM  ' + CAM_MODES[cam.mode] + ' [C]';
+  if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== nx) hud.tCam.textContent = nx; }
   if (!isPrac) {
     const c = Math.ceil(-t);
     if (t < 0 && t > -11) { hud.big.textContent = c; hud.big.style.opacity = 1; hud.big.classList.toggle('flash', t > -1); }
@@ -475,8 +477,8 @@ function handleProgress(b, evs) {
       continue;
     }
     if (!b.isPlayer) continue;
-    if (e.type === 'rounded') toast(`${e.leg.name}マーク回航 ✓`, 'good', 2500);
-    else if (e.type === 'gate') toast('3ゲート通過 ✓ ― 風上の1マークへ', 'good', 3000);
+    if (e.type === 'rounded') toast(`${e.leg.name}マーク回航`, 'good', 2500);
+    else if (e.type === 'gate') toast('4ゲート通過 ― 風上の1マークへ', 'good', 3000);
     else if (e.type === 'wrongSide') toast('回航方向が違います(ルール28): マークを左舷に見て、マークの外側を回り直してください', 'warn');
   }
 }
@@ -522,8 +524,10 @@ function handleCollision(e) {
 function startRace() {
   initAudio();
   randomizeStartLine();
+  randomizeWindShifts(Date.now() ^ (rng() * 1e9));
   applyVenue();
   makeFleet();
+  recorder = new Recorder(boats, LEGS, { venue: cfg.venue, courseMode: cfg.courseMode, sea: SEA.label });
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   document.body.classList.remove('menuOpen'); cam.menuOffset = false;
@@ -613,9 +617,9 @@ function practiceStep(dt, time) {
   player.update(dt, time, boats);
   if (state.phase === 'practice') {
     for (const e of updateProgress(player, 10)) {
-      if (e.type === 'rounded') toast(`${e.leg.name}マーク回航 ✓`, 'good', 2500);
-      else if (e.type === 'gate') toast('4ゲート通過 ✓ ― 風上の1マークへ', 'good', 3000);
-      else if (e.type === 'finish') { player.finished = false; player.leg = 0; toast('フィニッシュ通過 ✓ ― 1マークへ戻って練習を続けられます', 'good', 3500); }
+      if (e.type === 'rounded') toast(`${e.leg.name}マーク回航`, 'good', 2500);
+      else if (e.type === 'gate') toast('4ゲート通過 ― 風上の1マークへ', 'good', 3000);
+      else if (e.type === 'finish') { player.finished = false; player.leg = 0; toast('フィニッシュ通過 ― 1マークへ戻って練習を続けられます', 'good', 3500); }
     }
   }
 }
@@ -634,7 +638,7 @@ function simStep(dt) {
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished && !player.dsq) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   for (const b of boats) b.update(dt, t, boats);
-  for (const e of resolveCollisions(boats, t)) handleCollision(e);
+  for (const e of resolveCollisions(boats, t)) { if (recorder) recorder.event(e, t); handleCollision(e); }
   for (const b of boats) {
     if (b.penaltyUpgraded !== null) {
       const r = b.penaltyUpgraded;
@@ -656,9 +660,10 @@ function simStep(dt) {
       }
     }
     if (!b.dsq) handleProgress(b, updateProgress(b, t));
-    if (b.ocs && t >= 0 && b.a < lineA(b.c) - 2) { b.ocs = false; if (b.isPlayer) toast('OCS解消 ✓ 再スタート!', 'good', 3000); }
-    if (b.penaltyDone) { b.penaltyDone = false; if (b.isPlayer && !state.ff) toast('ペナルティ消化 ✓', 'good', 3000); }
+    if (b.ocs && t >= 0 && b.a < lineA(b.c) - 2) { b.ocs = false; if (b.isPlayer) toast('OCS解消 再スタート!', 'good', 3000); }
+    if (b.penaltyDone) { b.penaltyDone = false; if (b.isPlayer && !state.ff) toast('ペナルティ消化', 'good', 3000); }
   }
+  if (recorder) recorder.step(dt, t, boats, progressOf, lineA);
 }
 
 // 自艇フィニッシュ後: 残りの艇を早送りで走らせ、制限時間内のフィニッシュタイムを計測する
@@ -684,6 +689,18 @@ function showResult() {
   const p = fin.indexOf(player) + 1;
   $('resultTitle').textContent = player.dsq ? `DSQ (失格 — ${player.dsqReason})` : p ? `${p}位 / ${boats.length}艇` : 'DNF';
   $('result').classList.remove('hidden');
+  if (recorder) {
+    recorder.finalize(boats, state.t);
+    const rec = recorder;
+    let rb = $('reviewBtn');
+    if (!rb) {
+      rb = document.createElement('button');
+      rb.id = 'reviewBtn'; rb.type = 'button'; rb.className = 'btnSec'; rb.textContent = '振り返り';
+      const again = $('againBtn');
+      if (again && again.parentNode) again.parentNode.insertBefore(rb, again); else $('result').appendChild(rb);
+    }
+    rb.onclick = () => openReview(rec, { nameOf, playerId: player.id, marks: MARKS, courseMode: COURSE_MODE, legs: LEGS, lineA, speedScale: SPEED_SCALE, kt: KT });
+  }
 }
 
 // ---------- メインループ ----------
@@ -708,6 +725,7 @@ function loop() {
   const raw = Math.min(0.1, clock.getDelta());
   const dt = Math.min(0.05, raw);
   const time = performance.now() / 1000;
+  SEA.clock = state.phase === 'race' ? state.t : time; // 艇モデル・マーク・航跡の上下動を物理と同じ海面時刻で同期
   
   if (state.phase === 'race' && !state.paused) {
     let rem = dt;
@@ -857,13 +875,19 @@ function computeSideBias(venueId, windDeg) {
   return { bias: -0.50, desc: 'やや左海面ブロー優勢傾向' };
 }
 
+// 海面・風向・風速から波の種類(三角波/うねり/短周期の風浪)を決めて物理と海面描画へ反映
+function applySea(windDeg, kt) {
+  setSeaState(cfg.venue, windDeg, kt);
+  if (world.setSea) world.setSea(SEA);
+}
+
 async function fetchRealWeather(venueId) {
   if (weatherCache[venueId]) return weatherCache[venueId];
   const v = VENUES.find((x) => x.id === venueId) || VENUES[0];
   const infoEl = $('realWeatherInfo');
   if (infoEl) {
     infoEl.classList.remove('hidden');
-    infoEl.textContent = `🌐 ${v.label} の現在の実況気象(Open-Meteo 気象庁MSM)を取得中...`;
+    infoEl.textContent = `${v.label} 実況気象を取得中 — Open-Meteo / 気象庁MSM`;
   }
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${v.lat}&longitude=${v.lon}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn`;
@@ -890,7 +914,7 @@ function updateWeatherInfoUI(windDeg, kt, gustKt, desc, fallback) {
   infoEl.classList.remove('hidden');
   const dirStr = `${compassDir(windDeg)} (${windDeg}°)`;
   const note = fallback ? '(標準風速・ブロー移動あり)' : `(ガスト ${gustKt}kt・ブロー移動あり)`;
-  infoEl.textContent = `🌐 現地リアル気象＋動的ブロー: 風向 ${dirStr} / 風速 ${kt}kt ${note} ｜ 海面傾向: ${desc}`;
+  infoEl.textContent = `現地実況  風向 ${dirStr}  風速 ${kt}kt ${note}  ｜  ${desc}${SEA.label ? `  ｜  波: ${SEA.label}` : ''}`;
 }
 
 function applyVenue() {
@@ -904,21 +928,21 @@ function applyVenue() {
   if (cached) {
     const { bias, desc } = computeSideBias(cfg.venue, cached.windDeg);
     setWindParams(cached.effKt, bias);
-    world.setVenue(cfg.venue, cached.windDeg, bias);
+    world.setVenue(cfg.venue, cached.windDeg, bias); applySea(cached.windDeg, cached.effKt);
     rebuildObstacles();
     updateWeatherInfoUI(cached.windDeg, cached.rawKt, cached.gustKt, desc, cached.fallback);
   } else {
     // 初回取得: まずデフォルトで初期化し、非同期で1回だけ取得して反映
     const { bias, desc } = computeSideBias(cfg.venue, v.defaultWindDeg);
     setWindParams(v.defaultWindKt, bias);
-    world.setVenue(cfg.venue, v.defaultWindDeg, bias);
+    world.setVenue(cfg.venue, v.defaultWindDeg, bias); applySea(v.defaultWindDeg, v.defaultWindKt);
     rebuildObstacles();
     updateWeatherInfoUI(v.defaultWindDeg, v.defaultWindKt, v.defaultWindKt + 3, desc, false);
     fetchRealWeather(cfg.venue).then((w) => {
       if (state.phase !== 'menu') return;
       const bInfo = computeSideBias(cfg.venue, w.windDeg);
       setWindParams(w.effKt, bInfo.bias);
-      world.setVenue(cfg.venue, w.windDeg, bInfo.bias);
+      world.setVenue(cfg.venue, w.windDeg, bInfo.bias); applySea(w.windDeg, w.effKt);
       rebuildObstacles();
       makeFleet();
       cam.inited = false;
