@@ -35,11 +35,14 @@ const PENALTY_MODES = [
   { id: 'off', label: 'ペナルティなし', icon: '' },
   { id: 'on', label: 'ペナルティあり (360°/720°・DSQ)', icon: '' },
 ];
+const PLAYER_BIB = 0x0e52b8; // 自艇クルー・スキッパーの青ビブス
+const CP_BIBS = [0x181c24, 0xf1f5f9, 0xc8242b]; // CP艇のビブス色（黒・白・赤）
 const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
-const defaults = { venue: 'hakkeijima', courseMode: 'trapezoid', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#f1c7a0', shirt: '#2b6cff', hat: '#ffffff', sailNo: '31804' };
+const defaults = { venue: 'hakkeijima', courseMode: 'trapezoid', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#d68e66', shirt: '#1a1d22', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
+if (cfg.skin === '#f1c7a0') cfg.skin = '#d68e66';
 // デフォルト選択は常にレース海面＝八景島(hakkeijima)、ヘルムスマン＝男性(human_m)、クルー＝ネコ(cat)で初期化
 cfg.venue = 'hakkeijima';
 cfg.helm = 'human_m';
@@ -72,7 +75,7 @@ const keys = new Set();
 
 function humanStyle(random) {
   if (!random) return { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat) };
-  const skins = [0xf1c7a0, 0xe0ac86, 0xc68642, 0x8d5524, 0xffdbb4];
+  const skins = [0xd68e66, 0xcf855c, 0xc68642, 0x8d5524, 0xdba07b];
   const c = new THREE.Color().setHSL(rng(), 0.7, 0.5), h = new THREE.Color().setHSL(rng(), 0.5, 0.75);
   return { skin: skins[(rng() * skins.length) | 0], shirt: c.getHex(), hat: h.getHex() };
 }
@@ -80,7 +83,8 @@ function randomCrewSpec() {
   const pool = crewOptions.filter((c) => !c.id.startsWith('custom:'));
   const r = rng();
   const type = r < 0.25 ? 'human_m' : r < 0.45 ? 'human_f' : pool[(rng() * pool.length) | 0].id;
-  return { type, style: { ...humanStyle(true), jacket: new THREE.Color().setHSL(rng(), 0.9, 0.55).getHex() } };
+  const jacket = CP_BIBS[(rng() * CP_BIBS.length) | 0];
+  return { type, style: { ...humanStyle(true), jacket } };
 }
 
 function clearFleet() {
@@ -90,7 +94,7 @@ function clearFleet() {
   }
   boats = []; ais = []; models = []; world.wake.reset();
 }
-function makeFleet() {
+function makeFleet(onlyPlayer = false) {
   clearFleet();
   hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
   // 強いCP艇(k=1..4)が特に上側の端っこ(本部船すぐ内側 c=+55..+71)からも確実に出るよう、上端ターゲットを平行レーンで配置
@@ -122,7 +126,8 @@ function makeFleet() {
   // 自艇は低速時の1.5倍の下流れを考慮し、本部船(c=LINE_HALF)の右側(c=LINE_HALF+36)に配置
   const pslot = { a: -35, c: LINE_HALF + 36, targetC: LINE_HALF - 5 };
   const used = new Set([cfg.sailNo]);
-  for (let k = 0; k < N_BOATS; k++) {
+  const count = onlyPlayer ? 1 : N_BOATS;
+  for (let k = 0; k < count; k++) {
     const isP = k === 0;
     let no; do { no = String(1000 + ((rng() * 30999) | 0)); } while (used.has(no)); used.add(no);
     const color = new THREE.Color().setHSL((k * 0.618) % 1, 0.65, 0.5).getHex();
@@ -141,7 +146,7 @@ function makeFleet() {
     boats.push(b);
     let helm, crew;
     if (isP) {
-      const jacket = 0xff7a1a;
+      const jacket = PLAYER_BIB;
       helm = { type: cfg.helm, style: { ...humanStyle(false), jacket } };
       crew = { type: cfg.crew, style: { ...humanStyle(false), jacket } };
     } else { helm = randomCrewSpec(); crew = randomCrewSpec(); }
@@ -159,7 +164,7 @@ function rebuildPlayerModel() {
   if (models[0].dispose) models[0].dispose();
   scene.remove(models[0].root);
   player.sailNo = cfg.sailNo;
-  const jacket = 0xff7a1a;
+  const jacket = PLAYER_BIB;
   const helm = { type: cfg.helm, style: { ...humanStyle(false), jacket } };
   const crew = { type: cfg.crew, style: { ...humanStyle(false), jacket } };
   const m = new BoatModel(player, helm, crew);
@@ -587,7 +592,6 @@ function startRace() {
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('orientation').classList.add('hidden'); $('hud').classList.remove('hidden');
   clearOrientHighlight();
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
-  document.body.classList.add('hintOn'); clearTimeout(window.__hintT); window.__hintT = setTimeout(() => document.body.classList.remove('hintOn'), 5000);
   const deg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
   const favLabel = (FAVORED === 'even' || deg === 0) ? '0°有利なし' : `${deg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
   toast(`スタート1分前 (${favLabel})`, 'info', 6500);
@@ -661,81 +665,22 @@ function clearOrientHighlight() {
     const el = $(id);
     if (el) el.classList.remove('on');
   });
-  const callout = $('orientCallout');
-  if (callout) callout.classList.add('hidden');
-  const svg = $('orientPointerSvg');
-  if (svg) svg.innerHTML = '';
   const revDemo = $('orientReviewDemo');
   if (revDemo) revDemo.classList.add('hidden');
 }
 
-// 実際の画面上のどのUI要素(ボタン/計器)を指しているかをハイライト枠＋矢印線＋吹き出しで明示する
-function updateOrientVisualPointer(selectors, badgeTxt, descHtml) {
+// 説明テキストは上部のカード(#orientCard)のみに表示し、対象ボタン・計器は周囲を赤く点滅(.orientTargetHighlight)させて示す
+function updateOrientVisualPointer(selectors) {
   document.querySelectorAll('.orientTargetHighlight').forEach((el) => el.classList.remove('orientTargetHighlight'));
-  const callout = $('orientCallout');
-  const badgeEl = $('orientCalloutBadge');
-  const textEl = $('orientCalloutText');
-  const svg = $('orientPointerSvg');
-  if (!callout || !svg) return;
-
-  const rects = [];
   for (const sel of selectors) {
     const nodes = document.querySelectorAll(sel);
     nodes.forEach((el) => {
       const r = el.getBoundingClientRect();
       if (r.width > 4 && r.height > 4 && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden') {
         el.classList.add('orientTargetHighlight');
-        rects.push(r);
       }
     });
   }
-  if (!rects.length) {
-    callout.classList.add('hidden');
-    svg.innerHTML = '';
-    return;
-  }
-
-  if (badgeEl) badgeEl.textContent = badgeTxt;
-  if (textEl) textEl.innerHTML = descHtml;
-  callout.classList.remove('hidden');
-
-  const W = window.innerWidth, H = window.innerHeight;
-  const primary = rects[0];
-  const pCx = (primary.left + primary.right) * 0.5;
-  const pCy = (primary.top + primary.bottom) * 0.5;
-  const cw = callout.offsetWidth || 300;
-  const ch = callout.offsetHeight || 68;
-
-  // 対象UIが画面下半分にある場合はその上側に、上半分にある場合は下側または横側に吹き出しを配置
-  let cx, cy;
-  if (pCy > H * 0.55) {
-    cx = clamp(pCx - cw * 0.5, 14, W - cw - 14);
-    cy = Math.max(175, primary.top - ch - 28);
-  } else {
-    cx = clamp(pCx - cw * 0.5, 14, W - cw - 14);
-    cy = Math.min(H - ch - 110, primary.bottom + 26);
-  }
-  callout.style.left = `${Math.round(cx)}px`;
-  callout.style.top = `${Math.round(cy)}px`;
-
-  const cMidX = cx + cw * 0.5;
-  const cMidY = cy + ch * 0.5;
-  const linesSvg = rects.map((r) => {
-    const tx = (r.left + r.right) * 0.5;
-    const ty = pCy > H * 0.55 ? r.top - 4 : r.bottom + 4;
-    const sx = clamp(tx, cx + 18, cx + cw - 18);
-    const sy = pCy > H * 0.55 ? cy + ch : cy;
-    const ang = Math.atan2(ty - sy, tx - sx);
-    const ah = 10;
-    const p1x = tx - Math.cos(ang - 0.42) * ah, p1y = ty - Math.sin(ang - 0.42) * ah;
-    const p2x = tx - Math.cos(ang + 0.42) * ah, p2y = ty - Math.sin(ang + 0.42) * ah;
-    return `
-      <line x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="#f2c200" stroke-width="3" stroke-dasharray="6 4"/>
-      <polygon points="${tx.toFixed(1)},${ty.toFixed(1)} ${p1x.toFixed(1)},${p1y.toFixed(1)} ${p2x.toFixed(1)},${p2y.toFixed(1)}" fill="#f2c200"/>
-      <rect x="${(r.left - 4).toFixed(1)}" y="${(r.top - 4).toFixed(1)}" width="${(r.width + 8).toFixed(1)}" height="${(r.height + 8).toFixed(1)}" rx="4" fill="none" stroke="#f2c200" stroke-width="2.5"/>
-    `;
-  }).join('');
-  svg.innerHTML = linesSvg;
 }
 
 function applyOrientStepHighlights(stepIdx, elapsed) {
@@ -989,7 +934,7 @@ function startOrientation() {
   initAudio();
   randomizeStartLine();
   applyVenue();
-  makeFleet();
+  makeFleet(true);
   state.phase = 'orientation'; state.t = -50; state.paused = false; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.ff = false; state.pAI = null;
   const pBtn = $('orientPauseBtn');
   if (pBtn) { pBtn.textContent = '停止'; pBtn.classList.remove('paused'); }
@@ -1422,22 +1367,30 @@ function initTouch() {
   tap('poleUpBtn', () => setPlayerPole(true));
   tap('poleDownBtn', () => setPlayerPole(false));
 
-  if (!IS_TOUCH) return;
-  document.body.classList.add('touch'); $('touch').classList.remove('hidden');
+  if (IS_TOUCH) document.body.classList.add('touch');
+  if ($('touch')) $('touch').classList.remove('hidden');
   const hold = (id, code) => {
     const el = $(id);
+    if (!el) return;
     const on = (e) => { keys.add(code); el.classList.add('on'); e.preventDefault(); };
     const off = () => { keys.delete(code); el.classList.remove('on'); };
     el.addEventListener('pointerdown', on);
     for (const n of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(n, off);
   };
   hold('tLeft', 'ArrowLeft'); hold('tRight', 'ArrowRight'); hold('tUp', 'ArrowUp'); hold('tDown', 'ArrowDown');
-  
-  const tapTouch = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); if (state.phase === 'race' || state.phase === 'menu' || state.phase === 'practice') fn(); });
+
+  const tapTouch = (id, fn) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (state.phase === 'race' || state.phase === 'menu' || state.phase === 'practice') fn();
+    });
+  };
   tapTouch('tPole', () => setPlayerPole(!player.pole));
   tapTouch('tCam', () => setCamera(cam.mode + 1)); tapTouch('tAuto', () => setAuto(!autoTrim));
-  $('tAuto').classList.add('on');
-  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  if ($('tAuto')) $('tAuto').classList.add('on');
+  if (IS_TOUCH) document.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 // ---------- 気象モード・Open-Meteo連携・海面有利傾向 ----------
@@ -1611,7 +1564,7 @@ function initPreview() {
 function updatePreview() {
   if (!pv) return;
   pv.g.clear();
-  const st = { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat), jacket: 0xff7a1a };
+  const st = { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat), jacket: PLAYER_BIB };
   // buildFigureは顔が -z 向きなので、Math.PI 回転してカメラ(+z)側・正面を向かせる
   const a = buildFigure(cfg.helm, st); a.position.set(-0.5, a.userData.upper ? 0.16 : 0, 0); a.rotation.y = Math.PI + 0.22; pv.g.add(a);
   const b = buildFigure(cfg.crew, st); b.position.set(0.5, b.userData.upper ? 0.16 : 0, 0); b.rotation.y = Math.PI - 0.22; pv.g.add(b);
