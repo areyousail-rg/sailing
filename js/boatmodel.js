@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { buildFigure } from './crew.js';
 import { buildHull, block, rope, ropeGeo, ropeMat, M, FLOOR_Y, deckY } from './snipehull.js';
-import { clamp } from './sim.js';
+import { clamp, waveSample, SEA } from './sim.js';
 
 // 船体シェイプ
 const hullShape = new THREE.Shape();
@@ -484,10 +484,18 @@ export class BoatModel {
     this.root.position.set(b.x, 0, b.z);
     this.root.rotation.y = -b.h;
     const ph = t * 1.6 + this.phase;
+    // 海況に合わせた上下動(ヒーブ)と縦揺れ(ピッチ): 物理と同じ波関数を進行方向に沿って評価する
+    const hx = Math.sin(b.h), hz = -Math.cos(b.h);
+    const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
+    const heave = ws.hLong + (ws.h - ws.hLong) * 0.35;
+    const pitchW = clamp(Math.atan(ws.slopeLong + (ws.slope - ws.slopeLong) * 0.55) * 0.85, -0.2, 0.2);
+    // 横方向の傾き(三角波の交差波で左右にも揺さぶられる)
+    const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
+    const rollW = clamp(Math.atan(wsR.slope) * 0.35, -0.08, 0.08);
     // コクピット床(FLOOR_Y)が海面(y=0)より下に潜って海が見えないよう、基準高さを上げて上下動も小さくする
-    this.body.position.y = 0.12 + 0.05 * Math.sin(ph) + 0.02 * Math.sin(ph * 2.3);
-    this.body.rotation.z = b.heel + 0.025 * Math.sin(ph * 0.8);
-    this.body.rotation.x = 0.03 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.2;
+    this.body.position.y = 0.12 + heave + 0.015 * Math.sin(ph);
+    this.body.rotation.z = b.heel + 0.012 * Math.sin(ph * 0.8) - rollW;
+    this.body.rotation.x = pitchW + 0.01 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.2;
 
     if (this.rudderGroup) {
       this.rudderGroup.rotation.y = b.steer * 0.6;
