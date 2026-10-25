@@ -299,23 +299,23 @@ export function computeBlanket(boats) {
       // 2) リーバウ効果(Lee-Bow / Safe Leeward):
       // クローズ〜クローズリーチで同タックの2艇において、B艇がA艇の風下側(leeDist: 1.2〜12.5m)かつ
       // ほぼ横〜斜め前方(ahead: -1.2〜11.0m)にいるとき:
-      // ・風下艇BはA艇セールの循環によるアップウォッシュ(吹き上げ)とスロット効果で「少しのぼせる(リフト＋微増速)」
-      // ・風上艇AはB艇セールリーチからのバックウィンド(排気)を浴びてヘダー＆ブランケット減速を強く受ける
+      // ・風下艇BはA艇セールの循環によるアップウォッシュ(吹き上げ)とスロット効果で「わずかにのぼせる」(効果は従来の1/3に抑制)
+      // ・風上艇AはB艇セールリーチからのバックウィンド(排気)を浴びてヘダー＆減速を受ける
       if (A.tack === B.tack && A.twa > 0.48 && A.twa < 1.42 && B.twa > 0.48 && B.twa < 1.42) {
         if (leeDist > 1.2 && leeDist < 12.5 && ahead > -1.2 && ahead < 11.0) {
           const kLee = Math.exp(-Math.pow((leeDist - 4.2) / 3.8, 2)) * Math.exp(-Math.pow((ahead - 2.8) / 4.2, 2));
           if (kLee > 0.06) {
-            // 風下前方のB艇(リーバウ艇): 最大約4.5°のリフト + 約3.8%の流速ブーストでのぼせる
-            const liftRad = 0.078 * kLee;
+            // 風下前方のB艇(リーバウ艇): 従来の1/3の控えめなリフトと微増速
+            const liftRad = 0.026 * kLee;
             if (liftRad > B.windBendT) {
               B.windBendT = Math.max(B.windBendT, liftRad);
-              B.flowBoostT = Math.max(B.flowBoostT, 0.038 * kLee);
+              B.flowBoostT = Math.max(B.flowBoostT, 0.013 * kLee);
               if (kLee > 0.22) B.aeroTag = 'leebow';
             }
-            // 風上後方のA艇(被リーバウ艇): バックウィンドによるヘダーとブランケット悪風
+            // 風上後方のA艇(被リーバウ艇): バックウィンドによるヘダーと悪風
             if (ahead > -0.2) {
               const backK = kLee * smoothstep(-0.2, 2.0, ahead);
-              A.windBendT -= 0.092 * backK;
+              A.windBendT -= 0.055 * backK;
               A.coverT = clamp(A.coverT + 0.65 * backK, 0, 1.0);
               A.backT = clamp(A.backT + 0.65 * backK, 0, 1.0);
               if (backK > 0.20 && !A.aeroTag) A.aeroTag = 'backwind';
@@ -324,10 +324,7 @@ export function computeBlanket(boats) {
         }
       }
 
-      // 3) 別タック艇のスターン後方通過時のリフト(クローズで別タックの他艇の後ろを通過すると一瞬のぼせる):
-      // B艇がクローズホールド(B.twa: 0.50〜1.25)で、別タックのA艇(A.tack !== B.tack)のスターン直後
-      // (ahead: -16.5m〜-1.5m、横ズレ leeDist: -5.5m〜+9.5m)を横切る瞬間、
-      // A艇のセールがスターン方向へ曲げた気流がB艇には「リフト(風が横から入る角度変化)」として作用し、一瞬のぼせる
+      // 3) 別タック艇のスターン後方通過時のリフト(従来の1/3に抑制):
       if (A.tack !== B.tack && B.twa > 0.50 && B.twa < 1.25 && A.twa > 0.50 && A.twa < 2.2) {
         const behindA = -ahead; // A艇の船尾から後方への距離
         if (behindA > 1.4 && behindA < 16.5 && leeDist > -5.5 && leeDist < 9.5) {
@@ -335,12 +332,11 @@ export function computeBlanket(boats) {
           const kLat = Math.exp(-Math.pow((leeDist - 1.8) / 4.2, 2));
           const kDuck = kBehind * kLat;
           if (kDuck > 0.08) {
-            // スターン直後を通過する瞬間、風影ペナルティを緩和しつつ最大約5.5°(0.096rad)のリフト＋微ガストを付与
-            B.coverT *= (1 - 0.65 * kDuck);
-            const sternLift = 0.096 * kDuck;
+            B.coverT *= (1 - 0.25 * kDuck);
+            const sternLift = 0.032 * kDuck;
             if (sternLift > B.windBendT) {
               B.windBendT = sternLift;
-              B.flowBoostT = Math.max(B.flowBoostT, 0.042 * kDuck);
+              B.flowBoostT = Math.max(B.flowBoostT, 0.014 * kDuck);
               if (kDuck > 0.22) B.aeroTag = 'sternlift';
             }
           }
@@ -375,11 +371,13 @@ export class Boat {
     this.x = 0; this.z = 0; this.h = 0; this.v = 0;
     this.steer = 0; this.sheet = 1; this.throttle = 1;
     this.tack = 1; this.tacking = false; this.tackTimer = 0;
-    this.rel = 0; this.twa = 0; this.windFrom = W0; this.windF = 1;
+    this.tackCount = 0; this.gybeCount = 0;
+    this.rel = 0; this.twa = 0; this.effTwaDeg = 0; this.byTheLee = 0;
+    this.windFrom = W0; this.windF = 1;
     this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null; this.penaltyUpgraded = null;
-    this.leg = 0; this.ocs = false; this.finished = false; this.finishTime = 0;
+    this.leg = 0; this.ocs = false; this.started = false; this.finished = false; this.finishTime = 0;
     this.a = undefined; this.c = 0; this.visit = null;
-    this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.hike = 0.15; this.turned = 0;
+    this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.rollBias = 0; this.hike = 0.15; this.turned = 0;
     this.sOpt = 1; this.luff = 0; this.stall = 0;
     this.cover = 0; this.coverT = 0; this.back = 0; this.backT = 0;
     this.waveF = 1; this.waveH = 0; this.waveSlope = 0; this.waveLoss = 0;
@@ -396,7 +394,9 @@ export class Boat {
     const w = windAt(x, z, -60);
     this.windFrom = w.from;
     const rel = wrap(w.from - h);
-    this.rel = rel; this.twa = Math.abs(rel); this.tack = rel >= 0 ? 1 : -1;
+    this.rel = rel; this.twa = Math.abs(rel); this.effTwaDeg = (this.twa * 180) / Math.PI;
+    this.tack = rel >= 0 ? 1 : -1;
+    this.byTheLee = 0;
   }
   // kind: 'tack'(風上側へ回頭) / 'gybe'(風下側へ回頭) / 未指定=自動
   startManeuver(kind) {
@@ -404,8 +404,11 @@ export class Boat {
     const k = kind || (this.twa < Math.PI / 2 ? 'tack' : 'gybe');
     if (k === 'tack' && this.pole) return false; // ランチャーを上げたまま風上へは回れない
     if (k === 'gybe') this.pole = false; // ジャイブ時はランチャーを下ろす
-    const s0 = Math.sign(this.rel) || 1;
-    this.maneuver = { relNew: -this.rel, kind: k, s0, dir: k === 'tack' ? s0 : -s0, t: 0 };
+    const s0 = this.tack || (Math.sign(this.rel) || 1);
+    // ジャイブは180°ちょうどではなくセールが出ているため160°(旧タックから見て200°)付近で返して安定させる
+    const gybeTargetRad = (162 * Math.PI) / 180;
+    const relNew = k === 'tack' ? -s0 * clamp(Math.abs(this.rel), 0.68, 0.86) : -s0 * gybeTargetRad;
+    this.maneuver = { relNew, kind: k, s0, dir: k === 'tack' ? s0 : -s0, t: 0, flipped: false };
     this.maneuverStarted = k;
     return true;
   }
@@ -446,15 +449,54 @@ export class Boat {
     w.from = wrap(w.from + this.tack * this.windBend);
     this.windFrom = w.from; this.windF = w.f;
     let steer = this.steer;
+    let rollCmd = 0; // +は風下へオーバーヒール(上す/タック導入)、-は風上へアンヒール(落とす/ジャイブ導入)
     if (this.maneuver) {
       const m = this.maneuver; m.t += dt;
       const relNow = wrap(w.from - this.h);
-      const crossed = relNow * m.s0 < 0;
       const err = wrap(m.relNew - relNow);
-      if (!crossed) steer = m.dir;
-      else { steer = -clamp(err * 2.5, -1, 1); if (Math.abs(steer) < 0.5) steer = -0.5 * Math.sign(err || 1); }
-      if ((crossed && Math.abs(err) < 0.07) || m.t > 9) { this.maneuver = null; steer = 0; }
+      if (m.kind === 'tack') {
+        const crossed = relNow * m.s0 < 0;
+        // タック時は最初にオーバーヒール(風下へ傾ける)をかけてウェザーヘルムを作ってから登り始める
+        if (m.t < 0.36) {
+          rollCmd = m.s0 * 0.21;
+          steer = m.dir * clamp(m.t / 0.32, 0.25, 1.0);
+        } else if (!crossed) {
+          rollCmd = m.s0 * 0.14;
+          steer = m.dir;
+        } else {
+          // 風をまたいだ直後は旧風下ヒールから新タック側へロールを起こす
+          rollCmd = -m.s0 * 0.08 * Math.max(0, 1 - (m.t - 1.0) * 0.8);
+          steer = -clamp(err * 2.5, -1, 1);
+          if (Math.abs(steer) < 0.5) steer = -0.5 * Math.sign(err || 1);
+        }
+        if ((crossed && Math.abs(err) < 0.07) || m.t > 9) { this.maneuver = null; steer = 0; }
+      } else {
+        // ジャイブ時は最初にアンヒール(風上側へ傾ける)をかけてリーヘルムを作ってから落とし、
+        // セールが出ているため180°ではなく160°〜200°(新タック側160°〜168°)でセールを返す
+        const crossed160 = relNow * m.s0 < 0 && Math.abs(relNow) <= (168 * Math.PI) / 180;
+        if (crossed160) m.flipped = true;
+        if (m.t < 0.38) {
+          rollCmd = -m.s0 * 0.19; // アンヒール(風上側へ起こす/逆ヒール)をかけてから落とす
+          steer = m.dir * clamp(m.t / 0.34, 0.22, 0.95);
+        } else if (!m.flipped) {
+          rollCmd = -m.s0 * 0.13;
+          steer = m.dir * 0.92;
+        } else {
+          rollCmd = 0;
+          steer = -clamp(err * 2.4, -1, 1);
+        }
+        if ((m.flipped && Math.abs(err) < 0.08) || m.t > 8) { this.maneuver = null; steer = 0; }
+      }
+    } else if (!this.penalty) {
+      // 通常操舵時: 急激に上す際にはオーバーヒールをかけてから登り、落とす際にはアンヒールをかけてから落とす
+      const turnUp = steer * this.tack; // +ならラフ(上す)、-ならベア(落とす)
+      if (turnUp > 0.18) {
+        rollCmd = this.tack * clamp((turnUp - 0.15) * 0.22, 0, 0.17);
+      } else if (turnUp < -0.18) {
+        rollCmd = -this.tack * clamp((-turnUp - 0.15) * 0.22, 0, 0.17);
+      }
     }
+    this.rollBias += (rollCmd - this.rollBias) * (1 - Math.exp(-dt * 7.5));
     // ランチャー展開/収納(数秒かかる)。上げている間は POLE_MIN より風上へは切れ上がらない
     this.poleK = clamp(this.poleK + (this.pole ? dt / 1.6 : -dt / 0.9), 0, 1);
     if (this.pole && !this.maneuver && !this.penalty) {
@@ -464,11 +506,14 @@ export class Boat {
       if (twaP < POLE_MIN - 0.12) steer = -up * 0.6; // 風の振れで上り過ぎたら自動で落とす
     }
     const rateMax = 0.85 * (0.35 + 0.65 * clamp(Math.abs(this.v) / 2.5, 0, 1));
-    const dh = steer * rateMax * dt;
-    // リーバウや別タック艇スターン通過のリフト(windBend > 0)を受けた際、クローズ走行中なら船首が自然に少し風上へのぼせる
+    // オーバーヒール時はウェザーヘルムで上りやすく、アンヒール時はリーヘルムで落ちやすくなる回頭モーメント補助
+    const rollTurnBoost = this.rollBias * this.tack > 0.02 && steer * this.tack > 0 ? 1.12
+      : this.rollBias * this.tack < -0.02 && steer * this.tack < 0 ? 1.12 : 1.0;
+    const dh = steer * rateMax * rollTurnBoost * dt;
+    // リーバウや別タック艇スターン通過のリフト(windBend > 0)を受けた際、クローズ走行中なら船首が自然に少し風上へのぼせる(効果1/3)
     this.aeroClimb = 0;
     if (this.windBend > 0.008 && !this.maneuver && !this.tacking && !this.penalty && this.twa > (40.2 * Math.PI) / 180 && this.twa < 1.22) {
-      this.aeroClimb = this.tack * this.windBend * 0.58 * dt;
+      this.aeroClimb = this.tack * this.windBend * 0.20 * dt;
     }
     this.h = wrap(this.h + dh + this.aeroClimb);
     this.turned += Math.abs(dh);
@@ -511,16 +556,38 @@ export class Boat {
     }
     const rel = wrap(w.from - this.h);
     const twa = Math.abs(rel);
-    const nt = rel >= 0 ? 1 : -1;
-    if (nt !== this.tack) {
-      if (twa < Math.PI / 2) { this.tacking = true; this.tackTimer = 1.8; } else { this.v *= 0.93; }
-      this.tack = nt;
+    const rawSign = rel >= 0 ? 1 : -1;
+    // タックとジャイブの切り替わり判定:
+    // ・風上(twa < 90°)は 0°(風位)をまたいだ瞬間にタック
+    // ・風下(ランニング)はセールが外へ出ているため180°ちょうどでは返らず、
+    //   180°〜200°の間はバイザリー(旧タック維持)となり、200°(反対舷160°)に達した時またはジャイブ操作で168°まで回った時にセールが返る
+    const GYBE_LIMIT_RAD = (160 * Math.PI) / 180; // 反対舷160° = 旧タックから見て200°
+    const gybeManThresh = this.maneuver && this.maneuver.kind === 'gybe' ? (168 * Math.PI) / 180 : GYBE_LIMIT_RAD;
+    if (rawSign !== this.tack) {
+      if (twa < Math.PI / 2) {
+        this.tacking = true;
+        this.tackTimer = 1.8;
+        this.tack = rawSign;
+        if (t >= 0 && !this.finished && !this.dsq && !this.penalty) this.tackCount++;
+      } else if (twa <= gybeManThresh) {
+        this.v *= 0.92;
+        this.tack = rawSign;
+        if (this.pole) this.pole = false;
+        if (t >= 0 && !this.finished && !this.dsq && !this.penalty) this.gybeCount++;
+      }
     }
     if (this.tacking) {
       this.tackTimer -= dt;
       if (twa > 0.72 || this.tackTimer <= 0) { if (twa > 0.68) this.tacking = false; else if (this.tackTimer < -1.8) this.tacking = false; }
     }
     this.rel = rel; this.twa = twa;
+    // バイザリー判定: 風下走行中に風向が真後ろ(180°)を越えてブームと同じ側から吹いている状態(180°〜200°)
+    const isByTheLee = rawSign !== this.tack && twa >= Math.PI / 2;
+    const rawTwaDeg = (twa * 180) / Math.PI;
+    const effTwaDeg = isByTheLee ? 360 - rawTwaDeg : rawTwaDeg; // バイザリー時は 180°〜200°
+    this.effTwaDeg = effTwaDeg;
+    this.byTheLee = isByTheLee ? clamp((effTwaDeg - 180) / 20, 0, 1) : 0;
+
     // トリム評価(オーバー/アンダー)とラフ・ストール (風域のベスト角度に応じてシバー開始角PINCHも35°〜39°に変化)
     const localWindKt = BASE_WIND_KT * w.f;
     const optCloseDeg = bestCloseDeg(localWindKt);
@@ -539,11 +606,18 @@ export class Boat {
     const al = Math.hypot(ax, az) || 1e-6;
     this.awx = ax / al; this.awz = az / al; this.aws = al;
     this.awa = wrap(Math.atan2(-ax, az) - this.h);
-    const twaDeg = (twa * 180) / Math.PI;
+    const twaDeg = rawTwaDeg;
     const turning = this.tacking || (this.maneuver && this.maneuver.kind === 'tack');
     // タック回頭中は惰性が残るため減速を大幅に抑える
     const rawPolarV = polar(twaDeg, localWindKt) * SPEED_SCALE;
-    const polarV = turning ? Math.max(rawPolarV, V45_CLOSE * SPEED_SCALE * 0.74) : rawPolarV;
+    let polarV = turning ? Math.max(rawPolarV, V45_CLOSE * SPEED_SCALE * 0.74) : rawPolarV;
+    // 180°近く〜180°を超えてバイザリー(180°〜200°)に入った際はメインセールがジブを隠し気流が剥離して艇速が大きく落ちる
+    if (effTwaDeg > 176) {
+      const over180 = Math.max(0, effTwaDeg - 180);
+      const near180 = clamp((effTwaDeg - 176) / 4, 0, 1);
+      const byLeePenalty = 0.10 * near180 + 0.26 * clamp(over180 / 18, 0, 1); // 180°超で最大約36%減速
+      polarV *= (1 - byLeePenalty);
+    }
     // ランチャー: 下レグ(深い角度)でジブが開いて若干速くなる。リーチより上では逆効果
     const poleF = 1 + this.poleK * (0.065 * smoothstep(1.85, 2.6, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
     let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : 0.18) * Math.abs(steer)) * this.throttle;
@@ -573,30 +647,31 @@ export class Boat {
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
 
     // 風下側への流され(リーウェイ＆風圧ドリフト):
-    // 停止・極微速時のみ風下側へ少しずつ流され(従来の約半分)、一定の速度(約1.15kt以上)が出るとセンターボードが効いて流されなくなる
-    const vCut = 1.15 * KT * SPEED_SCALE;
-    const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.5);
-    const leewayV = 0.20 * slowF * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向(-nt)への横流れ(停止時のみ、走行中は0)
-    const windageV = 0.12 * slowF * SPEED_SCALE * w.f;                // 風下方向への吹き流され(停止時のみ、走行中は0)
-    // リーバウ・スターン通過リフト時はセンターボードの揚力で風上側(+nt)へもわずかにせり上がる
-    const liftLatV = this.windBend > 0.008 && this.v > vCut ? this.windBend * 1.15 * SPEED_SCALE : 0;
+    // スタート時など船が止まっている・極微速時の下流れを従来の1.5倍に設定し、一定の速度が出るとセンターボードが効いて流されなくなる
+    const vCut = 1.30 * KT * SPEED_SCALE;
+    const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.4);
+    const leewayV = 0.30 * slowF * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向への下流れ(従来の1.5倍)
+    const windageV = 0.18 * slowF * SPEED_SCALE * w.f;                // 風下方向への吹き流され(従来の1.5倍)
+    // リーバウ・スターン通過リフト時はセンターボードの揚力で風上側へわずかにせり上がる(効果1/3)
+    const nt = this.tack;
+    const liftLatV = this.windBend > 0.008 && this.v > vCut ? this.windBend * 0.38 * SPEED_SCALE : 0;
     const leeX = -nt * Math.cos(this.h) * (leewayV - liftLatV) - Math.sin(w.from) * windageV;
     const leeZ = -nt * Math.sin(this.h) * (leewayV - liftLatV) + Math.cos(w.from) * windageV;
 
     this.x += (Math.sin(this.h) * this.v + leeX) * dt;
     this.z += (-Math.cos(this.h) * this.v + leeZ) * dt;
 
-    // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力(ヒールを起こす動き)
+    // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力
+    // ＋ タック/上す際のオーバーヒール、ジャイブ/落とす際のアンヒール(rollBias)を合成
     const anglePress = Math.sin(clamp(twa, 0.2, Math.PI * 0.88)) * (0.35 + 0.65 * this.sheet) * (1 - 0.65 * smoothstep(1.85, 2.75, twa)) * (1 - 0.55 * this.luff);
     const windPress = Math.pow(clamp(localWindKt / 9.2, 0.25, 1.85), 1.25);
     const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
     const rawHeelPress = anglePress * windPress * speedPress;
-    // クルーとスキッパーは風圧と現在のヒール角に応じてハイクアウト量を調整し、船をフラットに起こす
     const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.18 + Math.abs(this.heel) * 1.35, 0.05, 1.0);
     this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
     const netHeel = Math.max(0.012, rawHeelPress * 0.24 - this.hike * 0.145);
-    const heelT = nt * clamp(netHeel, 0, 0.23);
-    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 2.8));
+    const heelT = clamp(nt * clamp(netHeel, 0, 0.23) + this.rollBias, -0.32, 0.32);
+    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.2));
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
   }
