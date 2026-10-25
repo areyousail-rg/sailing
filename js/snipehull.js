@@ -6,7 +6,7 @@ const L = 2.36;
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const uOf = (z) => clamp01((z + L) / (2 * L));
 
-export const FLOOR_Y = 0.07; // コクピット床
+export const FLOOR_Y = 0.12; // コクピット床(自己排水フロア・波頭が貫通しない十分な乾舷高さを確保)
 export const COAM = 0.50; // コクピット半幅 (スナイプ級の広いコクピット幅)
 export const ZC0 = -0.58, ZC1 = 1.66; // コクピット前端・後端
 
@@ -221,7 +221,7 @@ export function buildHull(accent = 0x2a77ff) {
   // 画像3枚目準拠: コクピット前部のみ(z = -0.54 〜 +0.04、長さ約0.58m)の低めの純白ケース(高さ th = 0.21m、サイドデッキより低い)
   // 上面は明るいシルバーのリムで、中央の黒いスリットはごく短く(長さ0.32m)再現
   const trunk = new THREE.Group();
-  const tw = 0.048, tz0 = -0.54, tz1 = 0.04, th = 0.21;
+  const tw = 0.048, tz0 = -0.54, tz1 = 0.04, th = 0.18;
   trunk.add(mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, (tz0 + tz1) / 2));
   // 上面のシルバーアルミプレート
   trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.012, 0.010, tz1 - tz0 + 0.01), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
