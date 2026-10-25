@@ -123,10 +123,10 @@ export class DroneCam {
       this.mount.updateWorldMatrix(true, false);
       this.mount.matrixWorld.decompose(this.cp, this.cq, this.cs);
       this.cam.position.copy(this.cp); this.cam.quaternion.copy(this.cq);
-      this.cam.rotateY(this.yaw); this.cam.rotateX(0.13 - this.pitch * 0.6); this.cam.rotateZ(-boat.heel * 0.45);
+      this.cam.rotateY(this.yaw); this.cam.rotateX(0.11 - this.pitch * 0.6); this.cam.rotateZ(-boat.heel * 0.45);
       
-      if (this.cam.near !== 0.20) { this.cam.near = 0.20; this.cam.updateProjectionMatrix(); }
-      if (Math.abs(this.cam.fov - 114) > 0.05) { this.cam.fov += (114 - this.cam.fov) * 0.2; this.cam.updateProjectionMatrix(); }
+      if (this.cam.near !== 0.16) { this.cam.near = 0.16; this.cam.updateProjectionMatrix(); }
+      if (Math.abs(this.cam.fov - 124) > 0.05) { this.cam.fov += (124 - this.cam.fov) * 0.25; this.cam.updateProjectionMatrix(); }
       return;
     }
 
