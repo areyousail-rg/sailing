@@ -128,7 +128,7 @@ export function progressOf(b) {
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   const tgt = L.type === 'mark' ? L.mark : L.center;
   const d = Math.hypot(b.c - tgt.c, b.a - tgt.a);
-  return L.cum + Math.max(0, L.len - d) - (b.ocs ? 50 : 0);
+  return L.cum + Math.max(0, L.len - d) - (b.ocs ? 50 : 0) - (b.started === false ? 30 : 0);
 }
 
 // 毎フレーム呼ぶ。イベント配列を返す。
@@ -138,6 +138,16 @@ export function updateProgress(b, t) {
   const prevA = b.a, prevC = b.c;
   b.a = cp.a; b.c = cp.c;
   if (b.finished || t < 0 || prevA === undefined) return ev;
+  // スタートライン通過判定 (ピン c=-LINE_HALF と本部船 c=+LINE_HALF の間を風下から風上へ切る)
+  if (!b.ocs && !b.started) {
+    const laNow = lineA(b.c), laPrev = lineA(prevC);
+    const inSpan = Math.abs(b.c) <= LINE_HALF + 3.5 || Math.abs(prevC) <= LINE_HALF + 3.5;
+    if (inSpan && b.a >= laNow - 0.4 && prevA <= laPrev + 4.0) {
+      b.started = true;
+    } else if (t < 1.5 && Math.abs(b.c) <= LINE_HALF + 2.5 && b.a <= laNow + 0.5 && b.a >= laNow - 25) {
+      // 号砲直後にライン内側からスタートする場合もライン通過でstartedになるよう待機
+    }
+  }
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
   if (!L) return ev;
   if (L.type === 'mark') {
@@ -154,7 +164,7 @@ export function updateProgress(b, t) {
       // ROUND_R(22m)圏から離れるのを待たず、マークの横を通過して次レグ方向へ回り込んだ瞬間に即座に回航判定
       const swept = b.visit.sweep * -L.side;
       const alongOut = dx * L.dirOut.c + dy * L.dirOut.a;
-      if (!b.ocs && b.visit.passed && ((swept > 0.36 && alongOut > -1.8) || swept > 0.62)) {
+      if (!b.ocs && b.started !== false && b.visit.passed && ((swept > 0.36 && alongOut > -1.8) || swept > 0.62)) {
         b.visit = null;
         b.leg++;
         ev.push({ type: 'rounded', leg: L });
@@ -162,18 +172,20 @@ export function updateProgress(b, t) {
     } else if (b.visit) {
       const v = b.visit; b.visit = null;
       const sideOk = v.sweep * -L.side > 0.22;
-      if (sideOk && v.passed && !b.ocs) { b.leg++; ev.push({ type: 'rounded', leg: L }); }
+      if (sideOk && v.passed && !b.ocs && b.started !== false) { b.leg++; ev.push({ type: 'rounded', leg: L }); }
       else if (!sideOk || !v.passed) ev.push({ type: 'wrongSide', leg: L });
     }
   } else if (L.type === 'gate') {
-    if (prevA > L.center.a + 2.2 && b.a <= L.center.a + 2.2 && Math.abs(b.c) < 32) { b.leg++; ev.push({ type: 'gate', leg: L }); }
+    const crossedGate = prevA > L.center.a + 2.2 && b.a <= L.center.a + 2.2 && Math.abs(b.c) < 32;
+    const inGateBottom = b.a <= L.center.a + 1.5 && b.a >= L.center.a - 9.0 && Math.abs(b.c) < 26.5;
+    if (crossedGate || inGateBottom) { b.leg++; ev.push({ type: 'gate', leg: L }); }
   } else if (L.type === 'finish') {
     const F = MARKS.fcom, G = MARKS.fm;
     const side = (a, c) => (G.a - F.a) * (c - F.c) - (G.c - F.c) * (a - F.a);
     const s0 = side(prevA, prevC), s1 = side(b.a, b.c);
     const refPt = L.from || START;
     const sRef = side(refPt.a, refPt.c); // 前マークまたはスタート側が「手前」
-    if (s0 * sRef > 0 && s1 * sRef <= 0) {
+    if (s0 * sRef > 0 && s1 * sRef <= 0 && !b.ocs && b.started !== false) {
       const ll = Math.hypot(G.a - F.a, G.c - F.c);
       const proj = ((b.a - F.a) * (G.a - F.a) + (b.c - F.c) * (G.c - F.c)) / ll;
       if (proj > -6 && proj < ll + 6) { b.finished = true; b.finishTime = t; ev.push({ type: 'finish' }); }
