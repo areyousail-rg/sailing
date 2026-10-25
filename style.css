@@ -223,7 +223,7 @@ h1{margin:0;font-size:1.4rem;line-height:1.2;font-weight:700;letter-spacing:.02e
 .startRaceBtn{padding:13px 16px;font-size:1.1rem;letter-spacing:.14em}
 .btnPractice{flex:1;padding:9px 10px;font-size:.84rem;font-weight:700;letter-spacing:.06em;color:var(--txt);background:transparent;border:1px solid var(--line-2);border-radius:var(--r);cursor:pointer;white-space:nowrap}
 .btnPractice:hover{background:var(--bg-3);border-color:var(--mute)}
-.weatherInfoBottom{font-size:.62rem;color:var(--mute);font-variant-numeric:tabular-nums;padding:6px 0 0;border-top:1px solid var(--line);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.weatherInfoBottom{font-size:.62rem;color:var(--mute);font-variant-numeric:tabular-nums;padding:6px 0 0;border-top:1px solid var(--line);line-height:1.45;white-space:normal;overflow:visible;word-break:break-word}
 .weatherInfoBottom:empty{display:none}
 
 /* 中断モーダル */
@@ -260,8 +260,8 @@ body.menuOpen #toasts,
 body.menuOpen #miniLog,
 body.menuOpen #blkBadge,
 body.menuOpen #timerPanel,
-body.menuOpen #instr,
-body.menuOpen #touch{display:none!important}
+body.menuOpen #instr{display:none!important}
+body.menuOpen #touch{display:block!important}
 body.menuOpen .menuPractice{padding-top:34px}
 
 /* ---------- タッチ操作 ---------- */
@@ -295,7 +295,6 @@ body.touch .badge{top:62px;font-size:.76rem;padding:5px 10px}body.touch .badge.w
 body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
 
 @media(max-height:480px){.card{padding:10px 14px}h1{font-size:1.25rem}.lead{margin-bottom:4px}#preview{width:110px;height:78px}.cta{margin-top:6px;padding:8px}.startRaceBtn{padding:9px 12px}}
-@media(pointer:coarse) and (orientation:portrait){body.hintOn::after{content:"横向きにするとプレイしやすくなります";position:fixed;bottom:145px;left:50%;transform:translateX(-50%);background:var(--bg);border:1px solid var(--line-2);padding:4px 10px;border-radius:var(--r);font-size:.7rem;color:var(--mute);z-index:20;pointer-events:none;white-space:nowrap}}
 
 /* スマホ縦画面: 上部パネルが重ならないよう2段に整列し、スタート画面も1画面に収める */
 @media(orientation:portrait) and (max-width:600px){
@@ -360,38 +359,40 @@ body.orientOpen #pauseBtn,
 body.orientOpen #help,
 body.orientOpen #toasts,
 body.orientOpen #miniLog{display:none!important}
-body.orientOpen #timerPanel{top:58px;left:14px;z-index:12;transition:top .25s}
-body.orientOpen #boardPanel{top:58px;right:14px;z-index:12;transition:top .25s}
-body.orientOpen #minimap{bottom:118px;right:14px;width:168px;height:168px;z-index:12}
-body.orientOpen #instr{bottom:14px;z-index:12;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+body.orientOpen #timerPanel{top:172px!important;left:14px!important;z-index:12;transition:top .25s}
+body.orientOpen #boardPanel{top:172px!important;right:14px!important;z-index:12;transition:top .25s}
+body.orientOpen #minimap{top:auto!important;bottom:118px!important;right:14px!important;width:160px;height:160px;z-index:12}
+body.orientOpen #instr,
+body.touch.orientOpen .bottom-center{top:auto!important;bottom:14px!important;left:50%!important;right:auto!important;transform:translateX(-50%)!important;z-index:12;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+body.orientOpen #blkBadge{top:176px!important}
 body.orientOpen #touch{display:block!important;z-index:12;pointer-events:none!important}
 body.orientOpen #touch button{pointer-events:none!important}
 body.orientOpen #result{z-index:14;pointer-events:none}
 
-/* 実際の画面上の対象ボタン・計器を強調するハイライト枠 */
+/* 実際の画面上の対象ボタン・計器を周囲の赤い点滅枠で強調する */
 .orientTargetHighlight{
   position:relative;
   z-index:15!important;
-  outline:3px solid var(--accent)!important;
-  outline-offset:2px;
-  box-shadow:0 0 0 4px rgba(242,194,0,.32),0 0 22px rgba(242,194,0,.85),inset 0 0 14px rgba(242,194,0,.28)!important;
-  animation:orientTargetPulse .75s ease-in-out infinite alternate!important;
+  outline:3px solid #ff2424!important;
+  outline-offset:3px;
+  box-shadow:0 0 0 4px rgba(255,36,36,.45),0 0 24px rgba(255,36,36,.95),inset 0 0 14px rgba(255,36,36,.35)!important;
+  animation:orientRedBlink .5s ease-in-out infinite alternate!important;
 }
-@keyframes orientTargetPulse{
-  from{box-shadow:0 0 0 2px rgba(242,194,0,.25),0 0 14px rgba(242,194,0,.65),inset 0 0 8px rgba(242,194,0,.18)}
-  to{box-shadow:0 0 0 6px rgba(242,194,0,.48),0 0 28px rgba(255,210,26,1),inset 0 0 18px rgba(242,194,0,.38)}
+@keyframes orientRedBlink{
+  from{outline-color:rgba(255,36,36,.2)!important;box-shadow:0 0 0 1px rgba(255,36,36,.15),0 0 6px rgba(255,36,36,.25)!important}
+  to{outline-color:#ff2424!important;box-shadow:0 0 0 6px rgba(255,36,36,.62),0 0 28px rgba(255,46,46,1),inset 0 0 16px rgba(255,36,36,.45)!important}
 }
 
 .orientOverlay{position:fixed;inset:0;z-index:16;pointer-events:none;display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden}
-.orientTopBar{pointer-events:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 20px;background:linear-gradient(90deg,#080c10 0%,#101820 65%,#080c10 100%);border-bottom:3px solid var(--accent);box-shadow:0 6px 20px rgba(0,0,0,.55);z-index:20}
+.orientTopBar{pointer-events:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 18px;background:linear-gradient(90deg,#080c10 0%,#101820 65%,#080c10 100%);border-bottom:3px solid var(--accent);box-shadow:0 6px 20px rgba(0,0,0,.55);z-index:20}
 .orientBrand{display:flex;align-items:baseline;gap:12px}
-.orientHowTo{display:inline-block;padding:3px 12px;background:var(--port);color:#fff;font-family:var(--f-num);font-size:1.1rem;font-weight:900;font-style:italic;letter-spacing:.12em;transform:skewX(-12deg);box-shadow:3px 3px 0 var(--accent)}
-.orientSubTitle{font-size:.86rem;font-weight:800;letter-spacing:.14em;color:var(--txt)}
+.orientHowTo{display:inline-block;padding:2px 10px;background:var(--port);color:#fff;font-family:var(--f-num);font-size:1rem;font-weight:900;font-style:italic;letter-spacing:.12em;transform:skewX(-12deg);box-shadow:3px 3px 0 var(--accent)}
+.orientSubTitle{font-size:.82rem;font-weight:800;letter-spacing:.14em;color:var(--txt)}
 .orientTopActions{display:flex;align-items:center;gap:10px}
-.orientBtnPause{pointer-events:auto;min-width:78px;padding:7px 16px;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:2px;font-weight:800;font-size:.8rem;letter-spacing:.08em;cursor:pointer}
+.orientBtnPause{pointer-events:auto;min-width:74px;padding:6px 14px;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:2px;font-weight:800;font-size:.78rem;letter-spacing:.08em;cursor:pointer}
 .orientBtnPause:hover{background:#ffd21a}
 .orientBtnPause.paused{background:var(--stbd);border-color:var(--stbd);color:#fff}
-.orientBtnClose{pointer-events:auto;min-width:78px;padding:7px 16px;background:var(--bg-2);color:var(--txt);border:1px solid var(--line-2);border-radius:2px;font-weight:800;font-size:.8rem;letter-spacing:.08em;cursor:pointer}
+.orientBtnClose{pointer-events:auto;min-width:74px;padding:6px 14px;background:var(--bg-2);color:var(--txt);border:1px solid var(--line-2);border-radius:2px;font-weight:800;font-size:.78rem;letter-spacing:.08em;cursor:pointer}
 .orientBtnClose:hover{background:var(--bg-3);border-color:var(--mute)}
 
 .orientFlash{position:fixed;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 30%,rgba(242,194,0,.22) 48%,rgba(255,255,255,.35) 50%,transparent 65%);opacity:0;transform:translateX(-40%)}
@@ -401,47 +402,13 @@ body.orientOpen #result{z-index:14;pointer-events:none}
   100%{opacity:0;transform:translateX(55%)}
 }
 
-/* 実際の画面のボタン・計器を指し示すポインター線と吹き出しコールアウト */
-.orientPointerSvg{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:18}
-.orientCallout{
-  position:fixed;
-  z-index:19;
-  pointer-events:none;
-  max-width:min(360px,86vw);
-  background:rgba(10,15,20,.96);
-  border:2px solid var(--accent);
-  border-left:6px solid var(--accent);
-  border-radius:3px;
-  padding:7px 12px;
-  box-shadow:0 8px 24px rgba(0,0,0,.78),0 0 16px rgba(242,194,0,.35);
-  display:flex;
-  flex-direction:column;
-  gap:3px;
-  transition:left .18s ease-out,top .18s ease-out;
-}
-.orientCalloutBadge{
-  align-self:flex-start;
-  background:var(--accent);
-  color:var(--accent-ink);
-  font-size:.66rem;
-  font-weight:900;
-  letter-spacing:.08em;
-  padding:1px 7px;
-  border-radius:2px;
-}
-.orientCalloutText{
-  font-size:.82rem;
-  font-weight:700;
-  line-height:1.4;
-  color:#fff;
-}
-.orientCalloutText strong{color:var(--accent);font-weight:900}
+.orientPointerSvg,.orientCallout{display:none!important}
 
 /* STEP 8: 実際の振り返り画面プレビュー */
 .orientReviewDemo{
   position:fixed;
   left:50%;
-  top:54%;
+  top:56%;
   transform:translate(-50%,-50%);
   z-index:14;
   pointer-events:none;
@@ -475,47 +442,52 @@ body.orientOpen #result{z-index:14;pointer-events:none}
 .orientRevTable th{color:var(--mute);font-size:.58rem;background:var(--bg)}
 .orientRevWindNote{margin-top:auto;padding:5px 8px;background:var(--bg);border-left:3px solid #38bdf8;font-size:.66rem;color:#cbd5e1}
 
-.orientCardWrap{pointer-events:none;padding:8px 16px 0;display:flex;justify-content:center;z-index:17}
-.orientCard{pointer-events:auto;width:min(680px,calc(100vw - 520px));min-width:min(520px,94vw);background:linear-gradient(135deg,rgba(10,15,20,.95) 0%,rgba(19,28,37,.95) 100%);border:1px solid var(--line-2);border-left:6px solid var(--accent);border-right:3px solid var(--port);box-shadow:0 12px 32px rgba(0,0,0,.72);padding:10px 18px 9px;position:relative;overflow:hidden}
+.orientCardWrap{pointer-events:none;padding:6px 14px 0;display:flex;justify-content:center;z-index:17}
+.orientCard{pointer-events:auto;width:min(760px,94vw);background:linear-gradient(135deg,rgba(10,15,20,.95) 0%,rgba(19,28,37,.95) 100%);border:1px solid var(--line-2);border-left:6px solid var(--accent);border-right:3px solid var(--port);box-shadow:0 12px 32px rgba(0,0,0,.72);padding:8px 16px 7px;position:relative;overflow:hidden}
 .orientCard::before{content:"";position:absolute;top:0;right:64px;width:140px;height:100%;background:linear-gradient(90deg,transparent,rgba(242,194,0,.05),transparent);transform:skewX(-22deg);pointer-events:none}
 .orientCard.stepAnim{animation:orientCardIn .34s cubic-bezier(.18,.89,.32,1.15)}
 @keyframes orientCardIn{
   0%{opacity:0;transform:translateX(-38px) skewX(-4deg)}
   100%{opacity:1;transform:translateX(0) skewX(0)}
 }
-.orientStepHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:6px}
-.orientStepBadge{display:flex;align-items:baseline;gap:4px;background:var(--accent);color:var(--accent-ink);padding:3px 12px 3px 10px;transform:skewX(-12deg);box-shadow:3px 3px 0 var(--port);flex-shrink:0}
-.orientStepWord{font-family:var(--f-num);font-size:.7rem;font-weight:900;letter-spacing:.12em}
-#orientStepNum{font-family:var(--f-num);font-size:1.55rem;font-weight:900;line-height:1}
-#orientStepTotal{font-family:var(--f-num);font-size:.76rem;font-weight:800;opacity:.78}
-.orientTitleWrap{flex:1;min-width:190px}
-.orientEnTag{font-family:var(--f-num);font-size:.62rem;font-weight:800;letter-spacing:.16em;color:var(--accent);text-transform:uppercase;line-height:1.1}
-#orientTitle{margin:1px 0 0;font-size:1.08rem;font-weight:900;letter-spacing:.03em;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.5)}
-.orientKeyPills{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
-.orientPill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--bg-3);border:1px solid var(--line-2);border-left:3px solid var(--accent);border-radius:2px;font-size:.7rem;font-weight:700;color:var(--txt);white-space:nowrap}
-.orientBody{margin:7px 0 8px;font-size:.9rem;font-weight:700;line-height:1.5;color:#f1f5f9;letter-spacing:.02em}
+.orientStepHead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:4px}
+.orientStepBadge{display:flex;align-items:baseline;gap:4px;background:var(--accent);color:var(--accent-ink);padding:2px 10px 2px 8px;transform:skewX(-12deg);box-shadow:3px 3px 0 var(--port);flex-shrink:0}
+.orientStepWord{font-family:var(--f-num);font-size:.66rem;font-weight:900;letter-spacing:.12em}
+#orientStepNum{font-family:var(--f-num);font-size:1.35rem;font-weight:900;line-height:1}
+#orientStepTotal{font-family:var(--f-num);font-size:.72rem;font-weight:800;opacity:.78}
+.orientTitleWrap{flex:1;min-width:180px}
+.orientEnTag{font-family:var(--f-num);font-size:.58rem;font-weight:800;letter-spacing:.16em;color:var(--accent);text-transform:uppercase;line-height:1.1}
+#orientTitle{margin:1px 0 0;font-size:.98rem;font-weight:900;letter-spacing:.03em;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+.orientKeyPills{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.orientPill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:var(--bg-3);border:1px solid var(--line-2);border-left:3px solid var(--accent);border-radius:2px;font-size:.66rem;font-weight:700;color:var(--txt);white-space:nowrap}
+.orientBody{margin:5px 0 6px;font-size:.82rem;font-weight:700;line-height:1.42;color:#f1f5f9;letter-spacing:.02em}
 .orientBody strong{color:var(--accent);font-weight:900;padding:0 2px}
 .orientFooter{display:flex;align-items:center;gap:12px}
-.orientTimerTrack{flex:1;height:5px;background:var(--bg-3);border-radius:1px;overflow:hidden;border:1px solid var(--line)}
+.orientTimerTrack{flex:1;height:4px;background:var(--bg-3);border-radius:1px;overflow:hidden;border:1px solid var(--line)}
 .orientTimerFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#ff8a1f)}
 
 @media(max-width:960px){
-  .orientCard{width:min(680px,94vw)}
-  body.orientOpen #timerPanel{top:195px;left:8px}
-  body.orientOpen #boardPanel{top:195px;right:8px}
+  .orientCard{width:min(740px,95vw)}
+  body.orientOpen #timerPanel{top:174px!important;left:8px!important}
+  body.orientOpen #boardPanel{top:174px!important;right:8px!important}
   .orientRevGrid{grid-template-columns:1fr}
 }
 @media(max-width:700px){
-  .orientTopBar{padding:7px 10px;flex-wrap:wrap;gap:6px}
-  .orientHowTo{font-size:.9rem;padding:2px 8px}
-  .orientSubTitle{font-size:.74rem}
-  .orientCardWrap{padding:6px 8px 0}
-  .orientCard{padding:8px 11px 8px;width:96vw;min-width:0}
-  #orientStepNum{font-size:1.25rem}
-  #orientTitle{font-size:.92rem}
-  .orientBody{font-size:.78rem;margin:5px 0 6px;line-height:1.42}
-  body.orientOpen #timerPanel{top:172px;left:6px}
-  body.orientOpen #boardPanel{top:172px;right:6px}
-  body.orientOpen #minimap{bottom:100px;right:6px;width:105px;height:105px}
-  body.orientOpen #instr{bottom:10px;top:auto;left:50%;transform:translateX(-50%) scale(.76)}
+  .orientTopBar{padding:5px 10px;flex-wrap:wrap;gap:6px}
+  .orientHowTo{font-size:.86rem;padding:2px 8px}
+  .orientSubTitle{font-size:.72rem}
+  .orientCardWrap{padding:4px 8px 0}
+  .orientCard{padding:6px 10px 6px;width:96vw;min-width:0}
+  #orientStepNum{font-size:1.15rem}
+  #orientTitle{font-size:.86rem}
+  .orientBody{font-size:.74rem;margin:4px 0 5px;line-height:1.38}
+  body.orientOpen #timerPanel{top:162px!important;left:6px!important}
+  body.orientOpen #boardPanel{top:162px!important;right:6px!important}
+  body.orientOpen #minimap{top:auto!important;bottom:102px!important;right:6px!important;width:96px!important;height:96px!important}
+  body.orientOpen #instr,
+  body.touch.orientOpen .bottom-center{top:auto!important;bottom:10px!important;left:50%!important;transform:translateX(-50%) scale(.74)!important}
+}
+@media(orientation:portrait) and (max-width:600px){
+  body.orientOpen #instr,
+  body.touch.orientOpen .bottom-center{top:auto!important;bottom:136px!important;left:6px!important;transform:none!important}
 }
