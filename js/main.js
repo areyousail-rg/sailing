@@ -503,8 +503,8 @@ function handleProgress(b, evs) {
       const top = state.firstFinish === null;
       if (top) state.firstFinish = b.finishTime;
       if (b.finishTime > state.firstFinish + FINISH_WINDOW) b.late = true;
-      // フィニッシュ毎に本部船がホーンを鳴らす(トップは長め)
-      if (!state.ff) { if (top) signalHorn('short'); else horn(b.isPlayer ? 0.5 : 0.35, 440); }
+      // ホーンを鳴らすのはトップフィニッシュのみ(2位以降は表示のみ)
+      if (top && !state.ff) signalHorn('short');
       if (b.isPlayer) {
         b.finalRank = finishRankOf(b);
         toast(`フィニッシュ! ${b.finalRank}位 / ${boats.length}艇  タイム ${fmtMs(b.finishTime)}`, 'good', 8000);
