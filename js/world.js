@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { MARKS, LEGS, COURSE_MODE, toWorld, LINE_HALF, LINE_SKEW, FAVORED, lineA, U, W0, setWindDir } from './course.js';
 import { makeMotorboat } from './powerboats.js';
+import { shiftAt, waveSample, SEA } from './sim.js';
 
 export const FOG_COLOR = 0xbdd5e6;
 export const FOG_DENSITY = 3.0e-5;
@@ -31,13 +32,32 @@ vec3 skyBase(vec3 d){
   return c;
 }`;
 export const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
+const SEA_VS = `
+uniform float uWT; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY;
+varying vec3 vW;
+void main(){
+  vec4 w=modelMatrix*vec4(position,1.0);
+#ifdef PATCH
+  // 長周期のうねり成分のみ頂点を実際に上下させる(カメラ周辺の局所パッチ)。外縁は下の海面(uBaseY)へ滑らかに沈める
+  float h=0.0;
+  for(int i=0;i<4;i++){ vec4 A=uSeaA[i]; vec4 B=uSeaB[i]; if(B.z>0.5) h+=A.w*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y); }
+  float r=length(w.xz-uPatchC.xz)/uPatchR;
+  w.y=mix(h,uBaseY,smoothstep(0.72,1.0,r));
+#endif
+  vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w;
+}`;
 const waterMat = new THREE.ShaderMaterial({
   defines: { NWAVE: MOBILE ? 3 : 4 },
-  uniforms: { uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR } },
-  vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
+  uniforms: {
+    uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR }, uShift: { value: 0 }, uGen: { value: 0.55 },
+    uSeaA: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+    uSeaB: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+    uPatchC: { value: new THREE.Vector3() }, uPatchR: { value: 300 }, uBaseY: { value: 0 },
+  },
+  vertexShader: SEA_VS,
   fragmentShader: `
 precision highp float;
-varying vec3 vW; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias;
+varying vec3 vW; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4];
 ${SKY_FN}
 float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
@@ -51,7 +71,13 @@ void main(){
     float w=sqrt(9.8*k)*0.9;
     float fade=exp(-dist*k*0.0035);
     if(fade<0.02) break; // 遠方では高周波の波を省略(kは増加するので以降も不要)
-    g+=d*A*k*cos(mod(dot(d,p)*k-uTime*w+fi*1.7,628.3185))*fade;
+    g+=d*A*k*cos(mod(dot(d,p)*k-uTime*w+fi*1.7,628.3185))*fade*uGen;
+  }
+  // 海況(三角波・うねり・短周期の風浪): sim.js waveSample と同じ成分・同じ時刻で法線を作る
+  for(int i=0;i<4;i++){
+    vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
+    float fd=exp(-dist*A.z*0.0045);
+    if(fd>0.02) g+=A.xy*(A.w*A.z*cos(mod(A.z*dot(A.xy,p)-B.x*uWT+B.y,6.2831853)))*fd*1.5;
   }
   if(dist<2000.0) g+=(vec2(vn(p*0.9+uTime*0.3),vn(p*0.9-uTime*0.25+7.0))-0.5)*0.12*exp(-dist*0.004);
   // 風: sim.js windAt と完全に同じ式で、風上から風下へ流れるブロー(黒い筋)とシフトを海面に表現
@@ -65,7 +91,7 @@ void main(){
   float puff=smoothstep(-0.15,0.72,0.50*p1+0.32*p2+0.18*p3);
   float sideNorm=clamp(cc/160.0,-1.2,1.2);
   float wf=clamp(0.86+0.34*puff+uSideBias*sideNorm*0.065,0.72,1.32);
-  float wsh=0.12*sin(uWT*0.038+0.7)+0.06*sin(uWT*0.095+1.3)+0.06*sin(adv*0.028-cc*0.021)+uSideBias*sideNorm*0.075;
+  float wsh=uShift+0.06*sin(adv*0.028-cc*0.021)+uSideBias*sideNorm*0.075;
   float wfr=uW0+wsh; vec2 wd=vec2(-sin(wfr),cos(wfr)); vec2 wp=vec2(-wd.y,wd.x);
   float wu=dot(p,wp), wv=dot(p,wd);
   float gust=smoothstep(0.84,1.18,wf);
@@ -227,6 +253,14 @@ export function createWorld(scene) {
 
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 1), waterMat);
   sea.geometry.rotateX(-Math.PI / 2); sea.scale.set(120000, 1, 120000); sea.frustumCulled = false; scene.add(sea);
+  // うねり用の局所変位パッチ(長周期の波がある海況のときだけ表示)。先に描画して下の平面海面のフラグメント計算を深度テストで省く
+  const PATCH_R = 300, PATCH_SEG = MOBILE ? 64 : 96;
+  const seaPatchMat = new THREE.ShaderMaterial({ defines: { ...waterMat.defines, PATCH: 1 }, uniforms: waterMat.uniforms, vertexShader: waterMat.vertexShader, fragmentShader: waterMat.fragmentShader, fog: false });
+  const patchGeo = new THREE.PlaneGeometry(PATCH_R * 2, PATCH_R * 2, PATCH_SEG, PATCH_SEG); patchGeo.rotateX(-Math.PI / 2);
+  const seaPatch = new THREE.Mesh(patchGeo, seaPatchMat); seaPatch.frustumCulled = false; seaPatch.renderOrder = -5; seaPatch.visible = false; scene.add(seaPatch);
+  sea.renderOrder = -4;
+  waterMat.uniforms.uPatchR.value = PATCH_R;
+  let seaBaseY = 0;
   const sky = new THREE.Mesh(new THREE.SphereGeometry(70000, 32, 16), skyMat); sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky);
 
   // ---------- ステージ風景: 江の島 / 八景島 ----------
@@ -307,7 +341,7 @@ export function createWorld(scene) {
     }
     surfStrip(enoshimaGroup, pts, 9);
     const cpts = [];
-    for (let x = -14000; x <= 16000; x += 40) cpts.push({ x, z: -(COAST + 64 + 40 * Math.sin(x / 700) + 25 * Math.sin(x / 230 + 1)), ux: 0, uz: 1 });
+    for (let x = -14000; x <= 3000; x += 40) cpts.push({ x, z: -(COAST + 64 + 40 * Math.sin(x / 700) + 25 * Math.sin(x / 230 + 1)), ux: 0, uz: 1 });
     surfStrip(enoshimaGroup, cpts, 14);
   }
 
@@ -319,8 +353,9 @@ export function createWorld(scene) {
   enoshimaGroup.add(new THREE.Mesh(landGeo, new THREE.MeshLambertMaterial({ vertexColors: true })));
 
   // 遠景: 三浦半島(東) / 箱根(富士の手前) / 伊豆半島(南西) / 伊豆大島(南の水平線)
-  distantLand(enoshimaGroup, 15500, 6000, 4200, 10500, 220, 0.15);
-  distantLand(enoshimaGroup, -25000, -8500, 9000, 6500, 1350, 0.3);
+  // (三浦半島は addEnoshimaScenery で実際の海岸線(稲村ヶ崎〜逗子〜葉山〜城ヶ島)に沿って作成)
+  // 箱根: 江の島から方位約265°(富士山の左手前)。外輪山の裾が小田原〜真鶴付近で相模湾へ落ちる
+  distantLand(enoshimaGroup, -26000, 2000, 8000, 6500, 1300, 0.25);
   distantLand(enoshimaGroup, -31000, 26000, 8500, 20000, 950, -0.2, 56);
   distantLand(enoshimaGroup, -6000, 41000, 5200, 6500, 760, 0);
 
@@ -352,11 +387,12 @@ export function createWorld(scene) {
   fgeo.computeVertexNormals();
   fgeo.setAttribute('color', new THREE.BufferAttribute(fc, 3));
   const fuji = new THREE.Mesh(fgeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
-  fuji.position.set(-36000, -2, -19000); fuji.scale.set(1, 1, 1); enoshimaGroup.add(fuji);
+  // 江の島から見た富士山はほぼ真西(方位約278°)、箱根の右肩・丹沢の左に聳える
+  fuji.position.set(-41000, -2, -5800); fuji.scale.set(1, 1, 1); enoshimaGroup.add(fuji);
 
   // 江の島の木(緑豊かすぎないよう、西〜中央の丘の上部のみに絞って配置し、東側のヨットハーバーや崖・参道はすっきり見せる)
   const treeCount = 520;
-  const trees = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial(), treeCount);
+  const trees = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshLambertMaterial(), treeCount); // 遠景の樹冠は36面体で十分(80→36三角形)
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), tc = new THREE.Color(), eul = new THREE.Euler();
   let n = 0;
   for (let tries = 0; tries < 6000 && n < treeCount; tries++) {
@@ -611,6 +647,12 @@ export function createWorld(scene) {
   // ===== 2. 八景島ステージ (横浜・八景島シーパラダイス沖) =====
   buildHakkeijima(hakkeijimaGroup, surfStrip, fgeo);
 
+  // 実地調査に基づく周辺景観の追加 → 静的メッシュをマテリアル特性ごとに結合してドローコールを大幅削減
+  addEnoshimaScenery(enoshimaGroup, surfStrip);
+  addHakkeiScenery(hakkeijimaGroup);
+  bakeStatic(enoshimaGroup);
+  bakeStatic(hakkeijimaGroup);
+
   // ---------- マーク類 ----------
   const bob = [];
   const markObjs = {};
@@ -861,11 +903,12 @@ export function createWorld(scene) {
           const p = h.pts[i];
           if (!p || p.age >= LIFE) { for (let j = 0; j < PER; j++) hide(k++); continue; }
           const life = 1 - p.age / LIFE, fade = life * life;
+          const py = SEA.longAmp > 0.01 ? waveSample(p.x, p.z, SEA.clock).hLong : 0; // うねりの上に航跡を沿わせる
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           tq.setFromAxisAngle(yAx, -p.h);
           // 中央: 細長い楕円で少しずつ広がる
           ts.set(0.32 + p.age * 0.32, 1, 0.9 + p.age * 0.25);
-          m4.compose(tv.set(p.x, 0, p.z), tq, ts); trail.setMatrixAt(k, m4);
+          m4.compose(tv.set(p.x, py, p.z), tq, ts); trail.setMatrixAt(k, m4);
           col.setRGB(0.62, 0.72, 0.76).multiplyScalar(0.16 * fade * p.s); trail.setColorAt(k++, col);
           // 左右のケルビン波: 艇速に応じて外へ移動
           const off = 0.45 + p.age * (0.55 + p.s * 0.9);
@@ -873,7 +916,7 @@ export function createWorld(scene) {
             const a = p.h - s * 0.62; // 後方外側へ斜めに伸びる波頭
             tq.setFromAxisAngle(yAx, -a);
             ts.set(0.07 + p.age * 0.05, 1, 0.5 + p.age * 0.35);
-            m4.compose(tv.set(p.x + rx * s * off, 0, p.z + rz * s * off), tq, ts); trail.setMatrixAt(k, m4);
+            m4.compose(tv.set(p.x + rx * s * off, py, p.z + rz * s * off), tq, ts); trail.setMatrixAt(k, m4);
             col.setRGB(0.7, 0.8, 0.84).multiplyScalar(0.11 * fade * p.s); trail.setColorAt(k++, col);
           }
         }
@@ -889,6 +932,20 @@ export function createWorld(scene) {
     markObjs,
     wake,
     syncCourseObjects,
+    // 海況を海面シェーダーへ反映(最大4成分)。長周期成分があるときだけ変位パッチを表示する
+    setSea(sea) {
+      const U4 = waterMat.uniforms;
+      for (let i = 0; i < 4; i++) {
+        const c = sea.comps[i];
+        if (c) { U4.uSeaA.value[i].set(c.dx, c.dz, c.k, c.A); U4.uSeaB.value[i].set(c.w, c.ph, c.long ? 1 : 0, 0); }
+        else { U4.uSeaA.value[i].set(1, 0, 0.1, 0); U4.uSeaB.value[i].set(0, 0, 0, 0); }
+      }
+      // 汎用の装飾波は海況が大きいほど控えめにして、海況ごとの波の特徴を際立たせる
+      U4.uGen.value = clampN(0.75 - sea.H * 0.6, 0.3, 0.65);
+      seaBaseY = sea.longAmp > 0.01 ? -(sea.longAmp + 0.12) : 0;
+      U4.uBaseY.value = seaBaseY;
+      seaPatch.visible = sea.longAmp > 0.01;
+    },
     setVenue(venue, customWindDeg = null, sideBias = -0.6) {
       const isHakkei = venue === 'hakkeijima';
       enoshimaGroup.visible = !isHakkei;
@@ -943,9 +1000,20 @@ export function createWorld(scene) {
     },
     update(t, camera, dt, wt = 0) {
       waterMat.uniforms.uTime.value = t; waterMat.uniforms.uWT.value = wt; waterMat.uniforms.uW0.value = W0; skyMat.uniforms.uTime.value = t;
+      waterMat.uniforms.uShift.value = shiftAt(wt);
       sky.position.copy(camera.position);
-      sea.position.set(camera.position.x, 0, camera.position.z);
-      for (const o of bob) { o.position.y = 0.12 * Math.sin(t * 1.4 + o.position.x) + 0.05; o.rotation.z = 0.05 * Math.sin(t * 1.1 + o.position.z); }
+      sea.position.set(camera.position.x, seaBaseY, camera.position.z);
+      if (seaPatch.visible) {
+        const cs = (PATCH_R * 2) / PATCH_SEG; // グリッド単位でスナップして頂点の揺らぎ(泳ぎ)を防ぐ
+        seaPatch.position.set(Math.round(camera.position.x / cs) * cs, 0, Math.round(camera.position.z / cs) * cs);
+        waterMat.uniforms.uPatchC.value.copy(seaPatch.position);
+      }
+      // マーク・ブイは海面の高さに合わせて上下し、波で揺れる
+      for (const o of bob) {
+        const ws = waveSample(o.position.x, o.position.z, SEA.clock, 1, 0);
+        o.position.y = ws.hLong + (ws.h - ws.hLong) * 0.6 + 0.05 + 0.03 * Math.sin(t * 1.4 + o.position.x);
+        o.rotation.z = clampN(Math.atan(ws.slope) * 0.6, -0.15, 0.15) + 0.03 * Math.sin(t * 1.1 + o.position.z);
+      }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
 
       camera.getWorldDirection(camDir);
@@ -1101,15 +1169,17 @@ function buildHakkeijima(root, surfStrip, fgeo) {
   pierRoof.position.set(H_ISLAND.x + 275, 12.4, aqz + 90); aqBrkGroup.add(pierRoof);
   root.add(aqBrkGroup);
 
-  // 2) フリーフォール / ブルーフォール (アクアミュージアムの西側＝奥側にある高さ107mの垂直タワー)
+  // 2) 旧ブルーフォール跡 (高さ107mのタワーは2020年3月に営業終了・同年解体済み → 跡地の中型アトラクション「フライトイーグル」級の門型フレームに置き換え)
   const bfx = H_ISLAND.x - 175, bfz = H_ISLAND.z - 210;
   const bfGroup = new THREE.Group();
-  const bfTower = new THREE.Mesh(new THREE.BoxGeometry(5.0, 105, 5.0), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
-  bfTower.position.y = 52.5; bfGroup.add(bfTower);
-  const bfTop = new THREE.Mesh(new THREE.CylinderGeometry(6.0, 3.2, 8, 12), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
-  bfTop.position.y = 106; bfGroup.add(bfTop);
-  const bfCap = new THREE.Mesh(new THREE.ConeGeometry(2.2, 11, 8), new THREE.MeshLambertMaterial({ color: 0x38bdf8 }));
-  bfCap.position.y = 115; bfGroup.add(bfCap);
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(2.2, 30, 2.2), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+    leg.position.set(s * 11, 15, 0); leg.rotation.z = s * 0.12; bfGroup.add(leg);
+  }
+  const bfTop = new THREE.Mesh(new THREE.BoxGeometry(20, 2.6, 3.2), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+  bfTop.position.y = 30; bfGroup.add(bfTop);
+  const bfCap = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 9), new THREE.MeshLambertMaterial({ color: 0xf59e0b }));
+  bfCap.position.y = 18; bfGroup.add(bfCap);
   bfGroup.position.set(bfx, Math.max(3.5, hakkeiIslandH(bfx, bfz)), bfz);
   root.add(bfGroup);
 
@@ -1184,7 +1254,7 @@ function buildHakkeijima(root, surfStrip, fgeo) {
 
   // 八景島内の木々
   const hTreeCount = 850;
-  const hTrees = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial(), hTreeCount);
+  const hTrees = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshLambertMaterial(), hTreeCount);
   let tn = 0;
   for (let tries = 0; tries < 5000 && tn < hTreeCount; tries++) {
     const x = H_ISLAND.x + (rnd() * 2 - 1) * 390, z = H_ISLAND.z + (rnd() * 2 - 1) * 410;
@@ -1339,6 +1409,7 @@ function buildHakkeijima(root, surfStrip, fgeo) {
     unit.position.set(ox, 44, 14); tthGroup.add(unit);
   }
   tthGroup.position.set(tthX, 0, tthZ);
+  tthGroup.scale.y = 0.6; // 実際の横浜テクノタワーホテル(横浜金沢ハイテクセンター)は地上22階・高さ約100m
   fukuura.add(tthGroup);
 
   // (7-e) ヤグラ型エントツ (海岸線の北寄り角にある鉄骨トラスの櫓煙突と茶色い建屋)
@@ -1366,10 +1437,11 @@ function buildHakkeijima(root, surfStrip, fgeo) {
   const incX = -1020, incZ = -2820;
   const incBld = new THREE.Mesh(new THREE.BoxGeometry(150, 44, 140), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
   incBld.position.set(incX, 24, incZ); fukuura.add(incBld);
-  const incStack = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 12, 145, 16), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-  incStack.position.set(incX - 95, 74, incZ); fukuura.add(incStack);
-  const incCap = new THREE.Mesh(new THREE.CylinderGeometry(9.0, 9.5, 22, 16), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
-  incCap.position.set(incX - 95, 134, incZ); fukuura.add(incCap);
+  // 金沢工場(資源循環局)の煙突: 実際の高さ130m
+  const incStack = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 12, 122, 16), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  incStack.position.set(incX - 95, 62, incZ); fukuura.add(incStack);
+  const incCap = new THREE.Mesh(new THREE.CylinderGeometry(9.0, 9.5, 14, 16), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
+  incCap.position.set(incX - 95, 126, incZ); fukuura.add(incCap);
 
   // 三菱重工の4連白い蒲鉾/三角屋根工場棟 (イラスト右上・焼却炉の右隣に4棟並ぶ)
   for (let i = 0; i < 4; i++) {
@@ -1788,7 +1860,7 @@ function buildHakkeijima(root, surfStrip, fgeo) {
   // 遠景陸地: 磯子・根岸の緑の丘陵(クレーン奥西側)、東京側奥の陸地(北〜北東)、千葉・房総半島(東〜南東の遠方にうっすら見える稜線)
   distantLand(root, -2800, -6500, 1400, 2800, 82, 0.08);    // クレーン奥の穏やかな緑の丘陵
   distantLand(root, 2200, -21000, 8500, 6500, 65, 0.15);   // 東京側奥の陸地
-  distantLand(root, 21500, 2500, 3800, 26000, 120, 0.05);  // 千葉・房総半島 (東〜南東の遠方にうっすら見える稜線)
+  // (千葉・房総半島は addHakkeiScenery で実際の海岸線(富津岬・君津・木更津・鋸山)に沿って作成)
 
   // 八景島からも西〜西南西の丘陵越しにわずかに見える遠方の富士山
   if (fgeo) {
@@ -1800,11 +1872,377 @@ function buildHakkeijima(root, surfStrip, fgeo) {
       opacity: 0.45,
     });
     const fujiH = new THREE.Mesh(fgeo, fujiHMat);
-    fujiH.position.set(-41500, -320, 6800);
+    fujiH.position.set(-41500, -320, -1500); // 八景島から見た富士山はほぼ真西(方位約272°)
     fujiH.scale.set(0.82, 0.72, 0.82);
     root.add(fujiH);
   }
 }
 
 
+
+
+// =====================================================================
+// 静的メッシュの一括結合 (ドローコール削減)
+// group 配下の静的な Lambert / Basic メッシュを「マテリアル特性(種類・発光色・面・透明度)」ごとに 1 メッシュへ結合する。
+// マテリアル色(×既存の頂点色)は頂点色へ焼き込むので、色違いの建物・船・標識もまとめて 1 ドローコールになる。
+// テクスチャ付き(白波など)は同一マテリアル同士だけを結合し、元のマテリアル(アニメーション付き)をそのまま使う。
+// =====================================================================
+function bakeStatic(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map();
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const m = o.material;
+    if (Array.isArray(m) || !(m.isMeshLambertMaterial || m.isMeshBasicMaterial)) return;
+    for (let p = o; p && p !== root; p = p.parent) if (!p.visible) return;
+    const key = m.map ? `map|${m.uuid}|${o.renderOrder}`
+      : [m.type, m.emissive ? m.emissive.getHex() : 0, m.side, m.transparent ? m.opacity : 1, m.depthWrite, m.fog, o.renderOrder].join('|');
+    let b = buckets.get(key);
+    if (!b) { b = { m, items: [], nv: 0, ni: 0, ro: o.renderOrder }; buckets.set(key, b); }
+    const g = o.geometry, nv = g.attributes.position.count;
+    b.items.push(o); b.nv += nv; b.ni += g.index ? g.index.count : nv;
+  });
+  const mtx = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), c = new THREE.Color(), vc = new THREE.Color();
+  for (const b of buckets.values()) {
+    if (b.items.length < 2) continue;
+    const textured = !!b.m.map;
+    const pos = new Float32Array(b.nv * 3), nor = new Float32Array(b.nv * 3);
+    const col = textured ? null : new Float32Array(b.nv * 3), uvs = textured ? new Float32Array(b.nv * 2) : null;
+    const idx = new Uint32Array(b.ni);
+    let vo = 0, io = 0;
+    for (const o of b.items) {
+      const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, C = g.attributes.color, UV = g.attributes.uv, I = g.index;
+      const mm = o.material, useVC = mm.vertexColors && C;
+      mtx.multiplyMatrices(inv, o.matrixWorld); nm.getNormalMatrix(mtx);
+      const flip = mtx.determinant() < 0;
+      for (let i = 0; i < P.count; i++) {
+        const k = (vo + i) * 3;
+        v.fromBufferAttribute(P, i).applyMatrix4(mtx); pos[k] = v.x; pos[k + 1] = v.y; pos[k + 2] = v.z;
+        if (N) v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); else v.set(0, 1, 0);
+        nor[k] = v.x; nor[k + 1] = v.y; nor[k + 2] = v.z;
+        if (col) {
+          c.copy(mm.color); if (useVC) c.multiply(vc.fromBufferAttribute(C, i));
+          col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
+        }
+        if (uvs) { uvs[(vo + i) * 2] = UV ? UV.getX(i) : 0; uvs[(vo + i) * 2 + 1] = UV ? UV.getY(i) : 0; }
+      }
+      const n = I ? I.count : P.count;
+      for (let i = 0; i < n; i += 3) {
+        const a = I ? I.getX(i) : i, bb = I ? I.getX(i + 1) : i + 1, cc = I ? I.getX(i + 2) : i + 2;
+        idx[io++] = vo + a; idx[io++] = vo + (flip ? cc : bb); idx[io++] = vo + (flip ? bb : cc);
+      }
+      vo += P.count;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (col) geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (uvs) geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeBoundingSphere();
+    let mat = b.m;
+    if (!textured) {
+      mat = b.m.isMeshBasicMaterial ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ vertexColors: true });
+      if (mat.emissive) mat.emissive.copy(b.m.emissive);
+      mat.side = b.m.side; mat.transparent = b.m.transparent; mat.opacity = b.m.opacity; mat.depthWrite = b.m.depthWrite; mat.fog = b.m.fog;
+    }
+    for (const o of b.items) o.parent.remove(o);
+    const mesh = new THREE.Mesh(geo, mat); mesh.renderOrder = b.ro; mesh.matrixAutoUpdate = false; root.add(mesh);
+  }
+  // 空になったグループを取り除き、シーングラフの走査コストも減らす
+  const prune = (o) => { for (const ch of [...o.children]) { prune(ch); if (!ch.isMesh && !ch.isSprite && !ch.isLight && ch.children.length === 0 && ch.type !== 'Scene') o.remove(ch); } };
+  prune(root);
+}
+
+// ---------- 静的オブジェクト用の小道具 (bakeStatic で結合される前提。マテリアル・ジオメトリは使い回す) ----------
+const _sgeo = new Map(), _smat = new Map();
+const sGeo = (key, make) => { let g = _sgeo.get(key); if (!g) { g = make(); _sgeo.set(key, g); } return g; };
+const sMat = (hex, emissive = 0) => { const k = `${hex}|${emissive}`; let m = _smat.get(k); if (!m) { m = new THREE.MeshLambertMaterial({ color: hex, emissive }); _smat.set(k, m); } return m; };
+// 底面中心 (x, y, z) に置く直方体
+function sBox(parent, x, y, z, w, h, d, hex, ry = 0) {
+  const m = new THREE.Mesh(sGeo('box', () => new THREE.BoxGeometry(1, 1, 1)), sMat(hex));
+  m.position.set(x, y + h / 2, z); m.scale.set(w, h, d); m.rotation.y = ry; parent.add(m); return m;
+}
+// 底面中心に置く円柱/円錐台 (seg=4 で角柱)。sx/sz で楕円断面
+function sCyl(parent, x, y, z, rTop, rBot, h, hex, seg = 8, sx = 1, sz = 1, ry = 0) {
+  const m = new THREE.Mesh(sGeo(`cyl|${(rTop / rBot).toFixed(3)}|${seg}`, () => new THREE.CylinderGeometry(rTop / rBot, 1, 1, seg)), sMat(hex));
+  m.position.set(x, y + h / 2, z); m.scale.set(rBot * sx, h, rBot * sz); m.rotation.y = ry; parent.add(m); return m;
+}
+// 紅白(または任意2色)の帯を巻いた煙突・鉄塔
+function sBanded(parent, x, y, z, rTop, rBot, h, bands, c1, c2, seg = 8) {
+  for (let i = 0; i < bands; i++) {
+    const t0 = i / bands, t1 = (i + 1) / bands;
+    const r0 = rBot + (rTop - rBot) * t0, r1 = rBot + (rTop - rBot) * t1;
+    sCyl(parent, x, y + h * t0, z, r1, r0, h / bands, i % 2 ? c2 : c1, seg);
+  }
+}
+// 遠景の簡易船舶 (船体 + 船橋 + 積荷)。全部で 3〜4 個の箱
+function sShip(parent, x, z, ry, len, type, hullHex) {
+  const g = new THREE.Group();
+  const w = len * 0.15;
+  sBox(g, 0, -1, 0, w, 9 + len * 0.02, len, hullHex);
+  sBox(g, 0, 7.5 + len * 0.02, -len * 0.36, w * 0.9, 14 + len * 0.03, len * 0.1, 0xf1f5f9);
+  if (type === 'container') sBox(g, 0, 7.5 + len * 0.02, len * 0.07, w * 0.92, 9, len * 0.6, [0xb45309, 0x1d4ed8, 0x991b1b, 0x0f766e][Math.abs(Math.round(x)) % 4]);
+  else if (type === 'car') sBox(g, 0, 7.5 + len * 0.02, len * 0.04, w * 0.97, 15, len * 0.74, 0xe2e8f0);
+  else if (type === 'tanker') sBox(g, 0, 7.5 + len * 0.02, len * 0.08, w * 0.3, 1.6, len * 0.62, 0x9ca3af);
+  else sBox(g, 0, 7.5 + len * 0.02, len * 0.1, w * 0.85, 3, len * 0.5, 0x6b7280); // バルカー(ハッチ)
+  g.position.set(x, 0, z); g.rotation.y = ry; parent.add(g); return g;
+}
+
+// 海岸線ポリラインからの符号付き距離 (陸側が正)。coast は海岸線(開いた折れ線)、closing は内陸側を閉じる頂点列
+function makeCoastField(coast, closing) {
+  const poly = coast.concat(closing);
+  const inside = (x, z) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], zi = poly[i][1], xj = poly[j][0], zj = poly[j][1];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  return (x, z) => {
+    let best = 1e18;
+    for (let i = 0; i < coast.length - 1; i++) {
+      const ax = coast[i][0], az = coast[i][1], dx = coast[i + 1][0] - ax, dz = coast[i + 1][1] - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+      const ex = ax + dx * t - x, ez = az + dz * t - z;
+      best = Math.min(best, ex * ex + ez * ez);
+    }
+    const d = Math.sqrt(best);
+    return inside(x, z) ? d : -d;
+  };
+}
+// 不等間隔グリッド座標列 [[start, end, step], ...]
+const gridAxis = (segs) => { const a = []; for (const [s, e, st] of segs) for (let v = s; v < e - 1e-6; v += st) a.push(v); a.push(segs[segs.length - 1][1]); return a; };
+
+// =====================================================================
+// 江の島ステージ: 実際の地理(相模湾の海岸線・山並み)に合わせた周辺景観の追加
+// ワールド座標 ≒ 江の島中心からの実距離 × 0.62 (遠景を圧縮して霧の内側に収めている既存スケールに合わせる)
+// =====================================================================
+function addEnoshimaScenery(grp, surfStrip) {
+  const sc = new THREE.Group();
+
+  // ---- 1) 鎌倉〜逗子〜葉山〜三浦半島: 稲村ヶ崎で海へ突き出し、由比ヶ浜・逗子湾を経て南へ折れる実際の海岸線 ----
+  const MIURA = [
+    [2900, -1960], [3150, -1700], [3330, -1350], [3470, -1150], [3640, -1330], [3900, -1680], [4300, -1770], [4700, -1640],
+    [4950, -1450], [5200, -1230], [5520, -1000], [5850, -860], [6100, -420], [6330, 350], [6650, 1200], [7050, 2250],
+    [7450, 3250], [7700, 4500], [8000, 5800], [8200, 7400], [8300, 9000], [8100, 10500], [9100, 11250], [10500, 10700],
+    [11800, 9000], [12500, 6000], [12900, 2500], [13300, -1000], [13600, -2600],
+  ];
+  const sdM = makeCoastField(MIURA, [[13600, -3600], [2900, -3600]]);
+  const isBeach = (x, z) => (x > 3650 && x < 4900 && z < -1450) || (x > 5300 && x < 6050 && z > -1150 && z < -650) || (x > 6150 && x < 6700 && z > -100 && z < 1300) || (x > 7200 && x < 7600 && z > 2600 && z < 3500);
+  const miuraH = (x, z) => {
+    const d = sdM(x, z);
+    if (d <= 0) return Math.max(-30, -3 + d * 0.08);
+    const fade = smooth(0, 1100, x - 2900) * (1 - smooth(-1900, -1300, z)) + smooth(-1900, -1300, z);
+    const top = 150 + 85 * smooth(-1200, 0, z) - 175 * smooth(5500, 10500, z);
+    const n = 0.45 + 0.55 * noise2(x / 1100 + 3, z / 1100 - 7);
+    let h = 2.2 * smooth(0, 35, d) + top * Math.pow(smooth(20, 1500, d), 0.9) * n * fade;
+    h += 36 * Math.exp(-((x - 3440) ** 2 + (z + 1250) ** 2) / 60000) * smooth(0, 30, d); // 稲村ヶ崎の断崖
+    h += 95 * Math.exp(-((x - 8350) ** 2 + (z - 1950) ** 2) / 1.6e6); // 大楠山 (241m)
+    return h - 1.0;
+  };
+  const miuraC = (x, z, h, out) => {
+    const d = sdM(x, z), g = noise2(x / 150, z / 150);
+    if (h < 0.3) out.setRGB(0.34, 0.32, 0.28);
+    else if (d < 50 && isBeach(x, z)) out.setRGB(0.52 + g * 0.04, 0.47 + g * 0.04, 0.38); // 由比ヶ浜・材木座・逗子海岸・森戸・秋谷の砂浜
+    else if (d < 55) out.setRGB(0.43 + g * 0.05, 0.4 + g * 0.05, 0.34); // 岩礁・崖
+    else if (h < 75 && d < 1500 && noise2(x / 90, z / 90) > 0.47) out.setRGB(0.47 + g * 0.05, 0.46 + g * 0.05, 0.43); // 市街地
+    else out.setRGB(0.1 + 0.05 * g, 0.21 + 0.08 * g, 0.08 + 0.03 * g);
+  };
+  const mxs = gridAxis([[2800, 7200, 85], [7200, 13700, 270]]);
+  const mzs = gridAxis([[-3600, -2200, 280], [-2200, 1400, 90], [1400, 11700, 280]]);
+  sc.add(new THREE.Mesh(buildGrid(mxs, mzs, miuraH, miuraC), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  // 鎌倉〜葉山の砂浜の白波
+  {
+    const pts = [];
+    for (let i = 3; i < 13; i++) {
+      const [ax, az] = MIURA[i], [bx, bz] = MIURA[i + 1];
+      const L = Math.hypot(bx - ax, bz - az), nx = -(bz - az) / L, nz = (bx - ax) / L; // 進行方向の右手(海側)
+      for (let s = 0; s < L; s += 40) pts.push({ x: ax + (bx - ax) * s / L, z: az + (bz - az) * s / L, ux: nx, uz: nz });
+    }
+    surfStrip(sc, pts, 10);
+  }
+  // 鎌倉・逗子・葉山・秋谷の低層住宅地(海岸段丘〜谷戸に沿って)
+  const pal = [0xf3efe6, 0xe9e2d3, 0xd9d4c8, 0xf6f0e0, 0xc9b8a0, 0xe8ddd0, 0xb9c4cc];
+  const roofs = [0x4a4f55, 0x6b5a4a, 0x3d4a5a, 0x7a3b2e, 0x5c6065];
+  for (let k = 0, tries = 0; k < 420 && tries < 6000; tries++) {
+    const x = 3000 + rnd() * 5200, z = -2500 + rnd() * 6200;
+    const d = sdM(x, z); if (d < 45 || d > 1500) continue;
+    const h = miuraH(x, z); if (h < 2 || h > 85) continue;
+    if (noise2(x / 90, z / 90) < 0.42) continue;
+    const w = 9 + rnd() * 9, dd = 9 + rnd() * 9, bh = 6 + rnd() * 7;
+    sBox(sc, x, h - 1.5, z, w, bh + 1.5, dd, pal[(rnd() * pal.length) | 0]);
+    sBox(sc, x, h + bh, z, w + 0.8, 0.9, dd + 0.8, roofs[(rnd() * roofs.length) | 0]);
+    k++;
+  }
+  // 逗子マリーナ(小坪): 海に張り出した白いリゾートマンション群とマリーナ防波堤
+  for (let i = 0; i < 4; i++) sBox(sc, 4930 + i * 70, 1, -1420 + i * 40, 26, 30 + (i % 2) * 6, 58, 0xf4f1ea, -0.7);
+  sBox(sc, 5230, -2, -1150, 260, 5, 12, 0x9ca3af, -0.75);
+  sBox(sc, 5120, 0, -1300, 160, 3, 90, 0xcfcac0, -0.75);
+  // 葉山・森戸沖の名島(菜島): 白い鳥居と紅白の小灯台(葉山灯台)
+  sCyl(sc, 6060, -2, 520, 14, 30, 9, 0x4a4540, 7);
+  sBanded(sc, 6070, 6, 520, 1.1, 1.4, 9, 4, 0xf8fafc, 0xdc2626, 8);
+  sBox(sc, 6045, 6, 505, 0.7, 6, 0.7, 0xf8fafc); sBox(sc, 6045, 6, 513, 0.7, 6, 0.7, 0xf8fafc); sBox(sc, 6045, 11.6, 509, 1, 0.7, 11, 0xf8fafc);
+
+  // ---- 2) 江の島周辺: 江の島大橋(車道)・片瀬漁港の紅白灯台・新江ノ島水族館・腰越漁港 ----
+  {
+    const bx = ISLAND.x + 30; // 弁天橋(ISLAND.x - 40)の東隣に並行する江の島大橋
+    let zN = ISLAND.z - 200; for (let z = ISLAND.z; z > ISLAND.z - 600; z -= 2) { if (islandH(bx, z) < 0.5) { zN = z + 4; break; } }
+    const zC = -(COAST + 110 + 40 * Math.sin(bx / 700) + 25 * Math.sin(bx / 230 + 1));
+    const L = zN - zC;
+    sBox(sc, bx, 6.2, (zN + zC) / 2, 15, 1.8, L, 0xcbc7bf);
+    sBox(sc, bx - 7.2, 8.0, (zN + zC) / 2, 0.4, 1.0, L, 0xe5e7eb); sBox(sc, bx + 7.2, 8.0, (zN + zC) / 2, 0.4, 1.0, L, 0xe5e7eb);
+    for (let z = zC + 20; z < zN - 10; z += 38) sBox(sc, bx, -1, z, 10, 7.4, 2.2, 0x8c8a85);
+  }
+  // 片瀬漁港 (境川河口・弁天橋の西隣): 港口の右(東)に赤灯台、左(西)に白灯台
+  {
+    const zc = -(COAST + 60);
+    sBox(sc, 330, -1, zc + 90, 10, 4.2, 230, 0x9ca3af, 0.12);
+    sBox(sc, 175, -1, zc + 80, 10, 4.2, 210, 0x9ca3af, -0.1);
+    sBanded(sc, 343, 3, zc + 205, 1.4, 1.9, 11, 1, 0xdc2626, 0xdc2626, 10); sCyl(sc, 343, 14, zc + 205, 1.6, 1.6, 1.2, 0x7f1d1d, 10);
+    sBanded(sc, 165, 3, zc + 185, 1.4, 1.9, 11, 1, 0xf8fafc, 0xf8fafc, 10); sCyl(sc, 165, 14, zc + 185, 1.6, 1.6, 1.2, 0x475569, 10);
+  }
+  // 新江ノ島水族館 (片瀬西浜): 白い低層棟と曲面屋根
+  {
+    const ax = -120, az = -(COAST + 175), ah = landH(ax, az);
+    sBox(sc, ax, ah - 1, az, 150, 14, 55, 0xe8ecef);
+    sBox(sc, ax + 40, ah - 1, az + 26, 70, 10, 4, 0x2b6f9a);
+    const roof = new THREE.Mesh(sGeo('halfcyl', () => new THREE.CylinderGeometry(1, 1, 1, 10, 1, false, 0, Math.PI)), sMat(0xf4f6f7));
+    roof.rotation.z = Math.PI / 2; roof.scale.set(8, 150, 28); roof.position.set(ax, ah + 13, az); sc.add(roof);
+  }
+  // 腰越漁港 (小動岬の脇) の防波堤
+  sBox(sc, 1250, -1, -(COAST + 10), 9, 4, 150, 0x9ca3af, 0.2);
+  sBox(sc, 1180, -1, -(COAST - 60), 90, 4, 9, 0x9ca3af, 0.2);
+
+  // ---- 3) 茅ヶ崎: 烏帽子岩(姥島)と茅ヶ崎ヘッドランド(T字突堤) ----
+  {
+    const ex = -6450, ez = -1480;
+    const rock = new THREE.Mesh(sGeo('eboshi', () => {
+      const prof = [[0, -3], [11, -3], [10, 1], [7.5, 5], [5.5, 9], [3.6, 13], [1.8, 16.5], [0.4, 18.5], [0, 18.8]].map(([r, y]) => new THREE.Vector2(r, y));
+      return new THREE.LatheGeometry(prof, 7);
+    }), sMat(0x47423c));
+    rock.position.set(ex, 0, ez); rock.rotation.set(0.05, 0.4, 0.13); rock.scale.set(1, 1, 0.75); sc.add(rock);
+    for (const [dx, dz, r, h] of [[-26, 10, 9, 3.5], [18, -14, 7, 2.6], [36, 8, 10, 2.2], [-12, -26, 6, 2.8], [52, -6, 5, 1.6], [-44, -8, 7, 1.8]]) sCyl(sc, ex + dx, -2, ez + dz, r * 0.45, r, h + 2, 0x4b463f, 6);
+    const hx = -5600, hz = -(COAST + 40 + 40 * Math.sin(-5600 / 700) + 25 * Math.sin(-5600 / 230 + 1));
+    sBox(sc, hx, -1, hz + 70, 9, 3.4, 150, 0x8f8b84);
+    sBox(sc, hx, -1, hz + 145, 120, 3.4, 12, 0x8f8b84);
+  }
+
+  // ---- 4) 大磯・平塚: 海岸近くまで迫る高麗山の丘と、湘南平(181m)の紅白テレビ塔群 ----
+  distantLand(sc, -11300, -2850, 2600, 950, 175, 0.12, 24);
+  distantLand(sc, -8900, -3300, 1500, 750, 190, 0.25, 20);
+  for (const [tx, tz, th] of [[-8950, -3330, 58], [-8820, -3270, 48], [-9080, -3380, 40]]) sBanded(sc, tx, 30, tz, 1.4, 6, th + 120, 9, 0xdc2626, 0xf8fafc, 4); // 根元は丘に埋める
+
+  // ---- 5) 遠景の山並み: 丹沢山地(大山1252m・塔ノ岳・蛭ヶ岳)/ 真鶴半島 / 初島 ----
+  distantLand(sc, -19500, -12600, 6800, 2500, 1650, -0.44, 40);
+  distantLand(sc, -13900, -10900, 2300, 2100, 1500, 0.2, 26);
+  distantLand(sc, -19400, 8600, 1700, 800, 120, 0.65, 20);
+  distantLand(sc, -17200, 16600, 900, 600, 55, 0, 14);
+
+  grp.add(sc);
+}
+
+// =====================================================================
+// 八景島ステージ: 実際の東京湾西岸〜房総の景観 (root ローカル座標: 八景島中心 ≒ (-1250, 150)、コース ≒ (280, -980))
+// =====================================================================
+function addHakkeiScenery(root) {
+  const sc = new THREE.Group();
+
+  // ---- 1) 横須賀 (追浜・夏島の南〜猿島の対岸): 八景島から南に見える丘陵と市街・港 ----
+  const YOKO = [[-1300, 2350], [-1020, 2300], [-600, 2600], [-150, 3100], [300, 3500], [700, 3800], [1000, 4300], [1400, 5000], [2000, 5700], [2600, 6600], [3200, 7800], [3600, 9500], [3800, 12500]];
+  const sdY = makeCoastField(YOKO, [[-1300, 12500]]);
+  const yokoH = (x, z) => {
+    const d = sdY(x, z);
+    if (d <= 0) return Math.max(-30, -3 + d * 0.08);
+    return 2.6 * smooth(0, 30, d) + 128 * Math.pow(smooth(40, 1300, d), 0.9) * (0.45 + 0.55 * noise2(x / 900 + 11, z / 900)) - 1.0;
+  };
+  const yokoC = (x, z, h, out) => {
+    const d = sdY(x, z), g = noise2(x / 140, z / 140);
+    if (h < 0.3) out.setRGB(0.36, 0.35, 0.33);
+    else if (d < 70) out.setRGB(0.52, 0.53, 0.54); // 岸壁
+    else if (h < 60 && d < 1300 && noise2(x / 80, z / 80) > 0.42) out.setRGB(0.48 + g * 0.05, 0.47 + g * 0.05, 0.45);
+    else out.setRGB(0.1 + 0.05 * g, 0.22 + 0.08 * g, 0.09 + 0.03 * g);
+  };
+  sc.add(new THREE.Mesh(buildGrid(gridAxis([[-1300, 4300, 110]]), gridAxis([[2200, 6200, 110], [6200, 12500, 300]]), yokoH, yokoC), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const cityPal = [0xe5e7eb, 0xd6d3d1, 0xf1f5f9, 0xcbd5e1, 0xe7e5e4];
+  for (let k = 0, tries = 0; k < 150 && tries < 4000; tries++) {
+    const x = -900 + rnd() * 3300, z = 2500 + rnd() * 4200;
+    const d = sdY(x, z); if (d < 50 || d > 1100) continue;
+    const h = yokoH(x, z); if (h < 2 || h > 50) continue;
+    const w = 14 + rnd() * 18, dd = 14 + rnd() * 18, bh = 9 + rnd() * 22;
+    sBox(sc, x, h - 2, z, w, bh + 2, dd, cityPal[(rnd() * cityPal.length) | 0], rnd() * 0.6);
+    k++;
+  }
+  // 横須賀中央の高層ビル群 (ベイスクエアよこすか等 ~100m) と港のクレーン
+  for (const [x, z, w, h] of [[520, 4150, 30, 104], [610, 4230, 26, 72], [430, 4300, 24, 62], [700, 4120, 22, 55]]) sBox(sc, x, 2, z, w, h, w, 0xe2e8f0);
+  for (const [x, z] of [[860, 3880], [960, 4050]]) { sBox(sc, x, 2, z, 4, 45, 4, 0x64748b); sBox(sc, x + 14, 44, z, 40, 3, 3, 0x64748b); }
+  // 猿島 (東京湾唯一の自然島: 横須賀沖の緑の小島)
+  distantLand(sc, 1600, 2950, 240, 130, 42, 0.5, 14);
+  // 野島 (野島公園の小高い丘・展望台)
+  distantLand(sc, -1650, 950, 300, 220, 58, 0.3, 14);
+  sCyl(sc, -1650, 40, 950, 3, 4, 14, 0xf1f5f9, 8);
+
+  // ---- 2) 北側: 磯子火力発電所(扁平な200m煙突)・根岸製油所(タンク群と紅白煙突) ----
+  sCyl(sc, -1900, 1, -4400, 12, 15, 200, 0xd9dde2, 12, 1, 0.55);
+  sCyl(sc, -1900, 186, -4400, 12.2, 12.4, 14, 0x9aa5b1, 12, 1, 0.55);
+  sBox(sc, -2010, 1, -4330, 70, 72, 55, 0xe5e7eb); sBox(sc, -2090, 1, -4440, 65, 64, 50, 0xd6dbe0);
+  for (const dz of [-80, 0]) sCyl(sc, -1790, 1, -4560 + dz, 26, 28, 48, 0xcbd5e1, 14);
+  for (let i = 0; i < 18; i++) sCyl(sc, -2250 - (i % 6) * 70, 1, -5000 - Math.floor(i / 6) * 75, 27, 27, 16 + (i % 3) * 4, i % 4 ? 0xeef0f2 : 0xd1d5db, 12);
+  sBanded(sc, -2350, 1, -5300, 3.5, 5, 120, 6, 0xdc2626, 0xf8fafc, 8);
+  sBanded(sc, -2600, 1, -5150, 3, 4.4, 95, 6, 0xdc2626, 0xf8fafc, 8);
+
+  // ---- 3) 対岸の房総半島: 富津岬の細長い砂州・君津製鉄所・東京湾アクアライン(海ほたる/風の塔)・鋸山〜鹿野山の稜線 ----
+  const BOSO = [[10400, 30000], [9800, 13000], [10450, 1600], [12950, 650], [14000, -3000], [14950, -7150], [18000, -9500], [22000, -12000], [25000, -18000], [26000, -26000]];
+  const sdB = makeCoastField(BOSO, [[42000, -26000], [42000, 30000]]);
+  const bosoH = (x, z) => {
+    const d = sdB(x, z);
+    if (d <= 0) return -30;
+    const south = smooth(-2000, 6000, z);
+    const top = 70 + 260 * south;
+    let h = 3 * smooth(0, 60, d) + top * Math.pow(smooth(200, 4500, d), 0.8) * (0.4 + 0.6 * noise2(x / 2600 + 1, z / 2600 + 5));
+    h += 150 * Math.exp(-((x - 18100) ** 2 + (z - 6800) ** 2) / 1.2e7); // 鹿野山 (379m)
+    h += 120 * Math.exp(-((x - 10600) ** 2 + (z - 12600) ** 2) / 1.5e6); // 鋸山 (329m)
+    return h - 2;
+  };
+  const bosoC = (x, z, h, out) => {
+    const g = noise2(x / 900, z / 900);
+    if (h < 3) out.setRGB(0.42, 0.4, 0.36);
+    else if (h < 40 && z < 3000) out.setRGB(0.4, 0.4, 0.4); // 君津・木更津の臨海工業地帯
+    else out.setRGB(0.13 + 0.05 * g, 0.21 + 0.06 * g, 0.13 + 0.03 * g);
+  };
+  sc.add(new THREE.Mesh(buildGrid(gridAxis([[9000, 34000, 600]]), gridAxis([[-26000, 30000, 700]]), bosoH, bosoC), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  distantLand(sc, 8700, 1500, 2000, 260, 14, 0.157, 24); // 富津岬
+  // 君津製鉄所: 高炉と紅白煙突
+  for (const [x, z] of [[13300, -300], [13700, 600], [14200, 1500]]) { sBox(sc, x, 0, z, 70, 70, 60, 0x8b8f94); sCyl(sc, x + 30, 0, z + 10, 7, 9, 105, 0x6b6f75, 8); }
+  for (const [x, z, h] of [[13000, -900, 190], [13500, 1000, 170], [14000, 2200, 150], [12900, 1800, 120]]) sBanded(sc, x, 0, z, 5, 7, h, 7, 0xdc2626, 0xf8fafc, 8);
+  // 東京湾アクアライン: 海ほたるPA(船型の人工島) と木更津へ伸びる低い橋、川崎側の換気塔「風の塔」
+  sBox(sc, 13300, -1, -9800, 110, 26, 640, 0xe5e7eb, 0.557);
+  sBox(sc, 13300, 24, -9800, 60, 10, 260, 0xcbd5e1, 0.557);
+  {
+    const ax = 13300 + 320 * Math.sin(0.557), az = -9800 + 320 * Math.cos(0.557);
+    const bx = 14950, bz = -7150, L = Math.hypot(bx - ax, bz - az), ry = Math.atan2(bx - ax, bz - az);
+    const N = 8;
+    for (let i = 0; i < N; i++) {
+      const t = (i + 0.5) / N, hump = 12 + 30 * Math.exp(-((t - 0.25) ** 2) / 0.01);
+      sBox(sc, ax + (bx - ax) * t, hump, az + (bz - az) * t, 22, 3, L / N + 4, 0xd1d5db, ry);
+    }
+  }
+  sCyl(sc, 10450, -1, -11750, 22, 26, 75, 0xe2e8f0, 10); sCyl(sc, 10560, -1, -11720, 18, 22, 90, 0xe2e8f0, 10);
+
+  // ---- 4) 東京湾の錨泊船・航行船 (横浜港外の錨地〜浦賀水道) ----
+  for (const [x, z, ry, len, type, hex] of [
+    [3600, -3200, 0.4, 190, 'bulk', 0x7f1d1d], [5200, -1900, -0.2, 230, 'container', 0x1e3a8a], [6400, -4300, 0.9, 170, 'tanker', 0x111827],
+    [5600, 1200, 1.4, 200, 'car', 0xe5e7eb], [7900, -2600, 0.1, 250, 'container', 0x0f172a], [4300, 3600, -0.6, 160, 'bulk', 0x374151],
+    [8800, 3900, 1.6, 210, 'tanker', 0x7c2d12], [9300, -6200, 0.3, 180, 'bulk', 0x1f2937], [3200, -6800, -0.9, 200, 'container', 0x064e3b],
+  ]) sShip(sc, x, z, ry, len, type, hex);
+
+  // ---- 5) 遠景の丹沢(大山)・箱根: 西の丘陵越しにわずかに稜線が覗く ----
+  distantLand(sc, -26500, -8300, 2400, 2200, 1450, 0.2, 22);
+  distantLand(sc, -33000, -12000, 6500, 2400, 1600, -0.44, 30);
+  distantLand(sc, -38000, 9000, 8000, 6000, 1300, 0.25, 28);
+
+  root.add(sc);
+}
 
