@@ -67,15 +67,25 @@ function limb(parent, material, r, a, b, taper = 1) {
 function ell(parent, material, sx, sy, sz, x, y, z) { const m = new THREE.Mesh(sphereG, material); m.scale.set(sx, sy, sz); m.position.set(x, y, z); parent.add(m); return m; }
 const HAIR = [0x1d1510, 0x2b1d13, 0x3b2a1c, 0x14110f, 0x5a3f28];
 function buildHuman(g, style, jacket, isFemale = false) {
-  const skin = style.skin ?? (isFemale ? 0xf4cab0 : 0xe9b98f);
+  const rawSkin = style.skin ?? (isFemale ? 0xd68e66 : 0xcf855c);
+  const skinCol = new THREE.Color(rawSkin);
+  // 強い屋外太陽光の下で白飛びして真っ白に見えないよう、健康的な暖かみのある肌色トーンに補正
+  if (skinCol.r > 0.80 && skinCol.g > 0.70) {
+    skinCol.setHex(isFemale ? 0xd68e66 : 0xcf855c);
+  }
+  const skin = skinCol.getHex();
   const hat = style.hat ?? (isFemale ? 0xf8fafc : 0x1b2338);
-  const top = style.shirt ?? (isFemale ? 0x0ea5e9 : 0x2b6cff);
   const hairC = style.hair ?? (isFemale ? 0x2c1d14 : HAIR[Math.abs(((skin * 7) ^ (hat * 3)) % HAIR.length)]);
-  const suit = smat(0x1f242b, 0.65), top_ = smat(top, 0.68), skinM = smat(skin, 0.5, 0.02);
-  const pfd = smat(0x161920, 0.78), pfdSub = smat(0x252a34, 0.72), accent = smat(jacket, 0.55);
+  // インナーは黒いウェットスーツ/ラッシュガード、その上に鮮やかなビブス(プレイヤー=青、CP=黒・白・赤など)を着用
+  const suit = smat(0x1b1f26, 0.68), top_ = smat(0x1e232b, 0.70), skinM = smat(skin, 0.82, 0.0);
+  const bibCol = new THREE.Color(jacket);
+  const isLightBib = (bibCol.r * 0.3 + bibCol.g * 0.59 + bibCol.b * 0.11) > 0.72;
+  const pfd = smat(jacket, 0.56);
+  const pfdSub = smat(bibCol.clone().multiplyScalar(isLightBib ? 0.86 : 0.78).getHex(), 0.64);
+  const bibPanelMat = new THREE.MeshStandardMaterial({ map: getBibTex(jacket), roughness: 0.54, metalness: 0.02 });
   const glove = smat(0x1c2026, 0.75), gloveGrip = smat(0x374151, 0.88), boot = smat(0x15181e, 0.85), sole = smat(0xf1f5f9, 0.75), pad = smat(0x2d333d, 0.88);
-  const lipColor = isFemale ? 0xd9777f : new THREE.Color(skin).multiplyScalar(0.82).getHex();
-  const lip = smat(lipColor, 0.42), hairM = smat(hairC, 0.85);
+  const lipColor = isFemale ? 0xc8646c : new THREE.Color(skin).multiplyScalar(0.78).getHex();
+  const lip = smat(lipColor, 0.55), hairM = smat(hairC, 0.85);
   const eyeW = smat(0xf8fafc, 0.3), iris = smat(0x291d12, 0.2);
   const frameM = smat(0x111318, 0.3, 0.2), lensM = smat(0x0f172a, 0.08, 0.78);
 
@@ -124,29 +134,21 @@ function buildHuman(g, style, jacket, isFemale = false) {
     tr.rotation.z = s * 0.30;
   }
 
-  // 3) レーシングPFD (身体に沿う丸みのあるスリムライフジャケット)
-  const pw = 0.268 * shScale;
-  ell(upper, pfd, pw * 0.52, 0.135, 0.098, 0, 0.365, -0.012);
-  const pfdFront = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.88, 0.23, 0.034), pfd);
-  pfdFront.position.set(0, 0.365, -0.086); pfdFront.rotation.x = 0.04; upper.add(pfdFront);
-  const pfdBack = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.90, 0.24, 0.032), pfd);
-  pfdBack.position.set(0, 0.375, 0.078); pfdBack.rotation.x = -0.04; upper.add(pfdBack);
+  // 3) レーシングビブス & PFD (参考画像準拠: 黒ウェットの上に着用するビブス、胸・背中にロゴ入り)
+  const pw = 0.272 * shScale;
+  ell(upper, pfd, pw * 0.53, 0.142, 0.100, 0, 0.365, -0.012);
+  const pfdFront = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.90, 0.24, 0.036), bibPanelMat);
+  pfdFront.position.set(0, 0.368, -0.088); pfdFront.rotation.x = 0.04; upper.add(pfdFront);
+  const pfdBack = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.92, 0.245, 0.034), bibPanelMat);
+  pfdBack.position.set(0, 0.375, 0.080); pfdBack.rotation.x = -0.04; upper.add(pfdBack);
   for (const s of [-1, 1]) {
-    const sideP = new THREE.Mesh(new THREE.BoxGeometry(0.030, 0.195, 0.165), pfdSub);
-    sideP.position.set(s * 0.130 * shScale, 0.355, -0.004); upper.add(sideP);
-    const shStrap = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.065, 0.168), pfd);
+    const sideP = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.205, 0.168), pfdSub);
+    sideP.position.set(s * 0.131 * shScale, 0.358, -0.004); upper.add(sideP);
+    const shStrap = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.072, 0.172), pfd);
     shStrap.position.set(s * 0.096 * shScale, 0.525, -0.004); upper.add(shStrap);
-    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.025, 0.036), smat(0x94a3b8, 0.35, 0.6));
-    buckle.position.set(s * 0.144 * shScale, 0.305, -0.02); upper.add(buckle);
   }
-  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.16 * shScale, 0.098, 0.014), pfdSub);
-  pocket.position.set(0, 0.335, -0.105); pocket.rotation.x = 0.04; upper.add(pocket);
-  const accBand = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.86, 0.028, 0.012), accent);
-  accBand.position.set(0, 0.445, -0.103); accBand.rotation.x = 0.04; upper.add(accBand);
-  const backBand = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.86, 0.028, 0.010), accent);
-  backBand.position.set(0, 0.455, 0.094); backBand.rotation.x = -0.04; upper.add(backBand);
-  const waistBelt = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.94, 0.022, 0.178), smat(0x111318, 0.9));
-  waistBelt.position.set(0, 0.270, -0.004); upper.add(waistBelt);
+  const waistBelt = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.95, 0.020, 0.180), smat(0x111318, 0.85));
+  waistBelt.position.set(0, 0.258, -0.004); upper.add(waistBelt);
 
   // 4) 腕・前腕・グローブ (シートやティラーを自然に構え、強風フルハイク時は外側の腕を伸ばせるよう肩ピボット化)
   for (const s of [-1, 1]) {
@@ -244,73 +246,75 @@ const ANIMAL = {
   capybara: { body: 0xa87a4b, belly: 0xc29866, nose: 0x3a2a1a },
 };
 
-// ネコ用 Gill ライフジャケット前面テクスチャ (赤いボディ・白Gillロゴ・ポケットファスナー・斜めシーム)
-let gillPfdTex = null;
-function getGillPfdTex() {
-  if (gillPfdTex) return gillPfdTex;
+// 参考画像(青いzhikレーシングビブス)を忠実に再現したカラー別ビブステクスチャキャッシュ
+const bibTexCache = new Map();
+function getBibTex(colorHex = 0x0e52b8) {
+  const key = colorHex >>> 0;
+  if (bibTexCache.has(key)) return bibTexCache.get(key);
   const c = document.createElement('canvas'); c.width = 256; c.height = 256;
   const ctx = c.getContext('2d');
-  // ベース赤 (#d8261c)
-  ctx.fillStyle = '#d8261c';
-  ctx.fillRect(0, 0, 256, 256);
-  // 首元のU字カット内側の黒裏地
-  ctx.fillStyle = '#181b20';
-  ctx.beginPath();
-  ctx.arc(128, 12, 54, 0, Math.PI);
-  ctx.fill();
-  // 胸中央の白い「Gill」ロゴ
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 34px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('Gill', 128, 98);
-  // Gillロゴの「i」上の特徴的なドットアクセント
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(122, 69, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-  // フロントポケットの角丸輪郭 & 上部黒ファスナーライン
-  const px = 48, py = 116, pw = 160, ph = 92, pr = 18;
-  ctx.strokeStyle = '#99150e';
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.roundRect(px, py, pw, ph, pr);
-  ctx.stroke();
-  // ポケット上部の黒ジッパーライン
-  ctx.strokeStyle = '#1b1e24';
-  ctx.lineWidth = 4.5;
-  ctx.beginPath();
-  ctx.moveTo(px + 12, py + 4);
-  ctx.lineTo(px + pw - 12, py + 4);
-  ctx.stroke();
-  // ポケット右上の小さな黒ピスタグ
-  ctx.fillStyle = '#181b20';
-  ctx.fillRect(px + pw - 36, py + 5, 22, 9);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 7px Arial';
-  ctx.fillText('Gill', px + pw - 25, py + 12);
-  // ポケット下端から左右斜め下へ伸びるシームライン
-  ctx.strokeStyle = '#99150e';
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.moveTo(px + 28, py + ph);
-  ctx.lineTo(18, 245);
-  ctx.moveTo(px + pw - 28, py + ph);
-  ctx.lineTo(238, 245);
-  ctx.stroke();
-  // 下端の黒いウェビングベルト
-  ctx.fillStyle = '#161920';
-  ctx.fillRect(0, 222, 256, 26);
+  const col = new THREE.Color(colorHex);
+  const hexStr = '#' + col.getHexString();
+  const lum = col.r * 0.3 + col.g * 0.59 + col.b * 0.11;
+  const fg = lum > 0.70 ? '#111827' : '#ffffff';
+  const seam = '#' + col.clone().multiplyScalar(lum > 0.70 ? 0.82 : 0.74).getHexString();
 
-  gillPfdTex = new THREE.CanvasTexture(c);
-  gillPfdTex.colorSpace = THREE.SRGBColorSpace;
-  return gillPfdTex;
+  // ベースカラー (プレイヤーは鮮やかなロイヤルブルー #0e52b8、CPは黒・白・赤など)
+  ctx.fillStyle = hexStr;
+  ctx.fillRect(0, 0, 256, 256);
+
+  // 両脇の立体シェーディングとフラットロックステッチ線
+  ctx.fillStyle = seam;
+  ctx.fillRect(0, 0, 22, 256);
+  ctx.fillRect(234, 0, 22, 256);
+  ctx.strokeStyle = seam;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(32, 0); ctx.lineTo(26, 256);
+  ctx.moveTo(224, 0); ctx.lineTo(230, 256);
+  ctx.stroke();
+
+  // 首元の丸首パイピング
+  ctx.fillStyle = '#14181f';
+  ctx.beginPath();
+  ctx.arc(128, 8, 52, 0, Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = seam;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  // 胸上部のブランドロゴ (参考画像の「zhik」スタイル白ロゴ)
+  ctx.fillStyle = fg;
+  ctx.font = 'bold 28px "Helvetica Neue", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('zhik', 128, 92);
+
+  // 胸中央のチームロゴボックス & 「Sailing Team」プリント (参考画像準拠)
+  const bx = 68, by = 114, bw = 120, bh = 38;
+  ctx.strokeStyle = fg;
+  ctx.lineWidth = 2.8;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.font = '900 18px "Helvetica Neue", Arial, sans-serif';
+  ctx.fillText('SNIPE', 128, by + 26);
+
+  ctx.font = 'italic bold 20px Georgia, serif';
+  ctx.fillText('Sailing Team', 128, 180);
+
+  // 裾のパイピングライン
+  ctx.fillStyle = seam;
+  ctx.fillRect(0, 236, 256, 20);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  bibTexCache.set(key, tex);
+  return tex;
 }
 
 // 座位の原点=お尻。前方 -z、上 +y。全高 約0.95m
 export function buildFigure(type, style = {}) {
   if (customModels.has(type)) return customModels.get(type).clone(true);
   const g = new THREE.Group();
-  const jacket = style.jacket ?? 0xff7a1a;
+  const jacket = style.jacket ?? 0x0e52b8;
   if (type === 'human' || type === 'human_m' || type === 'human_f' || !ANIMAL[type]) {
     return buildHuman(g, style, jacket, type === 'human_f');
   }
@@ -354,63 +358,55 @@ export function buildFigure(type, style = {}) {
     sph(upper, A.belly, 0.14, 0.16, 0.08, 0, 0.23, -0.15);
   }
 
-  if (isRoundPet) {
-    // 画像の Gill 赤ライフジャケット(PFD)をまるっこい胴体にフィットさせて再現:
-    const gillRed = smat(0xd8261c, 0.62);
-    const gillDark = smat(0x181b20, 0.82);
-    const gillPocketRed = smat(0xc81e14, 0.68);
-    const gillFrontMat = new THREE.MeshStandardMaterial({ map: getGillPfdTex(), roughness: 0.58, metalness: 0.02 });
+  // 動物キャラクターも人間と同じレーシングビブス(自分が選んだキャラは青ビブス、CP艇は黒・白・赤など)を着用
+  {
+    const bibCol = new THREE.Color(jacket);
+    const isLight = (bibCol.r * 0.3 + bibCol.g * 0.59 + bibCol.b * 0.11) > 0.72;
+    const bibMain = smat(jacket, 0.56);
+    const bibDark = smat(0x181b20, 0.82);
+    const bibSub = smat(bibCol.clone().multiplyScalar(isLight ? 0.86 : 0.78).getHex(), 0.66);
+    const bibFrontMat = new THREE.MeshStandardMaterial({ map: getBibTex(jacket), roughness: 0.54, metalness: 0.02 });
+    const rScale = isRoundPet ? 1.0 : 0.88;
 
-    // 赤いPFD本体(まるっこい胴回り)
-    ell(upper, gillRed, 0.264, 0.205, 0.232, 0, 0.245, -0.005);
+    // ビブス本体(胴回り)
+    ell(upper, bibMain, 0.264 * rScale, 0.205, 0.232 * rScale, 0, 0.245, -0.005);
     // 首元の黒いインナーライニング
-    ell(upper, gillDark, 0.148, 0.078, 0.142, 0, 0.382, -0.035);
-    // 前面パネル (Gillロゴ・ポケット・ベルト描画テクスチャ付き曲面)
+    ell(upper, bibDark, 0.148 * rScale, 0.078, 0.142 * rScale, 0, 0.382, -0.035);
+    // 前面・背面パネル (zhik / Sailing Team ビブスロゴ描画テクスチャ付き曲面)
     const frontPanel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.242, 0.255, 0.315, 24, 1, true, -Math.PI * 0.32, Math.PI * 0.64),
-      gillFrontMat
+      new THREE.CylinderGeometry(0.242 * rScale, 0.255 * rScale, 0.315, 24, 1, true, -Math.PI * 0.32, Math.PI * 0.64),
+      bibFrontMat
     );
     frontPanel.rotation.y = Math.PI;
     frontPanel.scale.set(1.06, 1, 0.94);
     frontPanel.position.set(0, 0.245, -0.012);
     upper.add(frontPanel);
 
-    // 立体感のあるフロント角丸ポケットの膨らみ & 上部黒ジッパー
-    const pocket3D = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.115, 0.028), gillPocketRed);
-    pocket3D.position.set(0, 0.215, -0.228);
-    pocket3D.rotation.x = 0.05;
-    upper.add(pocket3D);
-    const zipLine = new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.012, 0.032), gillDark);
-    zipLine.position.set(0, 0.270, -0.226);
-    upper.add(zipLine);
+    const backPanel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.240 * rScale, 0.252 * rScale, 0.305, 24, 1, true, -Math.PI * 0.30, Math.PI * 0.60),
+      bibFrontMat
+    );
+    backPanel.scale.set(1.05, 1, 0.93);
+    backPanel.position.set(0, 0.245, 0.006);
+    upper.add(backPanel);
 
-    // 左右の黒いパッド入りショルダーストラップ + 赤いチェストパネル上部
+    // ビブス肩ストラップ
     for (const s of [-1, 1]) {
-      const redShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.095, 0.14), gillRed);
-      redShoulder.position.set(s * 0.128, 0.380, -0.048);
-      redShoulder.rotation.z = -s * 0.12;
-      upper.add(redShoulder);
+      const shShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.072 * rScale, 0.095, 0.14 * rScale), bibMain);
+      shShoulder.position.set(s * 0.128 * rScale, 0.380, -0.040);
+      shShoulder.rotation.z = -s * 0.12;
+      upper.add(shShoulder);
 
-      const blkStrap = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.058, 0.155), gillDark);
-      blkStrap.position.set(s * 0.124, 0.432, -0.015);
-      blkStrap.rotation.z = -s * 0.10;
-      upper.add(blkStrap);
+      const sideHem = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.18, 0.15 * rScale), bibSub);
+      sideHem.position.set(s * 0.225 * rScale, 0.245, -0.005);
+      upper.add(sideHem);
     }
 
-    // 下部の黒いウェビングベルト & 左寄り(向かって左)の黒バックルとベルトループ
-    const waistBelt = new THREE.Mesh(cylG, gillDark);
-    waistBelt.scale.set(0.268, 0.034, 0.238);
-    waistBelt.position.set(0, 0.128, -0.008);
+    // 下部の裾トリムベルト
+    const waistBelt = new THREE.Mesh(cylG, bibDark);
+    waistBelt.scale.set(0.266 * rScale, 0.026, 0.236 * rScale);
+    waistBelt.position.set(0, 0.126, -0.008);
     upper.add(waistBelt);
-
-    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.044, 0.024), smat(0x111318, 0.4, 0.2));
-    buckle.position.set(-0.058, 0.128, -0.238);
-    upper.add(buckle);
-    const keeper = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.046, 0.026), gillDark);
-    keeper.position.set(-0.110, 0.128, -0.225);
-    upper.add(keeper);
-  } else {
-    const band = new THREE.Mesh(cylG, mat(jacket)); band.scale.set(0.235, 0.1, 0.215); band.position.set(0, 0.24, 0); upper.add(band);
   }
 
   const head = new THREE.Group(); head.position.set(0, 0.61, -0.01); upper.add(head);
