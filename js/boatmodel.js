@@ -497,15 +497,15 @@ export class BoatModel {
     // 海況に合わせた上下動(ヒーブ)と縦揺れ(ピッチ): 物理と同じ波関数を進行方向に沿って評価する
     const hx = Math.sin(b.h), hz = -Math.cos(b.h);
     const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
-    const heave = ws.hLong + (ws.h - ws.hLong) * 0.35;
-    const pitchW = clamp(Math.atan(ws.slopeLong + (ws.slope - ws.slopeLong) * 0.55) * 0.85, -0.2, 0.2);
+    const heave = ws.hLong + (ws.h - ws.hLong) * 0.58;
+    const pitchW = clamp(Math.atan(ws.slopeLong + (ws.slope - ws.slopeLong) * 0.72) * 0.95, -0.24, 0.24);
     // 横方向の傾き(三角波の交差波で左右にも揺さぶられる)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
-    const rollW = clamp(Math.atan(wsR.slope) * 0.35, -0.08, 0.08);
-    // コクピット床(FLOOR_Y)が海面(y=0)より下に潜って海が見えないよう、基準高さを上げて上下動も小さくする
-    this.body.position.y = 0.12 + heave + 0.015 * Math.sin(ph);
-    this.body.rotation.z = b.heel + 0.012 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = pitchW + 0.01 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.2;
+    const rollW = clamp(Math.atan(wsR.slope) * 0.45, -0.10, 0.10);
+    // コクピット床(FLOOR_Y)が海面(y=0)より下に潜って海が見えないよう、基準高さを保ちつつ立体的な波に追従させる
+    this.body.position.y = 0.14 + heave + 0.018 * Math.sin(ph);
+    this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
+    this.body.rotation.x = pitchW + 0.012 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.22;
 
     if (this.rudderGroup) {
       this.rudderGroup.rotation.y = b.steer * 0.6;
