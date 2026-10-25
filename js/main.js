@@ -777,7 +777,7 @@ function loop() {
   
   if (player) {
     cam.update(dt, time, player, boats);
-    world.update(time, camera, dt, state.phase === 'race' ? state.t : time);
+    world.update(time, camera, dt, state.phase === 'race' ? state.t : time, player);
     setWind(clamp(Math.abs(player.v) / 6, 0, 1));
     const active = (state.phase === 'race' || state.phase === 'menu' || state.phase === 'practice') && !state.paused;
     if (active) updateSailingAudio(dt, player, active);
