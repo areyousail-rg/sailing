@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>スナイプカップ | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="江の島沖でスナイプ級ヨット10艇がトラペゾイドコースで競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
-  <meta name="theme-color" content="#071a2e">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#0b1015">
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
   {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
@@ -58,7 +55,7 @@
       <div class="cell"><label>船速</label><b id="spd">0.0</b><small>kt</small><div class="wsm">風 <span id="windKt">9.0</span>kt <span id="windDir">200°</span></div></div>
       <div class="cell"><label>針路</label><b id="hdg">0°</b></div>
       <div class="cell"><label>真風角</label><b id="twa">0°</b></div>
-      <div class="cell sheet"><label>セールトリム <span id="autoLbl">セールAUTO</span></label><div class="bar"><div id="sheetFill"></div><div id="sheetOpt"></div></div></div>
+      <div class="cell sheet"><label>トリム <span id="autoLbl">AUTO</span></label><div class="bar"><div id="sheetFill"></div><div id="sheetOpt"></div></div></div>
       <div class="cell pole"><label>ランチャー <span id="poleLbl">DOWN</span></label><div class="poleBtns"><button id="poleUpBtn" type="button" title="ランチャーアップ [L]">▲ UP</button><button id="poleDownBtn" type="button" title="ランチャーダウン [L]">▼ DOWN</button></div></div>
       <div class="cell mark"><label>次のマーク</label><div class="arrowWrap"><div id="legArrow" class="legArrow">▲</div></div></div>
     </section>
@@ -71,7 +68,7 @@
       <span id="blkTxt" class="blkTxt">ブランケット 0%</span>
       <div class="blkTrack"><div id="blkFill" class="blkFill"></div></div>
     </div>
-    <button id="pauseBtn" class="pauseBtn" type="button">⏸ 中断</button>
+    <button id="pauseBtn" class="pauseBtn" type="button" title="中断 [P]">中断</button>
 
     <div id="bigCount"></div>
     <div id="toasts"></div>
@@ -83,14 +80,13 @@
     </div>
 
     <div id="help" class="panel help">
-      <b>操作</b>
-      <span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 舵(短く押すと1°ずつ、押し続けると大きく。風をまたぐとタック/ジャイブ)</span>
-      <span><kbd>T</kbd> オートタック <kbd>J</kbd> オートジャイブ</span>
-      <span><kbd>↑</kbd> セール引く <kbd>↓</kbd> セール出す(シバー) <kbd>R</kbd> セールAUTO</span>
-      <span><kbd>L</kbd> ランチャー アップ/ダウン(下レグのみ。上げると風上には向けない)</span>
-      <span><kbd>C</kbd> カメラ切替(ドローン / 艇内視点)</span>
-      <span><kbd>Q</kbd> 風上視点 <kbd>E</kbd> 風下視点 <kbd>W</kbd> 正面 <kbd>S</kbd> 後方</span>
-      <span><kbd>P</kbd> レース中断 <kbd>M</kbd> 音 <kbd>H</kbd> ヘルプ</span>
+      <b>KEYS</b>
+      <span><kbd>←</kbd><kbd>→</kbd> <kbd>A</kbd><kbd>D</kbd> 舵 — 短押しで1°、長押しで大きく。風位を越えるとタック/ジャイブ</span>
+      <span><kbd>T</kbd> オートタック　<kbd>J</kbd> オートジャイブ</span>
+      <span><kbd>↑</kbd> セールを引く　<kbd>↓</kbd> 出す　<kbd>R</kbd> オートトリム</span>
+      <span><kbd>L</kbd> ランチャー上げ下げ — 下りレグのみ</span>
+      <span><kbd>C</kbd> カメラ ドローン/艇内　<kbd>Q</kbd><kbd>E</kbd><kbd>W</kbd><kbd>S</kbd> 風上・風下・前・後</span>
+      <span><kbd>P</kbd> 中断　<kbd>M</kbd> 音　<kbd>H</kbd> この表示</span>
     </div>
 
     <div id="touch" class="hidden">
@@ -99,13 +95,13 @@
         <button id="tRight" type="button" aria-label="右へ">▶</button>
       </div>
       <div class="tgrp mid">
-        <button id="tCam" type="button">📷 船内</button>
-        <button id="tAuto" type="button">セールAUTO</button>
+        <button id="tCam" type="button">船内</button>
+        <button id="tAuto" type="button">AUTO</button>
         <button id="tPole" type="button">ランチャー</button>
       </div>
       <div class="tgrp right">
-        <button id="tUp" type="button">セール引く↑</button>
-        <button id="tDown" type="button">セール出す↓</button>
+        <button id="tUp" type="button">引く</button>
+        <button id="tDown" type="button">出す</button>
       </div>
     </div>
   </main>
@@ -113,13 +109,12 @@
   <!-- 中断（ポーズ）モーダル -->
   <section id="pauseModal" class="overlay menu hidden">
     <div class="card small pauseCard">
-      <p class="eyebrow">RACE PAUSED</p>
-      <h1>レース中断中</h1>
-      <p class="lead">レースを中断しています。再開するか、最初からやり直せます。</p>
+      <p class="eyebrow">Paused</p>
+      <h1>中断中</h1>
       <div class="pauseActions">
-        <button id="resumeBtn" class="cta" type="button">▶ 再開</button>
-        <button id="restartBtn" class="btnSec" type="button">🔄 レースを最初から始める</button>
-        <button id="exitMenuBtn" class="btnSec danger" type="button">🏠 スタート画面へ戻る</button>
+        <button id="resumeBtn" class="cta" type="button">再開</button>
+        <button id="restartBtn" class="btnSec" type="button">最初からやり直す</button>
+        <button id="exitMenuBtn" class="btnSec danger" type="button">スタート画面へ戻る</button>
       </div>
     </div>
   </section>
@@ -137,18 +132,18 @@
           <div id="venueChoices" class="choices venueChoices"></div>
         </div>
         <div class="menuGroup">
-          <h2>コースモード</h2>
+          <h2>コース</h2>
           <div id="courseChoices" class="choices venueChoices"></div>
         </div>
       </div>
       <div class="menuGroup">
-        <h2>ペナルティ設定 (RRS規則)</h2>
+        <h2>ペナルティ</h2>
         <div id="penaltyChoices" class="choices venueChoices"></div>
       </div>
       <div class="crewPreviewRow">
         <div class="crewRow">
           <div>
-            <h2>ヘルムスマン</h2>
+            <h2>ヘルム</h2>
             <div id="helmChoices" class="choices"></div>
           </div>
           <div>
@@ -164,8 +159,8 @@
         </div>
       </div>
       <div class="startActions">
-        <button id="startBtn" class="cta startRaceBtn" type="button">🏁 レーススタート</button>
-        <button id="practiceBtn" class="btnPractice" type="button">⛵ 練習モード</button>
+        <button id="startBtn" class="cta startRaceBtn" type="button">レーススタート</button>
+        <button id="practiceBtn" class="btnPractice" type="button">練習モード</button>
       </div>
       <div id="realWeatherInfo" class="weatherInfoBottom"></div>
     </div>
@@ -173,7 +168,7 @@
 
   <section id="result" class="overlay menu hidden">
     <div class="card small">
-      <p class="eyebrow">RACE RESULT</p>
+      <p class="eyebrow">Result</p>
       <h1 id="resultTitle">1位</h1>
       <div class="tableWrap"><table><thead><tr><th>順位</th><th>艇</th><th>タイム</th></tr></thead><tbody id="resultBody"></tbody></table></div>
       <button id="againBtn" class="cta" type="button">もう一度</button>
