@@ -350,24 +350,123 @@ export function makeMotorboat(type, o = {}) {
     pulpit(g, hb, 2.8, sh(2.8));
     g.add(outboard(-1.0, -L / 2 - 0.2, 1.25)); g.add(outboard(1.0, -L / 2 - 0.2, 1.25));
     for (const z of [-3.5, -1.0, 1.5]) for (const sg of [-1, 1]) g.add(fender(sg * (hb(z) + 0.05), sh(z) + 0.05, z));
-  } else { // rib
-    const L = 6.6, B = 2.4;
+  } else { // rib (参考写真準拠: 濃紺のディープVハル＋濃紺インフレータブルチューブ・側面グレーラビングストレーキ・黒グラブロープ・濃紺センターコンソール＆舵輪＆黒背もたれシート・船尾中央の大型船外機・観覧乗員)
+    const L = 6.8, B = 2.48;
     const g2 = new THREE.Group();
-    const half = (z) => { const u = (z + L / 2) / L; return (B / 2) * (u < 0.7 ? 1 : Math.sqrt(Math.max(0, 1 - Math.pow((u - 0.7) / 0.3, 2)))) + 0.02; };
-    const tubeMat = mat(o.tube ?? 0x2d3748, 0.7);
+    const half = (z) => {
+      const u = clamp01((z + L / 2) / L);
+      return (B / 2) * (u < 0.66 ? 1 : Math.sqrt(Math.max(0.01, 1 - Math.pow((u - 0.66) / 0.34, 1.85)))) + 0.02;
+    };
+    const tubeY = (z) => {
+      const u = clamp01((z + L / 2) / L);
+      return 0.48 + 0.28 * Math.pow(Math.max(0, (u - 0.35) / 0.65), 2.2);
+    };
+    const navyHullMat = gelcoat(0x142c58);
+    const tubeMat = mat(o.tube ?? 0x263759, 0.58, 0.08);
+    const strakeMat = mat(0x3b4048, 0.78);
+    const consoleNavy = gelcoat(0x152b54);
+
+    // 1) チューブ下の濃紺ディープVハル(FRP船底)
+    const vHull = hullGroup(L * 0.90, B * 0.74, 0.42, 0x142c58, 0x142c58, { bottomColor: 0x0e2042 });
+    vHull.position.set(0, 0.02, -0.05);
+    g2.add(vHull);
+
+    // 2) 左右の太い濃紺インフレータブルチューブ + 側面のグレーラビングストレーキ(防舷帯) + 船尾コーン + 黒グラブロープ
     for (const sg of [-1, 1]) {
-      const pts = []; for (let i = 0; i <= 14; i++) { const z = -L / 2 + (L * i) / 14; pts.push([sg * (half(z) - 0.0), 0.5 + 0.12 * Math.pow(i / 14, 3), z]); }
-      g2.add(tube(pts, 0.34, tubeMat));
+      const pts = [];
+      const strakePts = [];
+      const ropePts = [];
+      for (let i = 0; i <= 16; i++) {
+        const z = -L / 2 + (L * i) / 16;
+        const hx = sg * half(z);
+        const ty = tubeY(z);
+        pts.push([hx, ty, z]);
+        strakePts.push([hx + sg * 0.345, ty - 0.02, z]);
+        if (i >= 2 && i <= 14) {
+          const swag = -0.045 * Math.abs(Math.sin(((i - 2) / 12) * Math.PI * 3));
+          ropePts.push([hx + sg * 0.22, ty + 0.28 + swag, z]);
+        }
+      }
+      g2.add(tube(pts, 0.35, tubeMat));
+      g2.add(tube(strakePts, 0.058, strakeMat));
+      g2.add(tube(ropePts, 0.018, blackM));
+      // チューブ上面の黒いグラブハンドル＆ロープパッチ
+      for (const hz of [-1.4, -0.2, 1.0, 2.0]) {
+        g2.add(box(0.10, 0.04, 0.24, rubber, sg * (half(hz) + 0.14), tubeY(hz) + 0.33, hz));
+      }
+      // 船尾の円錐チューブエンドコーン
+      const tailCone = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.58, 10), tubeMat);
+      tailCone.rotation.x = -Math.PI / 2;
+      tailCone.position.set(sg * half(-L / 2), tubeY(-L / 2), -L / 2 - 0.26);
+      g2.add(tailCone);
     }
-    const bow = tube([[-half(L / 2 - 0.1) + 0.1, 0.62, L / 2 - 0.2], [0, 0.66, L / 2 + 0.15], [half(L / 2 - 0.1) - 0.1, 0.62, L / 2 - 0.2]], 0.3, tubeMat); g2.add(bow);
-    g2.add(box(B - 0.5, 0.12, L - 0.6, mat(0x9aa3ab, 0.9), 0, 0.28, 0));
-    g2.add(box(B - 0.5, 0.45, 0.16, mat(0xe8ecee, 0.5), 0, 0.5, -L / 2 + 0.2));
-    g2.add(box(0.7, 0.9, 0.55, white, 0, 0.9, 0.2));
-    const sw = box(0.6, 0.3, 0.03, glass, 0, 1.45, 0.45); sw.rotation.x = -0.4; g2.add(sw);
-    g2.add(box(0.6, 0.35, 0.5, mat(0x20252b, 0.8), 0, 0.5, -0.9));
-    g2.add(outboard(-0.45, -L / 2 - 0.1, 1.2)); g2.add(outboard(0.45, -L / 2 - 0.1, 1.2));
-    const p = pole(2.2, flagCfg.length ? flagCfg : [{ color: '#ffffff', w: 0.8, h: 0.5 }]); p.position.set(0, 1.35, -0.6); g2.add(p);
-    g2.position.y = -0.05; g.add(g2);
+    // バウ先端の反り上がったチューブ結合部＋黒バウガード
+    const bowZ = L / 2 - 0.18;
+    const bowPts = [
+      [-half(bowZ), tubeY(bowZ), bowZ],
+      [0, tubeY(L / 2) + 0.05, L / 2 + 0.18],
+      [half(bowZ), tubeY(bowZ), bowZ],
+    ];
+    g2.add(tube(bowPts, 0.32, tubeMat));
+    g2.add(box(0.42, 0.16, 0.28, rubber, 0, tubeY(L / 2) + 0.26, L / 2 + 0.12));
+
+    // 3) デッキフロア＆トランサムボード
+    g2.add(box(B - 0.58, 0.12, L - 0.85, mat(0xd8dee6, 0.82), 0, 0.30, -0.1));
+    g2.add(box(B - 0.62, 0.44, 0.16, consoleNavy, 0, 0.46, -L / 2 + 0.22));
+
+    // 4) 写真特徴の濃紺センターコンソール + 白ナンバープレート + ステンレス舵輪 + 黒背もたれボルスターシート
+    const cz = 0.32;
+    const cPod = box(0.68, 0.88, 0.72, consoleNavy, 0, 0.78, cz);
+    g2.add(cPod);
+    // コンソール側面の白い識別プレート＆黒点検ハッチ丸蓋
+    for (const sg of [-1, 1]) {
+      g2.add(box(0.02, 0.18, 0.28, white, sg * 0.35, 0.68, cz + 0.12));
+      g2.add(cyl(0.13, 0.03, blackM, sg * 0.35, 0.74, cz - 0.16, 0, Math.PI / 2));
+    }
+    // 操舵ステアリングホイール(舵輪)
+    const wY = 1.24, wZ = cz - 0.36;
+    g2.add(cyl(0.04, 0.22, blackM, 0, wY - 0.04, wZ + 0.08, 0.55, 0));
+    const wheelPts = [
+      [0, wY + 0.18, wZ], [0.18, wY, wZ], [0, wY - 0.18, wZ], [-0.18, wY, wZ],
+    ];
+    g2.add(tube(wheelPts, 0.016, blackM, true));
+    // コンソール直後の黒い背もたれシート(リーニングポスト)
+    for (const sg of [-0.22, 0.22]) {
+      g2.add(cyl(0.022, 0.68, chrome, sg, 0.68, cz - 0.78));
+    }
+    g2.add(box(0.62, 0.34, 0.14, rubber, 0, 1.04, cz - 0.78));
+    g2.add(box(0.66, 0.18, 0.48, rubber, 0, 0.54, cz - 0.82));
+
+    // 5) 船尾中央の大型ヤマハ風メタリックグレー船外機
+    const ob = new THREE.Group();
+    ob.add(box(0.46, 0.68, 0.56, mat(0x3d4856, 0.32, 0.45), 0, 0.54, 0));
+    ob.add(box(0.48, 0.14, 0.58, mat(0xcbd5e1, 0.35, 0.6), 0, 0.48, 0));
+    ob.add(box(0.18, 0.85, 0.28, mat(0x2d3542, 0.45, 0.3), 0, -0.22, -0.04));
+    ob.position.set(0, 0.52, -L / 2 - 0.10);
+    g2.add(ob);
+
+    // 6) 観覧・コーチ乗員(2名: ライフジャケット着用でレースを観戦)
+    const specSkin = mat(0xd68e66, 0.8);
+    const specJacket = mat(0x111827, 0.75);
+    const specVest = mat(0x1d4ed8, 0.65);
+    for (const [px, py, pz] of [[0.0, 0.58, cz - 0.52], [-0.36, 0.52, -1.15]]) {
+      const pGrp = new THREE.Group();
+      pGrp.add(box(0.32, 0.44, 0.22, specJacket, 0, 0.42, 0));
+      pGrp.add(box(0.35, 0.32, 0.25, specVest, 0, 0.45, 0));
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), specSkin);
+      head.position.set(0, 0.74, 0);
+      pGrp.add(head);
+      pGrp.position.set(px, py, pz);
+      g2.add(pGrp);
+    }
+
+    if (flagCfg.length) {
+      const p = pole(1.9, flagCfg);
+      p.position.set(0.28, 1.18, cz + 0.1);
+      g2.add(p);
+    }
+    g2.position.y = -0.04;
+    g.add(g2);
   }
   g.traverse((m) => { if (m.isMesh) { m.castShadow = false; } });
   mergeBoat(g);
