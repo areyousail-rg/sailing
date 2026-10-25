@@ -64,10 +64,12 @@ const spar = new THREE.MeshStandardMaterial({ color: 0xdbe2ea, roughness: 0.32, 
 const dark = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.5 });
 const carbonMat = new THREE.MeshStandardMaterial({ color: 0x222428, roughness: 0.3, metalness: 0.2 });
 
-// リアルなセール幾何体（クロス/ドラフトカーブ + リーチのローチ膨らみ）
+// リアルなセール幾何体（クロス/ドラフトカーブ + リーチのローチ膨らみ + 上部リーチの風下ツイスト）
 const JIB_NU = 10, JIB_NV = 8;
 const JIB_CLEW_LEN = 2.24, JIB_HEAD_Y = 5.45, JIB_HEAD_Z = 1.18;
-function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0) {
+const MAIN_TWIST = 0.48;
+const LEECH_RIBBON_US = [0.32, 0.56, 0.78]; // スナイプ級メインセールの3本バテン端(下・中・トップバテン)のリーチリボン位置
+function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twist = 0) {
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= nu; i++) {
     const u = i / nu;
@@ -77,7 +79,9 @@ function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0) {
     for (let j = 0; j <= nv; j++) {
       const v = j / nv;
       const b = bulge * Math.sin(Math.PI * v) * (1 - 0.55 * u) * Math.sin(Math.PI * Math.min(1, 0.15 + u * 0.9));
-      pos.push(lx + v * (rx - lx) + b, ly + v * (ry - ly), lz + v * (rz - lz));
+      // クローズ引き込み時にメインセール下部はセンター近くまでタイトに引き込まれ、上部リーチ(u→大, v→1)が風下へツイストして開く形状
+      const twistX = twist * Math.pow(u, 1.35) * Math.pow(v, 1.15) * (1 - 0.15 * u);
+      pos.push(lx + v * (rx - lx) + b + twistX, ly + v * (ry - ly), lz + v * (rz - lz));
       uv.push(v, u);
     }
   }
@@ -104,7 +108,7 @@ function tautSheetGeo(pts, r = 0.0065) {
   return ropeGeo(sharpPts, r, Math.max(18, sharpPts.length * 4));
 }
 
-const mainGeo = sailGeometry([0, 1.02, 0], [0, 6.75, 0.08], [0, 0.98, 2.88], 0.45, 14, 10, 0.36);
+const mainGeo = sailGeometry([0, 1.02, 0], [0, 6.75, 0.08], [0, 0.98, 2.88], 0.45, 14, 10, 0.36, MAIN_TWIST);
 const jibGeo = sailGeometry([0, 0, 0], [0, JIB_HEAD_Y, JIB_HEAD_Z], [0, 0.22, JIB_CLEW_LEN], 0.26, JIB_NU, JIB_NV);
 const mastGeo = new THREE.CylinderGeometry(0.035, 0.046, 6.9, 12);
 const boomGeo = new THREE.CylinderGeometry(0.030, 0.030, 2.88, 8); boomGeo.rotateX(Math.PI / 2);
@@ -194,6 +198,18 @@ function mainSailTexture(no, color) {
   x.strokeStyle = 'rgba(180, 196, 212, 0.9)';
   x.lineWidth = 5;
   x.strokeRect(80, 815, 210, 95);
+
+  // 5) リーチ側の3本バテンポケット(リーチリボン取付位置の補強パッチとバテンライン)
+  for (const u of LEECH_RIBBON_US) {
+    const by = (1 - u) * 1024;
+    x.fillStyle = 'rgba(220, 226, 234, 0.85)';
+    x.fillRect(345, by - 5, 167, 10);
+    x.strokeStyle = 'rgba(175, 185, 198, 0.9)';
+    x.lineWidth = 1.5;
+    x.strokeRect(345, by - 5, 167, 10);
+    x.fillStyle = 'rgba(30, 41, 59, 0.75)';
+    x.fillRect(498, by - 6, 14, 12);
+  }
 
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
@@ -295,9 +311,10 @@ export class BoatModel {
     const mast = new THREE.Mesh(mastGeo, spar); mast.position.set(0, 3.85, -0.9); this.body.add(mast);
 
     // 舵 (白ラダーブレード & 白ラダーヘッド) & アルミティラー + エクステンションバー
+    // 波でラダーが半分以上水面から飛び出さないよう十分な深さ(長さ1.04m, 下端y=-0.66m)を確保
     const rudderGroup = new THREE.Group(); rudderGroup.position.set(0, 0.4, 2.36);
     const rudderHead = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.22, 0.20), M.gel); rudderHead.position.set(0, -0.05, 0.08); rudderGroup.add(rudderHead);
-    const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.88, 0.32), M.gel); rudder.position.set(0, -0.45, 0.14); rudderGroup.add(rudder);
+    const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.036, 1.04, 0.32), M.gel); rudder.position.set(0, -0.54, 0.14); rudderGroup.add(rudder);
     const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 1.18, 10), M.alu); tiller.rotation.x = Math.PI / 2; tiller.position.set(0, 0.05, -0.58); rudderGroup.add(tiller);
     const ext = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.95, 8), carbonMat); ext.rotation.z = Math.PI / 4; ext.position.set(0.28, 0.09, -1.06); rudderGroup.add(ext);
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
@@ -309,6 +326,20 @@ export class BoatModel {
 
     this.mainPivot = new THREE.Group(); this.mainPivot.position.set(0, 0.4, -0.9); this.body.add(this.mainPivot);
     this.mainSail = new THREE.Mesh(mainGeo, this.sailMat); this.mainPivot.add(this.mainSail);
+    // メインセール後縁(リーチ)の3本バテン端に取り付けられたリーチリボン(リーチテルテール)
+    this.leechRibbons = [];
+    const lrGeo = yarnGeo(0.25, 0.0046);
+    const lrMat = new THREE.MeshStandardMaterial({ color: 0xff2438, roughness: 0.75, metalness: 0.0 });
+    for (let i = 0; i < LEECH_RIBBON_US.length; i++) {
+      const u = LEECH_RIBBON_US[i];
+      const ry = 0.98 + u * (6.75 - 0.98);
+      const rz = 2.88 + u * (0.08 - 2.88) + 0.36 * 4 * u * (1 - u);
+      const twistX = MAIN_TWIST * Math.pow(u, 1.35) * (1 - 0.15 * u);
+      const m = new THREE.Mesh(lrGeo, lrMat);
+      m.position.set(twistX, ry, rz);
+      this.mainPivot.add(m);
+      this.leechRibbons.push({ m, u, ry, rz, twistX, ph: i * 2.1 + Math.random() * 3 });
+    }
     const boom = new THREE.Mesh(boomGeo, spar); boom.position.set(0, 1.02, 1.44); this.mainPivot.add(boom);
     // ゴースネック / ブームブロック(後部 bz=2.52・中央 bz=1.18: センターケース後端z=0.10の真上付近) / バング
     const gn = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.07), M.alu); gn.position.set(0, 1.02, 0.02); this.mainPivot.add(gn);
@@ -494,27 +525,33 @@ export class BoatModel {
     this.root.position.set(b.x, 0, b.z);
     this.root.rotation.y = -b.h;
     const ph = t * 1.6 + this.phase;
-    // 海況に合わせた上下動(ヒーブ)と縦揺れ(ピッチ): 物理と同じ波関数を進行方向に沿って評価する
+    // 海況に合わせた上下動(ヒーブ)と縦揺れ(ピッチ):
+    // 艇速がない時は波にそのまま揺さぶられ、クローズで艇速がある時は少し抑え目に、リーチング等で艇速が出ている時は波頭を切って走るためはたかれ方を抑える
     const hx = Math.sin(b.h), hz = -Math.cos(b.h);
     const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
-    const heave = ws.hLong + (ws.h - ws.hLong) * 0.58;
-    const pitchW = clamp(Math.atan(ws.slopeLong + (ws.slope - ws.slopeLong) * 0.72) * 0.95, -0.24, 0.24);
+    const speedNorm = clamp(Math.abs(b.v) / 3.0, 0, 1);
+    const isReach = clamp((b.twa - 0.92) / 0.38, 0, 1) * clamp((2.65 - b.twa) / 0.40, 0, 1);
+    const chopRespond = (0.58 + 0.42 * (1 - speedNorm)) * (1 - 0.62 * isReach * speedNorm);
+    const heave = ws.hLong * 0.90 + (ws.h - ws.hLong) * 0.36 * chopRespond;
+    // 船尾(z=+2.36)のラダーが波で水面上に半分以上飛び出さないようピッチ角の範囲(特に前傾側=-0.045)を抑える
+    const pitchW = clamp(Math.atan(ws.slopeLong * 0.55 + (ws.slope - ws.slopeLong) * 0.42 * chopRespond), -0.045, 0.068);
     // 横方向の傾き(三角波の交差波で左右にも揺さぶられる)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
-    const rollW = clamp(Math.atan(wsR.slope) * 0.45, -0.10, 0.10);
-    // コクピット床(FLOOR_Y)が海面(y=0)より下に潜って海が見えないよう、基準高さを保ちつつ立体的な波に追従させる
-    this.body.position.y = 0.14 + heave + 0.018 * Math.sin(ph);
-    this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = pitchW + 0.012 * Math.sin(ph * 1.1 + 1) - clamp(b.v / 14, 0, 0.3) * 0.22;
+    const rollW = clamp(Math.atan(wsR.slope) * 0.35 * chopRespond, -0.075, 0.075);
+    // コクピット床(FLOOR_Y)がヒール時や短周期波でも海面より下に潜って海面色にならないよう基準高さを確保
+    this.body.position.y = 0.18 + Math.abs(b.heel) * 0.12 + heave + 0.014 * Math.sin(ph);
+    this.body.rotation.z = b.heel + 0.012 * Math.sin(ph * 0.8) - rollW;
+    this.body.rotation.x = pitchW + 0.010 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 14, 0, 0.25) * 0.035;
 
     if (this.rudderGroup) {
       this.rudderGroup.rotation.y = b.steer * 0.6;
     }
 
-    // セール: シート量から角度を決め、ラフ(シバー)時はバタつかせる
+    // セール: クローズ走行時はブーム・下部メインセールをよりセンター近くまで引き込み、上部リーチがツイストして開く
     const twa = b.twa, luff = b.luff;
-    const sheetAng = 0.08 + (1 - b.sheet) * 1.3;
-    let ang = Math.min(sheetAng, Math.max(0.06, Math.abs(b.awa) - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
+    const closeFactor = clamp(1 - (twa - 0.65) / 0.45, 0, 1);
+    const sheetAng = (0.030 + (1 - closeFactor) * 0.040) + Math.pow(1 - b.sheet, 1.08) * 1.34;
+    let ang = Math.min(sheetAng, Math.max(0.030, Math.abs(b.awa) - 0.08 * closeFactor - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
     ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
@@ -535,6 +572,18 @@ export class BoatModel {
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
     const jibLuff = luff * (1 - pk);
     this.mainSail.scale.x = bulgeSign * flap;
+    if (this.leechRibbons) {
+      const stall = b.stall || 0;
+      for (const r of this.leechRibbons) {
+        r.m.position.x = r.twistX * this.mainSail.scale.x;
+        // 気流が綺麗に流れている時はリーチ延長方向へなびき、引きすぎ(ストール)時は風下裏側へ巻き込み、シバー時はバタつく
+        const twistYaw = bulgeSign * (0.14 * r.u);
+        const curl = -bulgeSign * stall * (0.75 + 0.55 * Math.sin(t * 20 + r.ph)) + luff * 0.45 * Math.sin(t * 23 + r.ph);
+        const flutter = (0.06 + 0.22 * Math.max(luff, stall)) * Math.sin(t * 17 + r.ph);
+        r.m.rotation.y = twistYaw + curl + flutter;
+        r.m.rotation.x = -0.05 + 0.16 * Math.sin(t * 14 + r.ph) * (0.3 + Math.max(luff, stall));
+      }
+    }
     const jibCamber = jibBulge * 0.23 * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.65 * Math.sin(Math.PI * pk));
     this.jibSail.scale.x = 1;
     this.jibSail.rotation.x = 0;
@@ -571,24 +620,27 @@ export class BoatModel {
         v.g.rotation.z = -0.15 + Math.sin(t * 9 + v.ph) * 0.06;
       }
     }
-    // クルー・スキッパーの乗船・ハイクアウト姿勢表現 (風の強さ・風角・ヒールに応じた b.hike でダイナミックにハイクアウト量を調整しヒールを起こす)
+    // クルー・スキッパーの乗船・ハイクアウト姿勢表現
+    // 下レグでは 120°〜150° はクルーは船の真ん中(0)に座り、150°以上で風下(-sgn)へ移動する
     this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3));
     const isDeepRun = twa >= (150 * Math.PI) / 180;
-    const targetCrewSide = isDeepRun ? -sgn : sgn;
+    const isMidDown = twa >= (120 * Math.PI) / 180 && !isDeepRun;
+    const targetCrewSide = isDeepRun ? -sgn : isMidDown ? 0 : sgn;
     this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 3.5));
     const hikeAmt = b.hike !== undefined ? b.hike : 0.35;
-    const lean = isDeepRun ? 0.12 : clamp(0.10 + hikeAmt * 0.92, 0.10, 1.02);
-    const crewLean = isDeepRun ? 0.10 : clamp(0.08 + hikeAmt * 1.05, 0.08, 1.12);
+    const lean = isDeepRun ? 0.12 : isMidDown ? 0.18 : clamp(0.10 + hikeAmt * 0.92, 0.10, 1.02);
+    const crewLean = (isDeepRun || isMidDown) ? 0.08 : clamp(0.08 + hikeAmt * 1.05, 0.08, 1.12);
 
     const sideAbs = Math.abs(this.side);
     const crewSideAbs = Math.abs(this.crewSide);
+    const boomLow = clamp(1 - (this.boomA - 0.35) / 0.30, 0, 1);
 
     // ヘルムスマン(スキッパー): 後部サイドデッキ(z=0.86)に座り、脚はコクピット内へ、腰から上を外へハイクアウト
     this.helmRig.position.set(this.side * (0.54 + lean * 0.13), 0.35 - (1 - sideAbs) * 0.06, 0.86);
     this.helmRig.rotation.y = this.side * 1.35;
     if (this.helm.userData.upper) {
       this.helmRig.rotation.z = 0;
-      const duck = (1 - sideAbs) * 0.42;
+      const duck = (1 - sideAbs) * 0.42 * boomLow;
       const hike = lean * 0.86 * sideAbs;
       this.helm.userData.upper.rotation.x = hike - duck;
       this.helm.userData.upper.rotation.z = -this.side * 0.08;
@@ -601,12 +653,12 @@ export class BoatModel {
       this.helm.userData.head.rotation.y = -this.side * 0.55;
     }
 
-    // クルー(人間・ネコとも): 前部サイドデッキ(z=-0.04)に座り、風速と角度に応じて大きくハイクアウトして船を起こす
-    this.crewRig.position.set(this.crewSide * (0.55 + crewLean * 0.14), 0.36 - (1 - crewSideAbs) * 0.06, -0.04);
-    this.crewRig.rotation.y = this.crewSide * 1.35;
+    // クルー(人間・ネコ・イヌとも): 120°〜150°では船の真ん中(x≈0)に座り、クローズ〜リーチングでは風上サイドデッキでハイクアウト
+    this.crewRig.position.set(this.crewSide * (0.55 + crewLean * 0.14), 0.36 - (1 - crewSideAbs) * 0.04, -0.04);
+    this.crewRig.rotation.y = crewSideAbs < 0.18 ? this.side * 0.35 : this.crewSide * 1.35;
     if (this.crew.userData.upper) {
       this.crewRig.rotation.z = 0;
-      const cDuck = (1 - crewSideAbs) * 0.45;
+      const cDuck = (1 - crewSideAbs) * 0.45 * boomLow;
       const cHike = crewLean * 0.90 * crewSideAbs;
       this.crew.userData.upper.rotation.x = cHike - cDuck;
       this.crew.userData.upper.rotation.z = -this.crewSide * 0.08;
