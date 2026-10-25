@@ -160,9 +160,52 @@
       </div>
       <div class="startActions">
         <button id="startBtn" class="cta startRaceBtn" type="button">レーススタート</button>
-        <button id="practiceBtn" class="btnPractice" type="button">練習モード</button>
+        <button id="practiceBtn" class="btnPractice" type="button">オリエンテーション</button>
       </div>
       <div id="realWeatherInfo" class="weatherInfoBottom"></div>
+    </div>
+  </section>
+
+  <!-- スマブラ風オリエンテーション（HOW TO PLAY）オーバーレイ -->
+  <section id="orientation" class="orientOverlay hidden" aria-label="オリエンテーション">
+    <div class="orientTopBar">
+      <div class="orientBrand">
+        <span class="orientHowTo">HOW TO PLAY</span>
+        <span class="orientSubTitle">オリエンテーション</span>
+      </div>
+      <div class="orientStepDots" id="orientDots"></div>
+      <div class="orientTopActions">
+        <button id="orientRaceBtn" class="orientBtnRace" type="button">今すぐレースへ</button>
+        <button id="orientExitBtn" class="orientBtnClose" type="button">スタート画面へ戻る [ESC]</button>
+      </div>
+    </div>
+
+    <div id="orientFlash" class="orientFlash"></div>
+
+    <div class="orientBottomBar">
+      <div id="orientCard" class="orientCard">
+        <div class="orientStepHead">
+          <div class="orientStepBadge">
+            <span class="orientStepWord">STEP</span>
+            <b id="orientStepNum">01</b>
+            <small id="orientStepTotal">/ 08</small>
+          </div>
+          <div class="orientTitleWrap">
+            <div id="orientEnTag" class="orientEnTag">PRE-START POSITIONING</div>
+            <h2 id="orientTitle">スタート1分前・ポジション確保</h2>
+          </div>
+          <div id="orientKeyPills" class="orientKeyPills"></div>
+        </div>
+        <p id="orientBody" class="orientBody"></p>
+        <div class="orientFooter">
+          <div class="orientTimerTrack"><div id="orientTimerFill" class="orientTimerFill"></div></div>
+          <div class="orientNavBtns">
+            <button id="orientPrevBtn" class="orientNavBtn" type="button">◀ 前へ</button>
+            <button id="orientAutoBtn" class="orientNavBtn active" type="button">自動送り ON</button>
+            <button id="orientNextBtn" class="orientNavBtn primary" type="button">次へ ▶</button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
