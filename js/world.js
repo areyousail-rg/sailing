@@ -42,10 +42,14 @@ void main(){
   // カメラ周辺の局所パッチでは waveSample と同じ波浪成分で頂点を上下させ、船底・コクピット床を突き抜けないようクランプする
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float wgt=B.z>0.5?0.90:0.36;
+    float wgt=B.z>0.5?0.98:0.68;
     if(A.w>0.001) h+=A.w*wgt*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y);
   }
   float bd=length(w.xz-uBoatPos.xy);
+  vec2 wdV=vec2(-sin(uW0+uShift),cos(uW0+uShift));
+  vec2 wpV=vec2(-wdV.y,wdV.x);
+  float vRip=(0.065*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.22)+0.045*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.34))*smoothstep(2.6,5.2,bd);
+  h+=vRip;
   if(bd<3.2){
     float keepBelow=uBoatPos.z-0.06*(1.0-bd/3.2);
     h=min(h,keepBelow);
@@ -718,22 +722,16 @@ export function createWorld(scene) {
   // ---------- マーク類 ----------
   const bob = [];
   const markObjs = {};
-  const dark = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const flag = (color) => {
+  const buoy = (color) => {
     const g = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 6), new THREE.MeshLambertMaterial({ color: 0x555555 })); pole.position.y = 3.5; g.add(pole);
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })); f.position.set(0.85, 4.6, 0); g.add(f);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.8, 14), new THREE.MeshLambertMaterial({ color }));
+    cone.position.y = 0.9;
+    g.add(cone);
     return g;
   };
-  const buoy = (color, flagColor) => {
-    const g = new THREE.Group();
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.8, 14), new THREE.MeshLambertMaterial({ color })); cone.position.y = 1.0; g.add(cone);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.7, 14), new THREE.MeshLambertMaterial({ color: 0x222222 })); base.position.y = -0.4; g.add(base);
-    g.add(flag(flagColor)); return g;
-  };
   const place = (key, obj) => { const p = toWorld(MARKS[key].a, MARKS[key].c); obj.position.set(p.x, 0, p.z); scene.add(obj); bob.push(obj); markObjs[key] = obj; };
-  place('m1', buoy(0xffc21a, 0xff5a1f)); place('m1a', buoy(0xffc21a, 0xff5a1f)); place('m2', buoy(0xffc21a, 0xff5a1f)); place('m3', buoy(0xffc21a, 0xff5a1f));
-  place('gL', buoy(0xff6a1f, 0xffffff)); place('gR', buoy(0xff6a1f, 0xffffff));
+  place('m1', buoy(0xffc21a)); place('m1a', buoy(0xffc21a)); place('m2', buoy(0xffc21a)); place('m3', buoy(0xffc21a));
+  place('gL', buoy(0xff6a1f)); place('gR', buoy(0xff6a1f));
 
   // アウター艇(ピン側のオレンジ旗艇) — 船首を風上に向けてアンカリング
   const flagSway = [];
