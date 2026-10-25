@@ -1,7 +1,7 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, randomizeWindShifts } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
 import { Recorder, openReview } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
@@ -84,34 +84,53 @@ function randomCrewSpec() {
 }
 
 function clearFleet() {
-  for (const m of models) scene.remove(m.root);
+  for (const m of models) {
+    if (m.dispose) m.dispose();
+    scene.remove(m.root);
+  }
   boats = []; ais = []; models = []; world.wake.reset();
 }
 function makeFleet() {
   clearFleet();
-  const slots = [];
-  // CP艇の号砲時ターゲット横位置(targetC)をピン側(-54)〜本部船側(+59)まで均一に割り当て、
-  // 右舷タックで左(-c)へ進む分だけ1分前の初期位置(c)を風上(右/+c)側へオフセットして配置する
-  for (let i = 0; i < N_BOATS - 1; i++) {
-    const targetC = -54 + i * (113 / (N_BOATS - 2)); // -54 .. +59 (本部船 c=65 のすぐ内側まで均一)
-    const a0 = -32 - (i % 4) * 7.5;
-    const c0 = targetC + Math.abs(a0) * 0.78;
-    slots.push({ a: a0, c: c0, targetC });
+  hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
+  // 強いCP艇(k=1..4)が特に上側の端っこ(本部船すぐ内側 c=+62..+71)や下端(ピンすぐ内側 c=-70..-62)からも積極的に出るようにスロットを構成
+  const endTargets = FAVORED === 'pin'
+    ? [70.5, -69.5, 65.5, -63.0]
+    : [71.0, 66.5, 62.0, -68.5];
+  for (let i = endTargets.length - 1; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0;
+    [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
   }
-  // 自艇は風下側(左/-c)へ少しずつ流されるのを考慮し、本部船(c=LINE_HALF)の少し右側(c=LINE_HALF+26)に配置
-  const pslot = { a: -82, c: LINE_HALF + 26, targetC: LINE_HALF - 10 };
-  for (let i = slots.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0;[slots[i], slots[j]] = [slots[j], slots[i]]; }
+  const midTargets = [];
+  const nMid = N_BOATS - 1 - endTargets.length;
+  for (let i = 0; i < nMid; i++) {
+    midTargets.push(-55 + i * (112 / Math.max(1, nMid - 1)) + (rng() - 0.5) * 3.0);
+  }
+  for (let i = midTargets.length - 1; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0;
+    [midTargets[i], midTargets[j]] = [midTargets[j], midTargets[i]];
+  }
+  const allTargets = [...endTargets, ...midTargets];
+  const slots = allTargets.map((targetC, i) => {
+    const isUpperEnd = targetC >= 60;
+    const a0 = isUpperEnd ? -24 - (i % 3) * 6.0 : -30 - (i % 4) * 7.0;
+    const c0 = targetC + Math.abs(a0) * 0.85;
+    return { a: a0, c: c0, targetC };
+  });
+  // 自艇は低速時の1.5倍の下流れを考慮し、本部船(c=LINE_HALF)の右側(c=LINE_HALF+32)に配置
+  const pslot = { a: -82, c: LINE_HALF + 32, targetC: LINE_HALF - 8 };
   const used = new Set([cfg.sailNo]);
   for (let k = 0; k < N_BOATS; k++) {
     const isP = k === 0;
     let no; do { no = String(1000 + ((rng() * 30999) | 0)); } while (used.has(no)); used.add(no);
     const color = new THREE.Color().setHSL((k * 0.618) % 1, 0.65, 0.5).getHex();
-    const s = isP ? pslot : slots.pop();
+    const s = isP ? pslot : slots[k - 1];
     // 1マークで全艇が団子になってごった返さないよう、上位群・中上位群・中下位群・下位群でCPのレベル(艇速・スキル)に自然なばらつきを持たせる
+    // 強いCP艇(k=1..4)には端っこ(上端・下端)のスロットを割り当てる
     const cpSkill =
-      k <= 3 ? 1.06 + rng() * 0.045 :
-      k <= 7 ? 1.00 + rng() * 0.045 :
-      k <= 11 ? 0.94 + rng() * 0.045 :
+      k <= 4 ? 1.06 + rng() * 0.045 :
+      k <= 8 ? 1.00 + rng() * 0.045 :
+      k <= 12 ? 0.94 + rng() * 0.045 :
       0.87 + rng() * 0.055;
     const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : cpSkill, startTargetC: s.targetC });
     const p = toWorld(s.a + lineA(s.c), s.c);
@@ -124,7 +143,10 @@ function makeFleet() {
       helm = { type: cfg.helm, style: { ...humanStyle(false), jacket } };
       crew = { type: cfg.crew, style: { ...humanStyle(false), jacket } };
     } else { helm = randomCrewSpec(); crew = randomCrewSpec(); }
-    const m = new BoatModel(b, helm, crew); scene.add(m.root); models.push(m);
+    const m = new BoatModel(b, helm, crew);
+    m.sync(0, 0);
+    scene.add(m.root);
+    models.push(m);
     if (!isP) ais.push(new AI(b, rng));
   }
   player = boats[0];
@@ -132,12 +154,14 @@ function makeFleet() {
 }
 function rebuildPlayerModel() {
   if (!player || !models[0]) return;
+  if (models[0].dispose) models[0].dispose();
   scene.remove(models[0].root);
   player.sailNo = cfg.sailNo;
   const jacket = 0xff7a1a;
   const helm = { type: cfg.helm, style: { ...humanStyle(false), jacket } };
   const crew = { type: cfg.crew, style: { ...humanStyle(false), jacket } };
   const m = new BoatModel(player, helm, crew);
+  m.sync(0, 0);
   scene.add(m.root);
   models[0] = m;
   cam.mount = m.mount;
@@ -395,7 +419,7 @@ function updateHUD(sorted) {
   if (hud.needle) hud.needle.style.transform = `rotate(${b.rel}rad)`;
   hud.spd.textContent = (Math.abs(b.v) / SPEED_SCALE / KT).toFixed(1);
   hud.hdg.textContent = Math.round(((b.h * 180) / Math.PI + 360) % 360) + '°';
-  hud.twa.textContent = Math.round((b.twa * 180) / Math.PI) + '°';
+  hud.twa.textContent = Math.round(b.effTwaDeg ?? (b.twa * 180) / Math.PI) + '°';
   if (hud.tack) { hud.tack.textContent = b.tack > 0 ? '右舷' : '左舷'; hud.tack.className = b.tack > 0 ? 'stbd' : 'port'; }
   hud.sheet.style.width = Math.round(b.sheet * 100) + '%';
   hud.sheetOpt.style.left = Math.round(b.sOpt * 100) + '%';
@@ -527,7 +551,19 @@ function startRace() {
   randomizeWindShifts(Date.now() ^ (rng() * 1e9));
   applyVenue();
   makeFleet();
-  recorder = new Recorder(boats, LEGS, { venue: cfg.venue, courseMode: cfg.courseMode, sea: SEA.label });
+  recorder = new Recorder(boats, LEGS, {
+    venue: cfg.venue,
+    courseMode: cfg.courseMode,
+    sea: SEA.label,
+    windDeg: currentWindDeg,
+    baseWindKt: BASE_WIND_KT,
+    sideBias: SIDE_BIAS,
+    sideBiasDesc: currentSideBiasDesc,
+    shiftLog: [...SHIFT_LOG],
+    shiftAt,
+    windAt,
+    toWorld,
+  });
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   document.body.classList.remove('menuOpen'); cam.menuOffset = false;
@@ -908,7 +944,12 @@ async function fetchRealWeather(venueId) {
 }
 
 // ---------- メニューUI ----------
+let currentWindDeg = 15;
+let currentSideBiasDesc = '';
+
 function updateWeatherInfoUI(windDeg, kt, gustKt, desc, fallback) {
+  currentWindDeg = windDeg;
+  currentSideBiasDesc = desc;
   const infoEl = $('realWeatherInfo');
   if (!infoEl) return;
   infoEl.classList.remove('hidden');
@@ -946,6 +987,7 @@ function applyVenue() {
       rebuildObstacles();
       makeFleet();
       cam.inited = false;
+      if (player) cam.update(0, performance.now() / 1000, player, boats);
       updateWeatherInfoUI(w.windDeg, w.rawKt, w.gustKt, bInfo.desc, w.fallback);
     });
   }
@@ -957,7 +999,12 @@ function buildVenueChoices() {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'choice' + (cfg.venue === v.id ? ' sel' : ''); btn.id = `venue-${v.id}`;
     btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
-    btn.onclick = () => { cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildVenueChoices(); };
+    btn.onclick = () => {
+      cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet();
+      cam.inited = false; cam.yaw = 0; cam.pitch = 0;
+      if (player) cam.update(0, performance.now() / 1000, player, boats);
+      buildVenueChoices();
+    };
     box.appendChild(btn);
   }
 }
@@ -968,7 +1015,12 @@ function buildCourseChoices() {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'choice' + (cfg.courseMode === m.id ? ' sel' : ''); btn.id = `courseMode-${m.id}`;
     btn.innerHTML = `<span class="ic">${m.icon}</span><span class="lb">${m.label}</span>`;
-    btn.onclick = () => { cfg.courseMode = m.id; saveCfg(); applyVenue(); makeFleet(); cam.inited = false; buildCourseChoices(); };
+    btn.onclick = () => {
+      cfg.courseMode = m.id; saveCfg(); applyVenue(); makeFleet();
+      cam.inited = false; cam.yaw = 0; cam.pitch = 0;
+      if (player) cam.update(0, performance.now() / 1000, player, boats);
+      buildCourseChoices();
+    };
     box.appendChild(btn);
   }
 }
