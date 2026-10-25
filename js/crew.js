@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 
 export const CREW_TYPES = [
-  { id: 'human_m', label: '男性', icon: '👨' },
-  { id: 'human_f', label: '女性', icon: '👩' },
-  { id: 'cat', label: 'ネコ', icon: '🐱' },
+  { id: 'human_m', label: '男性', icon: '' },
+  { id: 'human_f', label: '女性', icon: '' },
+  { id: 'cat', label: 'ネコ', icon: '' },
 ];
 
 // assets/crew/manifest.json から読み込んだ差し替えモデル
@@ -28,7 +28,7 @@ export async function loadCustomCrew() {
         root.position.y -= box.min.y * s;
         const wrap = new THREE.Group(); wrap.add(root);
         customModels.set('custom:' + it.file, wrap);
-        out.push({ id: 'custom:' + it.file, label: it.name || it.file, icon: '📦' });
+        out.push({ id: 'custom:' + it.file, label: it.name || it.file, icon: '' });
       } catch (e) { console.warn('custom crew load failed', it, e); }
     }
     return out;
