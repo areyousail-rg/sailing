@@ -64,25 +64,53 @@ const spar = new THREE.MeshStandardMaterial({ color: 0xdbe2ea, roughness: 0.32, 
 const dark = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.5 });
 const carbonMat = new THREE.MeshStandardMaterial({ color: 0x222428, roughness: 0.3, metalness: 0.2 });
 
-// リアルなセール幾何体（クロス/ドラフトカーブ + リーチのローチ膨らみ + 上部リーチの風下ツイスト）
-const JIB_NU = 10, JIB_NV = 8;
+// リアルなセール幾何体（クロス/ドラフトカーブ + リーチのローチ膨らみ + 上部リーチの風下ツイスト + 3本バテンによる角度変化）
+const JIB_NU = 12, JIB_NV = 10;
 const JIB_TACK_Y = 0.57, JIB_DECK_Y = 0.415, JIB_TACK_Z = -2.08;
-const JIB_CLEW_LEN = 2.24, JIB_HEAD_Y = 5.38, JIB_HEAD_Z = 1.18;
-const MAIN_TWIST = 0.48;
-const LEECH_RIBBON_US = [0.32, 0.56, 0.78]; // スナイプ級メインセールの3本バテン端(下・中・トップバテン)のリーチリボン位置
-function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twist = 0) {
+const JIB_CLEW_LEN = 1.72, JIB_HEAD_Y = 5.38, JIB_HEAD_Z = 1.18;
+const MAIN_TWIST = 0.36;
+const LEECH_RIBBON_US = [0.32, 0.56, 0.78]; // スナイプ級メインセールの3本バテン(下・中・トップバテン)位置
+function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twist = 0, withBattens = false) {
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= nu; i++) {
     const u = i / nu;
     const lx = tack[0] + u * (head[0] - tack[0]), ly = tack[1] + u * (head[1] - tack[1]), lz = tack[2] + u * (head[2] - tack[2]);
-    const roachZ = roach * 4 * u * (1 - u);
+    // バテン位置でローチが支えられ、バテン間ではわずかに角度が折れる実艇のリーチ形状
+    let roachZ = roach * 4 * u * (1 - u);
+    let battenFacetTwist = 0;
+    if (withBattens) {
+      for (let bi = 0; bi < LEECH_RIBBON_US.length; bi++) {
+        const bu = LEECH_RIBBON_US[bi];
+        const du = (u - bu) / 0.055;
+        const rib = Math.exp(-du * du);
+        roachZ += 0.018 * rib;
+      }
+      // 各バテン(0.32, 0.56, 0.78)を境にセール面のツイスト角がわずかに段階的に変化する
+      const s1 = Math.max(0, u - 0.32), s2 = Math.max(0, u - 0.56), s3 = Math.max(0, u - 0.78);
+      battenFacetTwist = (0.14 * s1 + 0.18 * s2 + 0.22 * s3) * (1 - u);
+    }
     const rx = clew[0] + u * (head[0] - clew[0]), ry = clew[1] + u * (head[1] - clew[1]), rz = clew[2] + u * (head[2] - clew[2]) + roachZ;
     for (let j = 0; j <= nv; j++) {
       const v = j / nv;
-      const b = bulge * Math.sin(Math.PI * v) * (1 - 0.55 * u) * Math.sin(Math.PI * Math.min(1, 0.15 + u * 0.9));
-      // クローズ引き込み時にメインセール下部はセンター近くまでタイトに引き込まれ、中〜上部リーチが風下へツイストして開き、頂点(u=1)はマストトップへ綺麗に収束する
-      const twistX = twist * Math.pow(u, 1.15) * (1 - u) * Math.pow(v, 1.15) * 2.15;
-      pos.push(lx + v * (rx - lx) + b + twistX, ly + v * (ry - ly), lz + v * (rz - lz));
+      // バテンが入る後半部(v > 0.42)はバテンで直線的に支えられ、バテンライン上でわずかに角度が変わる立体リッジを形成
+      let battenRidge = 0;
+      let aftFlatten = 1.0;
+      if (withBattens && v > 0.38) {
+        const vWeight = Math.pow((v - 0.38) / 0.62, 0.85);
+        aftFlatten = 1.0 - 0.18 * vWeight;
+        for (let bi = 0; bi < LEECH_RIBBON_US.length; bi++) {
+          const bu = LEECH_RIBBON_US[bi];
+          const du = (u - bu) / 0.032;
+          battenRidge += 0.016 * Math.exp(-du * du) * Math.sin(Math.PI * Math.min(1, (v - 0.35) / 0.65));
+        }
+        // バテンとバテンの間のパネルでわずかに面角度が切り替わるファセット効果
+        const seg = u < 0.32 ? u / 0.32 : u < 0.56 ? (u - 0.32) / 0.24 : u < 0.78 ? (u - 0.56) / 0.22 : (u - 0.78) / 0.22;
+        battenRidge -= 0.009 * Math.sin(Math.PI * seg) * vWeight;
+      }
+      const b = bulge * Math.sin(Math.PI * v) * aftFlatten * (1 - 0.55 * u) * Math.sin(Math.PI * Math.min(1, 0.15 + u * 0.9));
+      // クローズ引き込み時にメインセール下部はセンター近くまでタイトに引き込まれ、中〜上部リーチがバテン節ごとにツイストして開く
+      const twistX = (twist * Math.pow(u, 1.18) * (1 - u) * 2.05 + battenFacetTwist) * Math.pow(v, 1.12);
+      pos.push(lx + v * (rx - lx) + b + twistX + battenRidge, ly + v * (ry - ly), lz + v * (rz - lz));
       uv.push(v, u);
     }
   }
@@ -109,101 +137,177 @@ function tautSheetGeo(pts, r = 0.0065) {
   return ropeGeo(sharpPts, r, Math.max(18, sharpPts.length * 4));
 }
 
-const mainGeo = sailGeometry([0, 1.02, 0], [0, 6.75, 0.08], [0, 0.98, 2.88], 0.45, 14, 10, 0.36, MAIN_TWIST);
-const jibGeo = sailGeometry([0, 0, 0], [0, JIB_HEAD_Y, JIB_HEAD_Z], [0, 0.22, JIB_CLEW_LEN], 0.26, JIB_NU, JIB_NV);
+const mainGeo = sailGeometry([0, 1.02, 0], [0, 6.75, 0.08], [0, 0.98, 2.88], 0.33, 28, 12, 0.36, MAIN_TWIST, true);
+const jibGeo = sailGeometry([0, 0, 0], [0, JIB_HEAD_Y, JIB_HEAD_Z], [0, 0.22, JIB_CLEW_LEN], 0.20, JIB_NU, JIB_NV);
 const mastGeo = new THREE.CylinderGeometry(0.035, 0.046, 6.9, 12);
 const boomGeo = new THREE.CylinderGeometry(0.030, 0.030, 2.88, 8); boomGeo.rotateX(Math.PI / 2);
 
-// メインセールテクスチャ: 上部のスナイプ鳥マーク(シギ)、JPN & セールナンバー(裏面透け表現付き)、下部クリアウィンドウ
+// メインセールテクスチャ: 実艇写真(画像3枚目)準拠のうっすら透ける3本バテンポケット、パネルシーム、コーナー補強パッチ、スナイプ鳥マーク、JPN & セールNo、小さめの下部クリアウィンドウ
 function mainSailTexture(no, color) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 1024;
   const x = c.getContext('2d');
   x.fillStyle = 'rgba(249, 251, 253, 0.98)';
   x.fillRect(0, 0, 512, 1024);
 
-  // セールクロスのシーム(パネルライン)
-  x.strokeStyle = 'rgba(210, 216, 224, 0.85)';
-  x.lineWidth = 2;
-  for (let y = 90; y < 1024; y += 92) {
-    x.beginPath(); x.moveTo(0, y); x.lineTo(512, y); x.stroke();
+  // 1) ラフ(前縁)・フット(下縁)・コーナー(ヘッド/タック/クリュー)のダクロン積層補強パッチ
+  x.fillStyle = 'rgba(235, 240, 246, 0.85)';
+  x.fillRect(0, 0, 18, 1024); // ラフテープ帯
+  x.fillRect(0, 1004, 512, 20); // フットテープ帯
+  // クリュー・タック・ヘッドの放射状コーナーパッチ
+  for (const [cx, cy, r] of [[512, 1024, 95], [0, 1024, 78], [256, 0, 72]]) {
+    x.beginPath();
+    x.arc(cx, cy, r, 0, Math.PI * 2);
+    x.fillStyle = 'rgba(232, 238, 245, 0.75)';
+    x.fill();
+    x.strokeStyle = 'rgba(198, 206, 216, 0.8)';
+    x.lineWidth = 1.5;
+    x.stroke();
   }
 
-  // 1) 帆の上部: スナイプ級の象徴である「鳥のマーク(飛ぶシギのシルエット)」(実艇写真準拠の濃紺ブルー)
+  // 2) セールクロスのクロスカットシーム(パネルライン)
+  x.strokeStyle = 'rgba(206, 214, 224, 0.85)';
+  x.lineWidth = 1.8;
+  for (let y = 88; y < 1024; y += 84) {
+    x.beginPath();
+    x.moveTo(0, y + 8);
+    x.lineTo(512, y - 6);
+    x.stroke();
+  }
+
+  // 3) うっすら見える3本のバテンポケット & 内部バテンロッド & リーチ端バテンキャップ (LEECH_RIBBON_US = [0.32, 0.56, 0.78])
+  // UVの u は下端=0(y=1024)、上端=1(y=0) なので cy = (1 - u) * 1024
+  const battenSpecs = [
+    { u: 0.78, vStart: 0.36 }, // トップバテン
+    { u: 0.56, vStart: 0.42 }, // ミドルバテン
+    { u: 0.32, vStart: 0.46 }, // ローワーバテン
+  ];
+  for (const bs of battenSpecs) {
+    const ly = (1 - bs.u) * 1024;
+    const x0 = Math.round(bs.vStart * 512);
+    const y0 = ly + 10; // 内側端はわずかに下向き
+    const y1 = ly;      // リーチ端(x=512)
+    x.save();
+    // バテンポケットのダクロン袋布(うっすら見える帯)
+    x.beginPath();
+    x.moveTo(x0, y0 - 8);
+    x.lineTo(512, y1 - 9);
+    x.lineTo(512, y1 + 9);
+    x.lineTo(x0, y0 + 8);
+    x.closePath();
+    x.fillStyle = 'rgba(224, 231, 240, 0.82)';
+    x.fill();
+    x.strokeStyle = 'rgba(176, 188, 202, 0.88)';
+    x.lineWidth = 1.5;
+    x.stroke();
+
+    // ポケット内部にうっすら透けて見えるグラスファイバーバテン芯材と立体陰影
+    x.beginPath();
+    x.moveTo(x0 + 8, y0);
+    x.lineTo(506, y1);
+    x.strokeStyle = 'rgba(154, 168, 186, 0.62)';
+    x.lineWidth = 5.0;
+    x.stroke();
+    x.beginPath();
+    x.moveTo(x0 + 8, y0 - 2.5);
+    x.lineTo(506, y1 - 2.5);
+    x.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    x.lineWidth = 2.0;
+    x.stroke();
+
+    // バテンポケット前端(セール中央側)の補強パッチ(四角い白パッチ)
+    x.fillStyle = 'rgba(214, 222, 232, 0.90)';
+    x.strokeStyle = 'rgba(168, 180, 195, 0.85)';
+    x.lineWidth = 1.4;
+    x.fillRect(x0 - 6, y0 - 11, 22, 22);
+    x.strokeRect(x0 - 6, y0 - 11, 22, 22);
+
+    // リーチ端のバテンエンドキャップ(濃紺/黒のエンドプロテクター)
+    x.fillStyle = '#1e293b';
+    x.fillRect(496, y1 - 7, 16, 14);
+    x.restore();
+  }
+
+  // 4) 帆の上部: スナイプ級の象徴である「鳥のマーク(飛ぶシギのシルエット)」(実艇写真準拠の濃紺ブルー)
   x.save();
-  x.translate(236, 195);
-  x.scale(1.35, 1.35);
+  x.translate(242, 172);
+  x.scale(1.28, 1.28);
   x.fillStyle = '#123e96';
   x.beginPath();
-  // 胴体〜くちばし先端(右向きに長く伸びるシギのくちばし)
   x.moveTo(46, -8);    // 長いくちばし先端
   x.lineTo(18, -5);    // 頭頂
   x.quadraticCurveTo(10, -9, 2, -4); // 頭部から首
-  // 上方に大きく広がる主翼
   x.quadraticCurveTo(-8, -26, -34, -22); // 翼端上
   x.quadraticCurveTo(-20, -10, -14, -2); // 翼の後縁くびれ
-  // 尾羽
   x.lineTo(-36, 8);
   x.lineTo(-22, 11);
-  // 腹部から胸・くちばし下側へ
   x.quadraticCurveTo(-2, 12, 12, 2);
   x.lineTo(20, -1);
   x.closePath();
   x.fill();
   x.restore();
 
-  // 2) 国コード「JPN」＋ 裏面透け文字(反転JPN)
+  // 5) 国コード「JPN」＋ 裏面透け文字(反転JPN) — トップバテンとミドルバテンの間に配置
   const sailBlue = '#123e96';
-  const ghostBlue = 'rgba(18, 62, 150, 0.24)';
+  const ghostBlue = 'rgba(18, 62, 150, 0.22)';
   x.fillStyle = sailBlue;
-  x.font = 'bold 92px Arial, sans-serif';
+  x.font = 'bold 84px Arial, sans-serif';
   x.textAlign = 'center';
   x.save();
-  x.translate(238, 345);
-  x.rotate(0.08);
+  x.translate(244, 336);
+  x.rotate(0.06);
   x.fillText('JPN', 0, 0);
   x.restore();
 
-  // 裏面の透け「JPN」(左右反転)
   x.save();
-  x.translate(232, 430);
-  x.rotate(0.08);
+  x.translate(238, 416);
+  x.rotate(0.06);
   x.scale(-1, 1);
   x.fillStyle = ghostBlue;
-  x.font = 'bold 92px Arial, sans-serif';
+  x.font = 'bold 84px Arial, sans-serif';
   x.fillText('JPN', 0, 0);
   x.restore();
 
-  // 3) セールナンバー ＋ 裏面透けナンバー(左右反転)
+  // 6) セールナンバー ＋ 裏面透けナンバー(左右反転) — ミドルバテンとローワーバテンの間に配置
   const numText = no && no.length >= 4 ? no : '31804';
   x.save();
-  x.translate(250, 525);
-  x.rotate(0.08);
+  x.translate(254, 548);
+  x.rotate(0.06);
   x.fillStyle = sailBlue;
-  x.font = 'bold 90px Arial, sans-serif';
+  x.font = 'bold 84px Arial, sans-serif';
   x.fillText(numText, 0, 0);
   x.restore();
 
   x.save();
-  x.translate(242, 612);
-  x.rotate(0.08);
+  x.translate(246, 632);
+  x.rotate(0.06);
   x.scale(-1, 1);
   x.fillStyle = ghostBlue;
-  x.font = 'bold 90px Arial, sans-serif';
+  x.font = 'bold 84px Arial, sans-serif';
   x.fillText(numText, 0, 0);
   x.restore();
 
-  // 4) メインセール下部の視認用クリアウィンドウ(透明窓)
-  x.clearRect(80, 815, 210, 95);
-  x.fillStyle = 'rgba(195, 225, 248, 0.22)';
-  x.fillRect(80, 815, 210, 95);
-  x.strokeStyle = 'rgba(180, 196, 212, 0.9)';
+  // 7) メインセール下部の視認用クリアウィンドウ(画像3枚目準拠の小さめサイズ)
+  const mwx = 68, mwy = 858, mww = 96, mwh = 44;
+  x.clearRect(mwx, mwy, mww, mwh);
+  x.fillStyle = 'rgba(195, 225, 248, 0.18)';
+  x.fillRect(mwx, mwy, mww, mwh);
+  x.strokeStyle = 'rgba(255, 255, 255, 0.36)';
+  x.lineWidth = 1.4;
+  x.beginPath();
+  x.moveTo(mwx + 16, mwy + mwh - 4); x.lineTo(mwx + 38, mwy + 4);
+  x.moveTo(mwx + 56, mwy + mwh - 4); x.lineTo(mwx + 78, mwy + 4);
+  x.stroke();
+  x.strokeStyle = 'rgba(228, 234, 242, 0.95)';
   x.lineWidth = 5;
-  x.strokeRect(80, 815, 210, 95);
+  x.strokeRect(mwx, mwy, mww, mwh);
+  x.strokeStyle = 'rgba(170, 186, 204, 0.85)';
+  x.lineWidth = 1.5;
+  x.strokeRect(mwx, mwy, mww, mwh);
 
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 
-// ジブセールテクスチャ: 下部に反対側が透けて見える透明ウインドウを配置
+// ジブセールテクスチャ: 下部に反対側が透けて見える小さめの透明ウインドウを配置
 let jibTex = null;
 function jibTexture() {
   if (jibTex) return jibTex;
@@ -219,8 +323,8 @@ function jibTexture() {
     x.beginPath(); x.moveTo(0, y); x.lineTo(256, y); x.stroke();
   }
 
-  // ジブセール下部の透明ウインドウ (実艇写真準拠: フット近くの低い位置に横長のクリアビニール窓を設け、反対側が透けて見えるようにする)
-  const wx = 44, wy = 408, ww = 166, wh = 54;
+  // ジブセール下部の透明ウインドウ (実艇写真準拠のコンパクトなクリア窓)
+  const wx = 54, wy = 420, ww = 98, wh = 34;
   x.clearRect(wx, wy, ww, wh);
   x.fillStyle = 'rgba(190, 225, 250, 0.16)';
   x.fillRect(wx, wy, ww, wh);
@@ -312,8 +416,8 @@ export class BoatModel {
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
 
     const tex = mainSailTexture(String(boat.sailNo), boat.color);
-    // メインセールは不透明で前後ソート崩れを防ぎ、ジブは透明窓が自然な色で透けるようdepthWrite付き透過に設定
-    this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.65, metalness: 0.05 });
+    // メインセール・ジブともに小さい透明ウインドウが自然に透けつつdepthWriteで前後ソート崩れを防ぐ
+    this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.62, metalness: 0.04, transparent: true, opacity: 0.99, depthWrite: true });
     this.jibMat = new THREE.MeshStandardMaterial({ map: jibTexture(), side: THREE.DoubleSide, roughness: 0.58, transparent: true, opacity: 0.98, depthWrite: true });
 
     this.mainPivot = new THREE.Group(); this.mainPivot.position.set(0, 0.4, -0.9); this.body.add(this.mainPivot);
@@ -325,8 +429,10 @@ export class BoatModel {
     for (let i = 0; i < LEECH_RIBBON_US.length; i++) {
       const u = LEECH_RIBBON_US[i];
       const ry = 0.98 + u * (6.75 - 0.98);
-      const rz = 2.88 + u * (0.08 - 2.88) + 0.36 * 4 * u * (1 - u);
-      const twistX = MAIN_TWIST * Math.pow(u, 1.15) * (1 - u) * 2.15;
+      const rz = 2.88 + u * (0.08 - 2.88) + 0.36 * 4 * u * (1 - u) + 0.018;
+      const s1 = Math.max(0, u - 0.32), s2 = Math.max(0, u - 0.56), s3 = Math.max(0, u - 0.78);
+      const battenFacetTwist = (0.14 * s1 + 0.18 * s2 + 0.22 * s3) * (1 - u);
+      const twistX = MAIN_TWIST * Math.pow(u, 1.18) * (1 - u) * 2.05 + battenFacetTwist;
       const m = new THREE.Mesh(lrGeo, lrMat);
       m.position.set(twistX, ry, rz);
       this.mainPivot.add(m);
@@ -475,6 +581,7 @@ export class BoatModel {
   }
 
   // ジブのラフ(v=0)をフォアステーへ固定し、ランチャー展開時(pk>0)はフォアステイテンション緩和によるサギングを反映
+  // クローズ等でメインセール前部(z > -0.90)と重なる領域では、必ずメインセールより風下側(外側)へクリアランスを保って貫通を完全に防ぐ
   evalJibPoint(u, v, clewX, clewLocalY, clewLocalZ, camberSigned, pk, out) {
     const sgn = this.boat.tack || 1;
     const headY = JIB_HEAD_Y, headZ = JIB_HEAD_Z - 0.045 * pk;
@@ -489,17 +596,36 @@ export class BoatModel {
     const nx = dz / clen, nz = -dx / clen;
     const upperTension = Math.pow(1 - u, 0.85) * (1 - 0.38 * pk * u);
     const b = camberSigned * Math.sin(Math.PI * v) * upperTension;
-    out.set(
-      lx + v * dx + nx * b,
-      ly + v * (ry - ly),
-      lz + v * dz + nz * b
-    );
+    let px = lx + v * dx + nx * b;
+    const py = ly + v * (ry - ly);
+    const pz = lz + v * dz + nz * b;
+
+    // メインセール貫通防止ガード: マスト(z = -0.90)より後方へ重なる頂点は、メインセールの同高さ・同前後位置の風下変位より必ず外側に保つ
+    const zBody = JIB_TACK_Z + pz;
+    if (pk < 0.35 && zBody > -0.92) {
+      const yBody = JIB_TACK_Y + py;
+      const zMain = Math.max(0, zBody - (-0.90));
+      const uMain = clamp((yBody - 1.02) / 5.73, 0, 1);
+      const chordMain = Math.max(0.35, 2.88 * (1 - uMain) + 0.36 * 4 * uMain * (1 - uMain));
+      const vMain = clamp(zMain / chordMain, 0, 1);
+      const bMain = 0.33 * Math.sin(Math.PI * vMain) * (1 - 0.55 * uMain) * Math.sin(Math.PI * Math.min(1, 0.15 + uMain * 0.9));
+      const twMain = MAIN_TWIST * Math.pow(uMain, 1.18) * (1 - uMain) * 2.05 * Math.pow(vMain, 1.12);
+      const boomAng = this.boomA || 0.03;
+      const mainScale = this.mainSail ? Math.abs(this.mainSail.scale.x) : 1;
+      const mainLeeDist = zMain * Math.sin(boomAng) + (bMain + twMain) * mainScale * Math.cos(boomAng);
+      const leeSign = sgn > 0 ? -1 : 1; // スターボード(sgn=1)の風下は -x、ポート(sgn=-1)の風下は +x
+      const minOutboard = mainLeeDist + 0.055;
+      if (leeSign * px < minOutboard) {
+        px = leeSign * minOutboard;
+      }
+    }
+    out.set(px, py, pz);
   }
 
   updateJibShape(pk, jibRot, camberSigned) {
     const eps = this.boat.isPlayer ? 0.004 : 0.015;
-    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps) return;
-    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned;
+    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps && Math.abs((this.boomA || 0) - (this._lastBoomA || 0)) < eps) return;
+    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned; this._lastBoomA = this.boomA || 0;
 
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
     const clewLocalY = 0.16 + 0.88 * pk;
@@ -560,32 +686,33 @@ export class BoatModel {
     const speedNorm = clamp(Math.abs(b.v) / 2.6, 0, 1);
     const slowFactor = Math.pow(1 - speedNorm, 1.35);
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
-    const chopRespond = (0.28 + 0.95 * slowFactor) * (1 - 0.68 * downFactor * speedNorm);
-    const heave = ws.hLong * 0.92 + (ws.h - ws.hLong) * 0.48 * chopRespond;
-    // 船尾(z=+2.36)のラダーが波で水面上に半分以上飛び出さないようピッチ角の前傾側(-0.052)を抑えつつ、低速時の波によるはたかれ(+0.088)はしっかり表現
-    const pitchW = clamp(Math.atan(ws.slopeLong * 0.62 + (ws.slope - ws.slopeLong) * 0.56 * chopRespond), -0.052, 0.088);
+    const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
+    const heave = ws.hLong * 0.95 + (ws.h - ws.hLong) * 0.60 * chopRespond;
+    // 船尾(z=+2.36)のラダーが波で水面上に半分以上飛び出さないようピッチ角の前傾側(-0.052)を抑えつつ、低速時の波によるはたかれ(+0.098)はしっかり表現
+    const pitchW = clamp(Math.atan(ws.slopeLong * 0.68 + (ws.slope - ws.slopeLong) * 0.66 * chopRespond), -0.052, 0.098);
     // 横方向の傾き(三角波の交差波で左右にも揺さぶられる)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
-    const rollW = clamp(Math.atan(wsR.slope) * 0.45 * chopRespond, -0.095, 0.095);
-    // コクピット床(FLOOR_Y)がヒール時や短周期波でも海面より下に潜って海面色にならないよう基準高さを確保
-    this.body.position.y = 0.18 + Math.abs(b.heel) * 0.12 + heave + 0.014 * Math.sin(ph);
-    this.body.rotation.z = b.heel + 0.012 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = pitchW + 0.010 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 14, 0, 0.25) * 0.035;
+    const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond, -0.115, 0.115);
+    // コクピット床(FLOOR_Y)およびスターンの角がヒール時や波でも海面より下に潜って海面色にならないよう基準高さを確保
+    this.body.position.y = 0.21 + Math.abs(b.heel) * 0.13 + heave + 0.016 * Math.sin(ph);
+    this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
+    this.body.rotation.x = pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 14, 0, 0.25) * 0.032;
 
     if (this.rudderGroup) {
       this.rudderGroup.rotation.y = b.steer * 0.6;
     }
 
-    // セール: クローズ走行時はブーム・下部メインセールをよりセンター近くまで引き込み、上部リーチがツイストして開く
+    // セール: クローズ走行時はブーム・メインセールを画像1枚目のようにセンターライン近くまでしっかり引き込み、上部リーチがツイストして開く
     const twa = b.twa, luff = b.luff;
-    const closeFactor = clamp(1 - (twa - 0.65) / 0.45, 0, 1);
-    const sheetAng = (0.030 + (1 - closeFactor) * 0.040) + Math.pow(1 - b.sheet, 1.08) * 1.34;
-    let ang = Math.min(sheetAng, Math.max(0.030, Math.abs(b.awa) - 0.08 * closeFactor - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
+    const closeFactor = clamp(1 - (twa - 0.65) / 0.38, 0, 1);
+    const effMainSheet = clamp(b.sheet + closeFactor * 0.045, 0, 1);
+    const sheetAng = (0.012 + (1 - closeFactor) * 0.052) + Math.pow(1 - effMainSheet, 1.12) * 1.34;
+    let ang = Math.min(sheetAng, Math.max(0.012, Math.abs(b.awa) - 0.12 * closeFactor - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
     ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
     this.mainPivot.rotation.y = -sgn * this.boomA;
-    // ジブ: クローズ引き込み時はタイト、落とす際(ベアアウェイ/リーチング)やシバーする時はしっかり外側へセールを出す
+    // ジブ: クローズ引き込み時は画像1枚目のようにしっかりタイトに引き込み、クローズ以外の角度では従来の自然な引き具合を維持
     const pk = b.poleK || 0;
     // ランチャーアップ時はセンターボードを少し引き上げ(+22cm)、フォアステイのテンションを緩めてマストをわずかに前傾させる
     if (this.cbBoard) this.cbBoard.position.y = pk * 0.22;
@@ -598,9 +725,12 @@ export class BoatModel {
     const ease = Math.max(0, 0.97 - b.sheet);
     const bearOut = Math.max(0, twa - 0.78) * 0.28;
     const luffOut = luff * (0.28 + 0.09 * Math.sin(t * 21 + this.phase));
-    const jibDesired = 0.19 + ease * 0.72 + bearOut * 0.42 + luffOut;
-    const jibMaxAwa = Math.max(0.34, Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
-    const jibLee = clamp(Math.min(Math.max(this.boomA * 0.78, jibDesired), jibMaxAwa), 0.18, 0.82);
+    const baseJibIn = 0.102 * closeFactor + 0.19 * (1 - closeFactor);
+    const easeWeight = 0.28 * closeFactor + 0.72 * (1 - closeFactor);
+    const jibDesired = baseJibIn + ease * easeWeight + bearOut * 0.42 + luffOut;
+    const jibMaxAwa = Math.max(0.105 + 0.235 * (1 - closeFactor), Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
+    const minJibLee = 0.102 * closeFactor + 0.18 * (1 - closeFactor);
+    const jibLee = clamp(Math.min(Math.max(this.boomA * 0.72, jibDesired), jibMaxAwa), minJibLee, 0.82);
     const jibRot = -sgn * jibLee * (1 - pk) + sgn * JIB_WING * pk;
     this.jibRot = jibRot;
     this.jibPivot.rotation.y = 0; // ラフをフォアステーに完全固定するためjibPivot自体は回転させず頂点で展開
@@ -621,7 +751,8 @@ export class BoatModel {
         r.m.rotation.x = -0.05 + 0.16 * Math.sin(t * 14 + r.ph) * (0.3 + Math.max(luff, stall));
       }
     }
-    const jibCamber = jibBulge * 0.23 * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.65 * Math.sin(Math.PI * pk));
+    const jibCamberScale = 0.135 * closeFactor + 0.23 * (1 - closeFactor);
+    const jibCamber = jibBulge * jibCamberScale * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.65 * Math.sin(Math.PI * pk));
     this.jibSail.scale.x = 1;
     this.jibSail.rotation.x = 0;
     this.updateJibShape(pk, jibRot, jibCamber);
