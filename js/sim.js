@@ -113,36 +113,36 @@ export function setSeaState(venue, windDeg, kt) {
   let type, label, H;
   if (venue === 'hakkeijima' && north) {
     type = 'chop'; label = '三角波(北風・護岸反射の交差波)';
-    H = clamp(0.16 + 0.026 * kt, 0.22, 0.65);
-    add(H * 0.30, 7.0, from, 0.0);
-    add(H * 0.24, 6.0, from + 52 * R, 1.9); // 岸壁からの反射波が斜めに交差
-    add(H * 0.20, 5.2, from - 47 * R, 4.1);
-    add(H * 0.10, 11.0, from + 8 * R, 2.6);
-    Object.assign(SEA, { steep: 1.0, surf: 0.06 });
+    H = clamp(0.20 + 0.032 * kt, 0.27, 0.78);
+    add(H * 0.31, 6.8, from, 0.0);
+    add(H * 0.25, 5.8, from + 52 * R, 1.9); // 岸壁からの反射波が斜めに交差
+    add(H * 0.21, 5.0, from - 47 * R, 4.1);
+    add(H * 0.11, 10.5, from + 8 * R, 2.6);
+    Object.assign(SEA, { steep: 1.08, surf: 0.08 });
   } else if (venue === 'enoshima' && south) {
     type = 'swell'; label = '長周期のうねり(南風・相模湾)';
-    H = clamp(0.55 + 0.035 * kt, 0.6, 1.4);
-    add(H * 0.36, 96, 205 * R, 0.0, true); // 南南西からの外洋うねり(周期約8秒)
-    add(H * 0.14, 64, 190 * R, 2.2, true);
-    add(0.05 + 0.008 * kt, 9.0, from, 1.1);  // うねりに乗る風浪
-    add(0.035 + 0.006 * kt, 6.5, from + 25 * R, 3.7);
-    Object.assign(SEA, { steep: 0.32, surf: 0.30 });
+    H = clamp(0.66 + 0.042 * kt, 0.72, 1.65);
+    add(H * 0.37, 92, 205 * R, 0.0, true); // 南南西からの外洋うねり(周期約8秒)
+    add(H * 0.15, 62, 190 * R, 2.2, true);
+    add(0.065 + 0.010 * kt, 8.8, from, 1.1);  // うねりに乗る風浪
+    add(0.045 + 0.008 * kt, 6.2, from + 25 * R, 3.7);
+    Object.assign(SEA, { steep: 0.38, surf: 0.36 });
   } else if (venue === 'enoshima' && north) {
     type = 'short'; label = '周期の短い風浪(北風・陸からの吹き出し)';
-    H = clamp(0.14 + 0.028 * kt, 0.2, 0.7);
-    add(H * 0.34, 10.0, from, 0.0);
-    add(H * 0.24, 8.0, from + 18 * R, 2.3);
-    add(H * 0.16, 13.0, from - 14 * R, 4.4);
-    add(H * 0.08, 5.5, from + 40 * R, 1.2);
-    Object.assign(SEA, { steep: 0.75, surf: 0.14 });
+    H = clamp(0.18 + 0.034 * kt, 0.25, 0.82);
+    add(H * 0.35, 9.6, from, 0.0);
+    add(H * 0.25, 7.8, from + 18 * R, 2.3);
+    add(H * 0.17, 12.5, from - 14 * R, 4.4);
+    add(H * 0.09, 5.2, from + 40 * R, 1.2);
+    Object.assign(SEA, { steep: 0.84, surf: 0.17 });
   } else {
     type = 'mixed'; label = '風浪';
-    H = clamp(0.15 + 0.025 * kt, 0.2, 0.6);
-    add(H * 0.32, 11.0, from, 0.0);
-    add(H * 0.22, 8.5, from + 22 * R, 2.0);
-    add(H * 0.16, 30, from - 12 * R, 4.0, true);
-    add(H * 0.08, 6.0, from - 35 * R, 1.3);
-    Object.assign(SEA, { steep: 0.55, surf: 0.14 });
+    H = clamp(0.19 + 0.030 * kt, 0.25, 0.74);
+    add(H * 0.33, 10.5, from, 0.0);
+    add(H * 0.23, 8.2, from + 22 * R, 2.0);
+    add(H * 0.17, 28, from - 12 * R, 4.0, true);
+    add(H * 0.09, 5.8, from - 35 * R, 1.3);
+    Object.assign(SEA, { steep: 0.64, surf: 0.17 });
   }
   let ms = 0, la = 0;
   for (const c of comps) { ms += c.A * c.k; if (c.long) la += c.A; }
@@ -547,14 +547,14 @@ export class Boat {
     }
     this.h = wrap(this.h + dh + this.aeroClimb);
     this.turned += Math.abs(dh);
-    // 急激に角度を変えたりタック・ジャイブした際のラダー抵抗(乱流・白泡発生度 0..1)
+    // 急激に角度を変えたりタック・ジャイブした際のラダー抵抗(乱流・白泡発生度 0..1: 控えめに調整)
     const turnRate = Math.abs(dh) / Math.max(dt, 1e-4);
-    const steerEffort = Math.max(Math.abs(steer), clamp(turnRate / 0.52, 0, 1));
-    const speedF = clamp(Math.abs(this.v) / 1.15, 0.2, 1.25);
-    const rudderTarget = steerEffort > 0.20
-      ? clamp(Math.pow((steerEffort - 0.16) / 0.72, 1.22) * speedF + (this.maneuver ? 0.38 * speedF : 0), 0, 1)
+    const steerEffort = Math.max(Math.abs(steer), clamp(turnRate / 0.58, 0, 1));
+    const speedF = clamp(Math.abs(this.v) / 1.25, 0.18, 1.15);
+    const rudderTarget = steerEffort > 0.34
+      ? clamp((Math.pow((steerEffort - 0.30) / 0.70, 1.35) * 0.52 + (this.maneuver ? 0.20 : 0)) * speedF, 0, 0.60)
       : 0;
-    this.rudderDrag += (rudderTarget - this.rudderDrag) * (1 - Math.exp(-dt * (rudderTarget > this.rudderDrag ? 8.5 : 3.2)));
+    this.rudderDrag += (rudderTarget - this.rudderDrag) * (1 - Math.exp(-dt * (rudderTarget > this.rudderDrag ? 7.5 : 3.8)));
     if (this.penalty) {
       this.penalty.turned += Math.abs(dh);
       // 他艇が2艇身(約9.5m)以内にいる間は「クリアウオーター確保中」としてタイマー減少を0.25倍に緩和、回頭中も0.2倍に緩和
@@ -673,12 +673,12 @@ export class Boat {
       const downFactor = smoothstep(1.05, 1.70, twa);   // 下レグ・リーチングでは 1.0
       const upw = 1 - downFactor;
       const down = smoothstep(1.15, 1.9, twa);
-      const poundScale = (0.28 + 1.05 * slowFactor) * (1 - 0.80 * downFactor * speedNorm);
-      let wf = 1 - upw * 0.12 * Hn * SEA.steep * (0.55 + 0.95 * Math.max(0, climb)) * poundScale;
-      if (turning) wf -= 0.09 * Hn * SEA.steep * (0.55 + 0.55 * slowFactor); // 波の中でのタック・低速回頭は行き足が止まりやすい
+      const poundScale = (0.35 + 1.15 * slowFactor) * (1 - 0.72 * downFactor * speedNorm);
+      let wf = 1 - upw * 0.15 * Hn * SEA.steep * (0.58 + 0.98 * Math.max(0, climb)) * poundScale;
+      if (turning) wf -= 0.11 * Hn * SEA.steep * (0.58 + 0.58 * slowFactor); // 波の中でのタック・低速回頭は行き足が止まりやすい
       const windOk = clamp((localWindKt - 5.5) / 6, 0, 1);
-      wf += down * SEA.surf * Math.max(0, -climb) * (0.3 + 0.7 * windOk) * clamp(this.v / (2.2 * SPEED_SCALE), 0.3, 1);
-      if (SEA.type === 'chop') wf -= down * 0.032 * Hn * (0.5 + 0.5 * Math.abs(climb)) * slowFactor;
+      wf += down * SEA.surf * Math.max(0, -climb) * (0.35 + 0.75 * windOk) * clamp(this.v / (2.1 * SPEED_SCALE), 0.3, 1.08);
+      if (SEA.type === 'chop') wf -= down * 0.040 * Hn * (0.5 + 0.5 * Math.abs(climb)) * slowFactor;
       this.waveF = wf;
       this.waveLoss = Math.max(0, 1 - wf);
       target *= wf;
