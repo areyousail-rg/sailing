@@ -227,8 +227,12 @@ export function buildHull(accent = 0x2a77ff) {
   trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.012, 0.010, tz1 - tz0 + 0.01), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
   // 短く細いセンターボードスリット開口部のみダークグレー (z = -0.45 〜 -0.13)
   trunk.add(mesh(new THREE.BoxGeometry(0.022, 0.012, 0.32), M.black, 0, FLOOR_Y + th + 0.006, -0.29));
-  // ダガーボード上端の小さなシルバーハンドルバー
-  trunk.add(mesh(new THREE.BoxGeometry(0.052, 0.028, 0.020), M.alu, 0, FLOOR_Y + th + 0.022, -0.36));
+  // ダガーボード(センターボード)本体上端とハンドルバー: ランチャーアップ時に少し引き上げられる可動グループ
+  const cbBoard = new THREE.Group();
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.015, 0.26, 0.26), M.alu, 0, FLOOR_Y + th - 0.12, -0.29));
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.056, 0.026, 0.022), M.alu, 0, FLOOR_Y + th + 0.022, -0.36));
+  trunk.add(cbBoard);
+  g.userData.cbBoard = cbBoard;
   // センターケース後端(z=0.04〜0.18)の低い白いフロアブレース＆メインシートブロック台座 (画像3枚目)
   trunk.add(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.10));
   g.add(trunk);
