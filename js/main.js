@@ -113,10 +113,10 @@ function makeFleet() {
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
     const isUpperEnd = targetC >= 50;
-    const a0 = isUpperEnd ? -23 - (i % 2) * 2.5 : -24 - (i % 3) * 3.5;
+    const a0 = isUpperEnd ? -17 - (i % 2) * 2.0 : -18 - (i % 3) * 2.2;
     // 1分間のスターボードタック前進と1.5倍の下流れによる左(-c)への移動量を見越し、
-    // 上端狙い(targetC=+51〜+70.5)のCP艇は本部船(c=+75)より右側(c=+89〜+111)に平行レーンで初期配置する
-    const c0 = targetC + Math.abs(a0) * 0.90 + 19;
+    // 上端狙い(targetC=+51〜+70.5)のCP艇は本部船(c=+75)より右側(c=+84〜+106)に平行レーンで初期配置する
+    const c0 = targetC + Math.abs(a0) * 0.90 + 18;
     return { a: a0, c: c0, targetC };
   });
   // 自艇は低速時の1.5倍の下流れを考慮し、本部船(c=LINE_HALF)の右側(c=LINE_HALF+36)に配置
@@ -549,6 +549,15 @@ function handleCollision(e) {
       const isUpgraded = b.penalty && b.penalty.reqDeg === 720;
       toast(isUpgraded ? 'ペナルティ中の追加接触!(ルール31) → 720°(2回転)ターン へ格上げ!' : 'マークに接触!(ルール31) → 速やかに(20秒以内に) 360°(1回転)ターン で消化せよ!', 'bad', 6500);
     }
+  } else if (e.type === 'anchorSnag') {
+    const b = e.boat;
+    if (!quiet) thud(soundVol(b.x, b.z) * 0.85);
+    if (!quiet && b.isPlayer) {
+      const boatName = e.mark === 'pin' ? 'アウター(下マーク船)' : '本部船';
+      toast(`⚠️ ${boatName}の船首アンカー係留ロープに引っかかり失速!\n船首のすぐ風上側には海底へ続くアンカーロープが張られています`, 'warn', 5500);
+    } else if (!quiet && Math.hypot(b.x - player.x, b.z - player.z) < 60) {
+      miniLog(`${nameOf(b)} が${e.mark === 'pin' ? 'アウター' : '本部船'}のアンカーロープに引っかかり減速`);
+    }
   }
 }
 
@@ -589,85 +598,280 @@ const ORIENT_STEPS = [
   {
     en: 'PRE-START & LINE BIAS',
     title: 'スタート1分前・有利なサイドと海面を見極めよう',
-    pills: ['⏱ スタート1分前 (-1:00)', '🚩 有利サイド＆海面判断'],
-    body: 'ゲームはレーススタート<strong>1分前（−1:00）</strong>から始まる！ スタートラインの傾き（上有利・下有利）と海面のブローを判断して、<strong>自分が出たいポジション</strong>を確保しよう。',
-    highlight: null,
-    dur: 8.0,
+    pills: ['⏱ 左上タイマー (-1:00)', '🚩 右下ミニマップ＆スタートライン'],
+    body: 'ゲームはレーススタート<strong>1分前（−1:00）</strong>から始まる！ <strong>画面左上のタイマー</strong>と<strong>右下ミニマップ・スタートライン中央下</strong>の有利サイド表記、海面のブローを判断して出たいポジションを確保しよう。',
+    dur: 11.2,
   },
   {
     en: 'SPEED & ANGLE CONTROL',
     title: '角度を上したりセールを出してスピードを調整しよう',
-    pills: ['◀ ▶ 舵で角度を上す', '▼ セールを出して減速'],
-    body: 'ポジションを確保するためには、風上へ<strong>角度を上（のぼ）したり</strong>、<strong>セールを出して（緩めて）</strong>スピードを調整しよう！ 号砲前にラインを越えないようスピードをコントロールしよう。',
-    highlight: 'sheet',
-    dur: 8.0,
+    pills: ['◀ ▶ 舵ボタン（←→キー）', '出す / 引く（↓↑キー）'],
+    body: 'ポジションを確保するためには、<strong>左下の「◀ ▶」ボタン（←→キー）</strong>で風上へ角度を上したり、<strong>右下の「出す」ボタン（↓キー）</strong>と<strong>下中央の「トリム」バー</strong>でセールを緩めてスピードを調整しよう！',
+    dur: 11.5,
   },
   {
     en: 'CLEAR WATER START!',
     title: 'クリアウオーター＆ベスト艇速でスタート！',
-    pills: ['📯 0:00 スタート号砲', '💨 クリアウオーター＆全速'],
-    body: 'スタート時は他艇の風影に入らない<strong>クリアウオーター</strong>で出られるよう、号砲（0:00）に合わせてセールを引き込み、<strong>ベストな艇速とスタートラインギリギリ</strong>で飛び出そう！',
-    highlight: 'spd',
-    dur: 7.5,
+    pills: ['📯 0:00 スタート号砲', '💨 「引く」＆左下の船速計'],
+    body: 'スタート時は他艇の風影に入らない<strong>クリアウオーター</strong>で出られるよう、<strong>左上タイマーの「0:00」</strong>に合わせて<strong>右下の「引く」（↑キー）</strong>でセールを引き込み、<strong>下計器バー左端の「船速」</strong>を最大にして飛び出そう！',
+    dur: 11.0,
   },
   {
     en: 'CLOSE-HAULED & VMG',
     title: 'クローズホールドは真風角40°〜44°でVMGを維持！',
-    pills: ['🧭 ベスト真風角 40°〜44°', '🌊 ブロー＝上す ／ 抜けたら＝落とす'],
-    body: 'スタート後のクローズホールドでは<strong>真風角</strong>を確認する。<strong>40°〜44°</strong>がベストだが、<strong>ブロー（強い風）に入ったら少し上し、抜けたら少し落とし気味</strong>で走ってベストな角度と速度（VMG）を維持しよう！',
-    highlight: 'twa',
-    dur: 8.5,
+    pills: ['🧭 下計器バー「真風角」40°〜44°', '🌊 ブロー＝上す ／ 抜けたら＝落とす'],
+    body: 'スタート後のクローズホールドでは<strong>下の計器バー中央「真風角」</strong>を確認！ <strong>40°〜44°</strong>がベストだが、<strong>ブローに入ったら「◀ ▶」で少し上し、抜けたら少し落とし気味</strong>で走ってベストなVMGを維持しよう！',
+    dur: 11.5,
   },
   {
     en: 'TACTICS & TACKING',
     title: 'ブロー・風の振れ・他艇を見てタック判断しNextマークへ！',
-    pills: ['[T] オートタック', '🎯 Nextマークへアプローチ'],
-    body: 'クローズ中は海面の<strong>ブローや風の振れ</strong>、<strong>他艇の位置取り（ブランケット）</strong>を確認してタック判断をし、赤い矢印の<strong>次に向かうべきマーク（Next）</strong>に近づこう！',
-    highlight: 'mark',
-    dur: 8.0,
+    pills: ['🎯 計器バー右端「次のマーク」', '⚠️ 中央上「ブランケット」表示'],
+    body: 'クローズ中は海面のブローや振れ、<strong>画面中央上の「ブランケット／バックウインド」警告</strong>を確認して<strong>「◀ ▶」（または[T]キー）</strong>でタック判断をし、<strong>下計器バー右端「次のマーク」</strong>の矢印方向へ近づこう！',
+    dur: 11.2,
   },
   {
     en: 'DOWNWIND & LAUNCHER',
     title: '風下レグはランチャーUP！ 下マーク回航時はDOWN！',
-    pills: ['[L] ランチャー UP / DOWN', '⚓ 回航時はランチャーを下げる'],
-    body: '風下へ向かうレグでは、<strong>ランチャーを上げて</strong>スピードを上げよう（センターボードも上がりフォアステイも緩む）！ そして<strong>下マークの回航時には忘れずにランチャーを下げよう</strong>。',
-    highlight: 'pole',
-    dur: 8.5,
+    pills: ['🚀 計器バー「▲ UP / ▼ DOWN」', '📱 左ボタン「ランチャー」[L]'],
+    body: '風下へ向かうレグでは、<strong>下計器バーの「▲ UP」または画面左の「ランチャー」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>下マークの回航時には「▼ DOWN」で忘れずにランチャーを下げよう</strong>。',
+    dur: 11.8,
   },
   {
     en: 'ROUNDING & FINAL LEG',
     title: '下マーク回航後も有利な海面と艇速を維持しフィニッシュへ！',
-    pills: ['🔄 マーク回航', '🏁 フィニッシュラインへ'],
-    body: '下マーク回航後も<strong>有利な海面と艇速を維持</strong>し、コースを回ってチェッカーフラッグの<strong>フィニッシュライン</strong>を目指そう！',
-    highlight: 'spd',
-    dur: 7.5,
+    pills: ['🏆 右上「順位」パネル', '🏁 右下ミニマップ青線（FIN）'],
+    body: '下マーク回航後も<strong>画面右上の「順位」パネル</strong>と<strong>右下ミニマップの青いフィニッシュライン</strong>を確認し、有利な海面と艇速を維持してチェッカーフラッグの<strong>フィニッシュ</strong>を目指そう！',
+    dur: 10.8,
   },
   {
     en: 'POST-RACE REVIEW',
-    title: 'フィニッシュ後は「振り返り」で分析して次に繋げよう！',
-    pills: ['📊 振り返りモード', '🔍 スタート・コース・艇速を分析'],
-    body: 'フィニッシュ後は<strong>振り返りモード</strong>で、<strong>スタートやコース取り（走行距離）、艇速、風の振れへの対応</strong>の良かったところと悪かったところを振り返って次のレースに繋げよう！',
-    highlight: null,
-    dur: 8.5,
+    title: 'フィニッシュ後は「振り返り」ボタンで分析して次に繋げよう！',
+    pills: ['📊 結果画面の「振り返り」ボタン', '▶ 航跡再生＆艇速・角度・距離比較'],
+    body: 'フィニッシュ後の<strong>結果画面にある「振り返り」ボタン</strong>を押すと分析画面が開く！ <strong>「▶ 再生」で各艇のコース取り</strong>を確認し、<strong>スタート順位・走行距離・平均艇速・平均角度</strong>を振り返って次のレースに繋げよう！',
+    dur: 12.5,
   },
 ];
 
-const orientState = { step: 0, elapsed: 0, auto: true, subDone: false };
+const orientState = { step: 0, elapsed: 0, subDone: false, phase2: false };
 
 function clearOrientHighlight() {
-  document.querySelectorAll('#instr .cell.orientHighlight').forEach((el) => el.classList.remove('orientHighlight'));
+  document.querySelectorAll('.orientTargetHighlight').forEach((el) => el.classList.remove('orientTargetHighlight'));
+  ['tLeft', 'tRight', 'tUp', 'tDown', 'tPole', 'tCam'].forEach((id) => {
+    const el = $(id);
+    if (el) el.classList.remove('on');
+  });
+  const callout = $('orientCallout');
+  if (callout) callout.classList.add('hidden');
+  const svg = $('orientPointerSvg');
+  if (svg) svg.innerHTML = '';
+  const revDemo = $('orientReviewDemo');
+  if (revDemo) revDemo.classList.add('hidden');
+}
+
+// 実際の画面上のどのUI要素(ボタン/計器)を指しているかをハイライト枠＋矢印線＋吹き出しで明示する
+function updateOrientVisualPointer(selectors, badgeTxt, descHtml) {
+  document.querySelectorAll('.orientTargetHighlight').forEach((el) => el.classList.remove('orientTargetHighlight'));
+  const callout = $('orientCallout');
+  const badgeEl = $('orientCalloutBadge');
+  const textEl = $('orientCalloutText');
+  const svg = $('orientPointerSvg');
+  if (!callout || !svg) return;
+
+  const rects = [];
+  for (const sel of selectors) {
+    const nodes = document.querySelectorAll(sel);
+    nodes.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 4 && r.height > 4 && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden') {
+        el.classList.add('orientTargetHighlight');
+        rects.push(r);
+      }
+    });
+  }
+  if (!rects.length) {
+    callout.classList.add('hidden');
+    svg.innerHTML = '';
+    return;
+  }
+
+  if (badgeEl) badgeEl.textContent = badgeTxt;
+  if (textEl) textEl.innerHTML = descHtml;
+  callout.classList.remove('hidden');
+
+  const W = window.innerWidth, H = window.innerHeight;
+  const primary = rects[0];
+  const pCx = (primary.left + primary.right) * 0.5;
+  const pCy = (primary.top + primary.bottom) * 0.5;
+  const cw = callout.offsetWidth || 300;
+  const ch = callout.offsetHeight || 68;
+
+  // 対象UIが画面下半分にある場合はその上側に、上半分にある場合は下側または横側に吹き出しを配置
+  let cx, cy;
+  if (pCy > H * 0.55) {
+    cx = clamp(pCx - cw * 0.5, 14, W - cw - 14);
+    cy = Math.max(175, primary.top - ch - 28);
+  } else {
+    cx = clamp(pCx - cw * 0.5, 14, W - cw - 14);
+    cy = Math.min(H - ch - 110, primary.bottom + 26);
+  }
+  callout.style.left = `${Math.round(cx)}px`;
+  callout.style.top = `${Math.round(cy)}px`;
+
+  const cMidX = cx + cw * 0.5;
+  const cMidY = cy + ch * 0.5;
+  const linesSvg = rects.map((r) => {
+    const tx = (r.left + r.right) * 0.5;
+    const ty = pCy > H * 0.55 ? r.top - 4 : r.bottom + 4;
+    const sx = clamp(tx, cx + 18, cx + cw - 18);
+    const sy = pCy > H * 0.55 ? cy + ch : cy;
+    const ang = Math.atan2(ty - sy, tx - sx);
+    const ah = 10;
+    const p1x = tx - Math.cos(ang - 0.42) * ah, p1y = ty - Math.sin(ang - 0.42) * ah;
+    const p2x = tx - Math.cos(ang + 0.42) * ah, p2y = ty - Math.sin(ang + 0.42) * ah;
+    return `
+      <line x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="#f2c200" stroke-width="3" stroke-dasharray="6 4"/>
+      <polygon points="${tx.toFixed(1)},${ty.toFixed(1)} ${p1x.toFixed(1)},${p1y.toFixed(1)} ${p2x.toFixed(1)},${p2y.toFixed(1)}" fill="#f2c200"/>
+      <rect x="${(r.left - 4).toFixed(1)}" y="${(r.top - 4).toFixed(1)}" width="${(r.width + 8).toFixed(1)}" height="${(r.height + 8).toFixed(1)}" rx="4" fill="none" stroke="#f2c200" stroke-width="2.5"/>
+    `;
+  }).join('');
+  svg.innerHTML = linesSvg;
+}
+
+function applyOrientStepHighlights(stepIdx, elapsed) {
+  ['tLeft', 'tRight', 'tUp', 'tDown', 'tPole', 'tCam'].forEach((id) => {
+    const el = $(id);
+    if (el) el.classList.remove('on');
+  });
+  if (stepIdx !== 7) {
+    $('result').classList.add('hidden');
+    const revDemo = $('orientReviewDemo');
+    if (revDemo) revDemo.classList.add('hidden');
+  }
+
+  if (stepIdx === 0) {
+    if (elapsed < 5.6) {
+      updateOrientVisualPointer(
+        ['#timerPanel'],
+        '画面左上：タイマー＆有利サイドパネル',
+        'スタート<strong>1分前（−1:00）</strong>からのカウントダウンと、<strong>有利なサイド（上有利／下有利）</strong>がここに表示される！'
+      );
+    } else {
+      updateOrientVisualPointer(
+        ['#minimap'],
+        '画面右下：ミニマップ＆スタートライン',
+        '右下の<strong>ミニマップ（赤丸が有利端）</strong>と、海上の<strong>「START LINE」下の有利サイド表記</strong>を見て出る位置を決めよう！'
+      );
+    }
+  } else if (stepIdx === 1) {
+    if (elapsed < 5.6) {
+      if ($('tRight')) $('tRight').classList.add('on');
+      if ($('tDown')) $('tDown').classList.add('on');
+      updateOrientVisualPointer(
+        ['#tDown', '#tRight', '#instr .cell.sheet'],
+        '画面左下「◀ ▶」＆右下「出す」＆下「トリム」',
+        '早く着きすぎたら<strong>左下の「◀ ▶」（←→キー）</strong>で風上へ角度を上し、<strong>右下の「出す」（↓キー）</strong>でセールを緩めて減速！'
+      );
+    } else {
+      if ($('tLeft')) $('tLeft').classList.add('on');
+      if ($('tUp')) $('tUp').classList.add('on');
+      updateOrientVisualPointer(
+        ['#tUp', '#tLeft', '#instr .cell.sheet'],
+        '画面右下「引く」＆下中央「トリム」バー',
+        '加速する時は<strong>右下の「引く」（↑キー）</strong>でセールを引き込み、<strong>下中央「トリム」バーの黄色印（最適位置）</strong>に合わせよう！'
+      );
+    }
+  } else if (stepIdx === 2) {
+    if ($('tUp')) $('tUp').classList.add('on');
+    updateOrientVisualPointer(
+      ['#instr .cell:nth-child(1)', '#timerPanel', '#tUp'],
+      '下計器バー左端「船速」＆左上「0:00」',
+      '<strong>左上タイマー「0:00」</strong>の号砲に合わせて<strong>「引く」</strong>で加速し、<strong>下計器バー左端「船速」</strong>を最大にしてスタート！'
+    );
+  } else if (stepIdx === 3) {
+    updateOrientVisualPointer(
+      ['#instr .cell:nth-child(3)', '#tLeft', '#tRight'],
+      '下計器バー中央「真風角」＆左下「◀ ▶」',
+      'クローズ中は<strong>下の計器バー中央「真風角」が40°〜44°</strong>になるよう<strong>「◀ ▶」（←→キー）</strong>で舵を調整しよう！'
+    );
+  } else if (stepIdx === 4) {
+    if (elapsed < 5.2 && hud.blk) {
+      hud.blk.style.display = 'flex';
+      if (hud.blkTxt) hud.blkTxt.textContent = 'ブランケット 42%';
+      if (hud.blkFill) hud.blkFill.style.width = '42%';
+      hud.blk.classList.add('mid');
+      updateOrientVisualPointer(
+        ['#blkBadge', '#instr .cell.mark'],
+        '中央上「ブランケット警告」＆下右端「次のマーク」',
+        '他艇の風影に入ると<strong>中央上に「ブランケット／バックウインド」警告</strong>が出る！ <strong>計器バー右端「次のマーク」</strong>を見てタック！'
+      );
+    } else {
+      updateOrientVisualPointer(
+        ['#instr .cell.mark', '#tLeft', '#tRight'],
+        '下計器バー右端「次のマーク」矢印',
+        '<strong>計器バー右端「次のマーク」の黄色い矢印</strong>が真上（船首方向）に近づくよう、ブローと振れに合わせてタックしよう！'
+      );
+    }
+  } else if (stepIdx === 5) {
+    if (elapsed < 5.8) {
+      if ($('tPole')) $('tPole').classList.add('on');
+      updateOrientVisualPointer(
+        ['#poleUpBtn', '#tPole'],
+        '下計器バー「▲ UP」／左「ランチャー」ボタン',
+        '風下レグに入ったら<strong>下計器バーの「▲ UP」</strong>または<strong>画面左の「ランチャー」ボタン（[L]キー）</strong>を押してランチャーUP！'
+      );
+    } else {
+      updateOrientVisualPointer(
+        ['#poleDownBtn', '#tPole'],
+        '下計器バー「▼ DOWN」／左「ランチャー」ボタン',
+        '下マークに近づいたら回航前に<strong>「▼ DOWN」または「ランチャー」ボタン（[L]キー）</strong>を押してランチャーを収納しよう！'
+      );
+    }
+  } else if (stepIdx === 6) {
+    updateOrientVisualPointer(
+      ['#boardPanel', '#minimap'],
+      '画面右上「順位パネル」＆右下「ミニマップ」',
+      '<strong>右上の「順位」パネル</strong>と<strong>右下ミニマップの青いフィニッシュライン（FIN）</strong>を確認しながら最後まで走り切ろう！'
+    );
+  } else if (stepIdx === 7) {
+    const revDemo = $('orientReviewDemo');
+    if (elapsed < 5.5) {
+      if (revDemo) revDemo.classList.add('hidden');
+      // 実際の結果画面(#result)と「振り返り」ボタン(#reviewBtn)を表示して指し示す
+      $('resultTitle').textContent = '1位 / 16艇';
+      $('resultBody').innerHTML =
+        '<tr class="me"><td>1</td><td>あなた</td><td>4:12.4</td></tr>' +
+        '<tr><td>2</td><td>JPN 29410</td><td>4:15.8</td></tr>' +
+        '<tr><td>3</td><td>ITA 31022</td><td>4:19.1</td></tr>';
+      let rb = $('reviewBtn');
+      if (!rb) {
+        rb = document.createElement('button');
+        rb.id = 'reviewBtn'; rb.type = 'button'; rb.className = 'btnSec'; rb.textContent = '振り返り';
+        const again = $('againBtn');
+        if (again && again.parentNode) again.parentNode.insertBefore(rb, again); else $('result').appendChild(rb);
+      }
+      $('result').classList.remove('hidden');
+      updateOrientVisualPointer(
+        ['#reviewBtn'],
+        'レース結果画面の「振り返り」ボタン',
+        'フィニッシュ後の結果画面にある<strong>この「振り返り」ボタン</strong>を押すと、詳細なレース分析画面が開く！'
+      );
+    } else {
+      $('result').classList.add('hidden');
+      if (revDemo) revDemo.classList.remove('hidden');
+      updateOrientVisualPointer(
+        ['#orientRevPlayTarget', '#orientRevStatsTarget'],
+        '振り返り画面：「▶ 再生」＆パフォーマンス比較表',
+        '左下の<strong>「▶ 再生」で各艇の通ったコースと順位変動</strong>を再生し、右の表で<strong>スタート順位・走行距離・平均艇速・平均角度</strong>を分析しよう！'
+      );
+    }
+  }
 }
 
 function setupOrientStepScene(stepIdx) {
   orientState.subDone = false;
+  orientState.phase2 = false;
   clearOrientHighlight();
-  const cells = document.querySelectorAll('#instr .cell');
-  const st = ORIENT_STEPS[stepIdx];
-  if (st.highlight === 'spd' && cells[0]) cells[0].classList.add('orientHighlight');
-  else if (st.highlight === 'twa' && cells[2]) cells[2].classList.add('orientHighlight');
-  else if (st.highlight === 'sheet' && cells[3]) cells[3].classList.add('orientHighlight');
-  else if (st.highlight === 'pole' && cells[4]) cells[4].classList.add('orientHighlight');
-  else if (st.highlight === 'mark' && cells[5]) cells[5].classList.add('orientHighlight');
 
   if (!player) return;
   player.maneuver = null; player.tacking = false; player.ocs = false; player.penalty = null; player.finished = false;
@@ -735,6 +939,11 @@ function setupOrientStepScene(stepIdx) {
   }
   state.lastTack = player.tack;
   state.lastPole = player.pole;
+  setTimeout(() => {
+    if (state.phase === 'orientation' && orientState.step === stepIdx) {
+      applyOrientStepHighlights(stepIdx, orientState.elapsed);
+    }
+  }, 60);
 }
 
 function renderOrientStepUI() {
@@ -746,18 +955,6 @@ function renderOrientStepUI() {
   if (titleEl) titleEl.textContent = st.title;
   if (bodyEl) bodyEl.innerHTML = st.body;
   if (pillsEl) pillsEl.innerHTML = st.pills.map((p) => `<span class="orientPill">${p}</span>`).join('');
-  const dotsBox = $('orientDots');
-  if (dotsBox) {
-    dotsBox.innerHTML = ORIENT_STEPS.map((_, i) =>
-      `<button type="button" class="orientDot${i === idx ? ' active' : i < idx ? ' done' : ''}" data-step="${i}" title="STEP ${i + 1}"></button>`
-    ).join('');
-    dotsBox.querySelectorAll('.orientDot').forEach((btn) => {
-      btn.onclick = () => setOrientStep(+btn.dataset.step);
-    });
-  }
-  const prevBtn = $('orientPrevBtn'), nextBtn = $('orientNextBtn');
-  if (prevBtn) prevBtn.disabled = idx === 0;
-  if (nextBtn) nextBtn.textContent = idx === ORIENT_STEPS.length - 1 ? 'レースへ進む ▶' : '次へ ▶';
 
   // スマブラ風スラッシュ＆カードインアニメーション
   const card = $('orientCard'), flash = $('orientFlash');
@@ -767,7 +964,8 @@ function renderOrientStepUI() {
 
 function setOrientStep(idx) {
   if (idx >= ORIENT_STEPS.length) {
-    exitOrientation(true);
+    // 最後まで終わったらループせずスタート画面(#menu)に戻る
+    exitOrientation(false);
     return;
   }
   orientState.step = clamp(idx, 0, ORIENT_STEPS.length - 1);
@@ -777,12 +975,24 @@ function setOrientStep(idx) {
   setupOrientStepScene(orientState.step);
 }
 
+function toggleOrientPause() {
+  if (state.phase !== 'orientation') return;
+  state.paused = !state.paused;
+  const btn = $('orientPauseBtn');
+  if (btn) {
+    btn.textContent = state.paused ? '再開' : '停止';
+    btn.classList.toggle('paused', state.paused);
+  }
+}
+
 function startOrientation() {
   initAudio();
   randomizeStartLine();
   applyVenue();
   makeFleet();
   state.phase = 'orientation'; state.t = -50; state.paused = false; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.ff = false; state.pAI = null;
+  const pBtn = $('orientPauseBtn');
+  if (pBtn) { pBtn.textContent = '停止'; pBtn.classList.remove('paused'); }
   document.body.classList.remove('menuOpen');
   document.body.classList.add('orientOpen');
   cam.menuOffset = false; cam.mode = 0; cam.inited = false;
@@ -792,6 +1002,9 @@ function startOrientation() {
 
 function exitOrientation(toRace = false) {
   clearOrientHighlight();
+  state.paused = false;
+  const pBtn = $('orientPauseBtn');
+  if (pBtn) { pBtn.textContent = '停止'; pBtn.classList.remove('paused'); }
   document.body.classList.remove('orientOpen');
   $('orientation').classList.add('hidden');
   if (toRace) {
@@ -821,17 +1034,17 @@ function orientationStep(dt, time) {
     player.throttle = 0.55;
     player.sheet = sheetOpt(player.twa);
     player.steer = clamp(wrap((W0 - 0.76) - player.h) * 2.5, -1, 1);
-    cam.yaw = Math.sin(orientState.elapsed * 0.45) * 0.35;
+    cam.yaw = Math.sin(orientState.elapsed * 0.40) * 0.32;
     cam.pitch = 0.14;
   } else if (idx === 1) {
     // STEP 2: 風上へ上してセールを出してスピード調整 → 後半でベアして引き込む
-    const luffPhase = orientState.elapsed < 4.2;
+    const luffPhase = orientState.elapsed < 5.6;
     const tgtH = luffPhase ? wrap(W0 - 0.42) : wrap(W0 - 0.73);
     player.steer = clamp(wrap(tgtH - player.h) * 3.0, -1, 1);
     const tgtSheet = luffPhase ? 0.14 : sheetOpt(player.twa);
     player.sheet += (tgtSheet - player.sheet) * (1 - Math.exp(-dt * 4));
     player.throttle = luffPhase ? 0.25 : 0.95;
-    cam.yaw = -0.55 + Math.sin(orientState.elapsed * 0.5) * 0.2;
+    cam.yaw = -0.55 + Math.sin(orientState.elapsed * 0.45) * 0.2;
     cam.pitch = -0.04;
   } else if (idx === 2) {
     // STEP 3: カウントダウン → 号砲ジャストでスタート！
@@ -844,7 +1057,7 @@ function orientationStep(dt, time) {
     cam.pitch = 0.02;
   } else if (idx === 3) {
     // STEP 4: クローズホールド 40°〜44° + ブローで少し上す動き
-    const inPuff = orientState.elapsed > 2.2 && orientState.elapsed < 5.6;
+    const inPuff = orientState.elapsed > 2.5 && orientState.elapsed < 7.2;
     const optRad = ((inPuff ? 40.5 : 43.2) * Math.PI) / 180;
     const tgtH = wrap(player.windFrom - player.tack * optRad);
     player.steer = clamp(wrap(tgtH - player.h) * 3.2, -1, 1);
@@ -854,7 +1067,7 @@ function orientationStep(dt, time) {
     cam.pitch = -0.05;
   } else if (idx === 4) {
     // STEP 5: タック判断 → オートタック実演
-    if (orientState.elapsed > 1.8 && !orientState.subDone) {
+    if (orientState.elapsed > 3.2 && !orientState.subDone) {
       orientState.subDone = true;
       player.startManeuver('tack');
     }
@@ -872,7 +1085,7 @@ function orientationStep(dt, time) {
     player.steer = clamp(wrap(tgtH - player.h) * 2.6, -1, 1);
     player.sheet = sheetOpt(player.twa);
     player.throttle = 1.0;
-    if (orientState.elapsed > 4.8 && !orientState.subDone) {
+    if (orientState.elapsed > 5.8 && !orientState.subDone) {
       orientState.subDone = true;
       player.setPole(false);
       poleClank(false);
@@ -893,21 +1106,24 @@ function orientationStep(dt, time) {
     player.steer = clamp(wrap(tgtH - player.h) * 3.0, -1, 1);
     player.sheet = sheetOpt(player.twa);
     player.throttle = 1.0;
-    if (orientState.elapsed > 2.0 && !orientState.subDone) {
+    if (orientState.elapsed > 1.8 && !orientState.subDone) {
       orientState.subDone = true;
       signalHorn('short');
     }
-    cam.yaw += dt * 0.32;
+    cam.yaw += dt * 0.28;
     cam.pitch = 0.18;
   }
 
   if (player.tack !== state.lastTack) { if (state.lastTack !== undefined) sailFlog(0.85); state.lastTack = player.tack; }
   computeBlanket(boats);
-  for (const b of boats) b.update(dt, state.t, boats);
+  for (const b of boats) { b.update(dt, state.t, boats); updateProgress(b, state.t); }
 
-  if (orientState.auto && orientState.elapsed >= st.dur) {
+  // 実際の画面上のハイライト枠とコールアウト位置を更新
+  applyOrientStepHighlights(idx, orientState.elapsed);
+
+  if (orientState.elapsed >= st.dur) {
     if (orientState.step < ORIENT_STEPS.length - 1) setOrientStep(orientState.step + 1);
-    else setOrientStep(0); // ループ再生
+    else exitOrientation(false); // 最後まで終わったらスタート画面へ戻る
   }
 }
 const SIGS = [[-60, 'down'], [0, 'gun']];
@@ -1147,8 +1363,7 @@ window.addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys.add(e.code);
   if (state.phase === 'orientation') {
-    if ((e.code === 'ArrowRight' || e.code === 'Space' || e.code === 'Enter') && !e.repeat) setOrientStep(orientState.step + 1);
-    else if (e.code === 'ArrowLeft' && !e.repeat) setOrientStep(Math.max(0, orientState.step - 1));
+    if ((e.code === 'Space' || e.code === 'KeyP') && !e.repeat) toggleOrientPause();
     else if (e.code === 'Escape' && !e.repeat) exitOrientation(false);
     return;
   }
@@ -1416,17 +1631,7 @@ function initMenu() {
   }
   $('startBtn').onclick = startRace;
   if ($('practiceBtn')) $('practiceBtn').onclick = startOrientation;
-  if ($('orientPrevBtn')) $('orientPrevBtn').onclick = () => setOrientStep(Math.max(0, orientState.step - 1));
-  if ($('orientNextBtn')) $('orientNextBtn').onclick = () => setOrientStep(orientState.step + 1);
-  if ($('orientAutoBtn')) {
-    $('orientAutoBtn').onclick = () => {
-      orientState.auto = !orientState.auto;
-      const b = $('orientAutoBtn');
-      b.classList.toggle('active', orientState.auto);
-      b.textContent = orientState.auto ? '自動送り ON' : '自動送り OFF';
-    };
-  }
-  if ($('orientRaceBtn')) $('orientRaceBtn').onclick = () => exitOrientation(true);
+  if ($('orientPauseBtn')) $('orientPauseBtn').onclick = toggleOrientPause;
   if ($('orientExitBtn')) $('orientExitBtn').onclick = () => exitOrientation(false);
   $('againBtn').onclick = () => { $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(); };
   initPreview();
