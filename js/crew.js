@@ -148,26 +148,32 @@ function buildHuman(g, style, jacket, isFemale = false) {
   const waistBelt = new THREE.Mesh(new THREE.BoxGeometry(pw * 0.94, 0.022, 0.178), smat(0x111318, 0.9));
   waistBelt.position.set(0, 0.270, -0.004); upper.add(waistBelt);
 
-  // 4) 腕・前腕・グローブ (シートやティラーを自然に構える非対称のリアルな腕角度)
+  // 4) 腕・前腕・グローブ (シートやティラーを自然に構え、強風フルハイク時は外側の腕を伸ばせるよう肩ピボット化)
   for (const s of [-1, 1]) {
     const sh = [s * 0.182 * shScale, 0.475, -0.005];
-    const el = [s * 0.202 * shScale, 0.295, -0.085];
-    const wr = [s * 0.115, 0.255 + (s > 0 ? 0.02 : 0), -0.255];
-    const ha = [s * 0.095, 0.250 + (s > 0 ? 0.02 : 0), -0.295];
-    ell(upper, top_, 0.052 * shScale, 0.056 * shScale, 0.052 * shScale, sh[0], sh[1], sh[2]);
-    limb(upper, top_, 0.042 * shScale, sh, el);
-    ell(upper, skinM, 0.036 * shScale, 0.036 * shScale, 0.036 * shScale, el[0], el[1], el[2]);
-    limb(upper, skinM, 0.032 * shScale, el, wr);
+    const armG = new THREE.Group();
+    armG.position.set(sh[0], sh[1], sh[2]);
+    upper.add(armG);
+    if (s === -1) upper.userData.armL = armG;
+    else upper.userData.armR = armG;
+
+    const el = [s * 0.020 * shScale, -0.180, -0.080];
+    const wr = [s * (-0.067 * shScale), -0.220 + (s > 0 ? 0.02 : 0), -0.250];
+    const ha = [s * (-0.087 * shScale), -0.225 + (s > 0 ? 0.02 : 0), -0.290];
+    ell(armG, top_, 0.052 * shScale, 0.056 * shScale, 0.052 * shScale, 0, 0, 0);
+    limb(armG, top_, 0.042 * shScale, [0, 0, 0], el);
+    ell(armG, skinM, 0.036 * shScale, 0.036 * shScale, 0.036 * shScale, el[0], el[1], el[2]);
+    limb(armG, skinM, 0.032 * shScale, el, wr);
     if (s === -1) {
       const watch = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.016, 12), frameM);
-      watch.position.set(wr[0], wr[1], wr[2] + 0.018); watch.rotation.x = Math.PI / 2; upper.add(watch);
+      watch.position.set(wr[0], wr[1], wr[2] + 0.018); watch.rotation.x = Math.PI / 2; armG.add(watch);
     }
-    ell(upper, glove, 0.027, 0.021, 0.036, ha[0], ha[1], ha[2]);
-    ell(upper, gloveGrip, 0.025, 0.016, 0.032, ha[0], ha[1] - 0.007, ha[2] - 0.004);
+    ell(armG, glove, 0.027, 0.021, 0.036, ha[0], ha[1], ha[2]);
+    ell(armG, gloveGrip, 0.025, 0.016, 0.032, ha[0], ha[1] - 0.007, ha[2] - 0.004);
     for (let f = 0; f < 4; f++) {
-      limb(upper, glove, 0.0075, [ha[0] + (f - 1.5) * 0.011, ha[1] + 0.005, ha[2] - 0.026], [ha[0] + (f - 1.5) * 0.010, ha[1] - 0.014, ha[2] - 0.040]);
+      limb(armG, glove, 0.0075, [ha[0] + (f - 1.5) * 0.011, ha[1] + 0.005, ha[2] - 0.026], [ha[0] + (f - 1.5) * 0.010, ha[1] - 0.014, ha[2] - 0.040]);
     }
-    limb(upper, glove, 0.0085, [ha[0] - s * 0.021, ha[1] + 0.004, ha[2] - 0.006], [ha[0] - s * 0.014, ha[1] + 0.010, ha[2] - 0.035]);
+    limb(armG, glove, 0.0085, [ha[0] - s * 0.021, ha[1] + 0.004, ha[2] - 0.006], [ha[0] - s * 0.014, ha[1] + 0.010, ha[2] - 0.035]);
   }
 
   // 5) 首・頭部 (進行方向・セール側へ自然に顔を向けられるよう独立グループ化)
@@ -313,25 +319,31 @@ export function buildFigure(type, style = {}) {
   const bellyM = smat(A.belly, 0.75);
 
   const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba';
-  // 1) 下半身・まるっこい足 (もとのまるっこいフォルムと丸いおてて・あんよ)
-  ell(g, bodyM, 0.19, 0.11, 0.16, 0, 0.06, 0.01);
-  for (const s of [-1, 1]) {
-    if (isRoundPet) {
-      // ネコ・イヌはまるっこい球状のあんよ＋丸肉球
-      sph(g, A.body, 0.068, 0.060, 0.072, s * 0.105, 0.025, -0.125);
-      sph(g, A.belly, 0.052, 0.044, 0.036, s * 0.105, 0.022, -0.175);
-      sph(g, type === 'cat' ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.018, -0.198);
-    } else {
-      cap(g, A.body, 0.048, 0.065, s * 0.095, 0.025, -0.10, 0.55, 0, 0);
-      ell(g, bellyM, 0.044, 0.032, 0.052, s * 0.095, -0.015, -0.155);
-    }
-  }
+  g.userData.isRoundPet = isRoundPet;
 
-  // 2) 上半身グループ (風速に応じて腰から上を海側へ反らせてハイクアウトする)
+  // 1) 上半身グループ (風速に応じて腰から上を海側へ反らせてハイクアウトする)
   const upper = new THREE.Group();
   upper.position.set(0, 0.08, 0.01);
   g.add(upper);
   g.userData.upper = upper;
+
+  // 2) 下半身・まるっこい足:
+  // ネコ・イヌ(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
+  // まるっこいお尻と球状の短いあんよを upper 下部に一体配置し、常に短い丸足の可愛いフォルムを保つ
+  if (isRoundPet) {
+    ell(upper, bodyM, 0.19, 0.10, 0.16, 0, 0.04, 0.0);
+    for (const s of [-1, 1]) {
+      sph(upper, A.body, 0.068, 0.058, 0.068, s * 0.105, 0.015, -0.130);
+      sph(upper, A.belly, 0.052, 0.042, 0.035, s * 0.105, 0.012, -0.176);
+      sph(upper, type === 'cat' ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.009, -0.196);
+    }
+  } else {
+    ell(g, bodyM, 0.19, 0.11, 0.16, 0, 0.06, 0.01);
+    for (const s of [-1, 1]) {
+      cap(g, A.body, 0.048, 0.065, s * 0.095, 0.025, -0.10, 0.55, 0, 0);
+      ell(g, bellyM, 0.044, 0.032, 0.052, s * 0.095, -0.015, -0.155);
+    }
+  }
 
   if (isRoundPet) {
     // ネコ・イヌはまるっこい胴体とおなか
