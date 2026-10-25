@@ -7,13 +7,15 @@ export const CAM_MODES = ['ドローンカメラ', '艇内カメラ(オンボー
 export const COCKPIT = 1;
 // スマホ(小さい画面)ではドローンを少し引いて周囲を見やすくする
 const SMALL = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
-const DRONE_D = SMALL ? 29 : 22, DRONE_H = SMALL ? 11 : 8, DRONE_FOV = SMALL ? 58 : 54;
+// 海面近くを低空チェイスして波・航跡・スプレーが勢いよく後方へ流れるスピード感重視のドローン設定
+const DRONE_D = SMALL ? 19.5 : 15.0, DRONE_H = SMALL ? 6.6 : 4.7, DRONE_FOV = SMALL ? 66 : 63;
 
 export class DroneCam {
   constructor(camera, dom) {
     this.cam = camera; this.mode = 0; this.mount = null;
     this.pos = new THREE.Vector3(0, 30, 80); this.look = new THREE.Vector3();
     this.yaw = 0; this.pitch = 0; this.targetYaw = 0; this.targetPitch = 0;
+    this.chaseH = 0; this.bank = 0;
     this.zoom = 1; this.inited = false;
     this.tmp = new THREE.Vector3(); this.want = new THREE.Vector3(); this.wantLook = new THREE.Vector3();
     this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
@@ -130,30 +132,47 @@ export class DroneCam {
       return;
     }
 
-    if (this.cam.near !== 1.0) { this.cam.near = 1.0; this.cam.updateProjectionMatrix(); }
+    if (this.cam.near !== 0.6) { this.cam.near = 0.6; this.cam.updateProjectionMatrix(); }
     const w = this.want, lk = this.wantLook;
-    const follow = 2.4, lookRate = 5.5;
-    const wob = (a) => Math.sin(t * 0.9 * a + a) * 0.4 + Math.sin(t * 2.3 * a) * 0.2;
+    const spdRatio = clamp(Math.abs(boat.v) / 6.2, 0, 1.3);
+    if (!this.inited) this.chaseH = boat.h;
+    const hDiff = wrap(boat.h - this.chaseH);
+    this.chaseH = wrap(this.chaseH + hDiff * (1 - Math.exp(-dt * 4.2)));
+
+    // 速度が上がるほど海面すれすれを低空で追いかけ、広角FOV＋ダイナミックなロールで疾走感を演出
+    const follow = 3.8 + spdRatio * 1.8, lookRate = 7.5;
+    const vib = 0.08 + spdRatio * 0.22;
+    const wob = (a) => (Math.sin(t * 1.4 * a + a) * 0.28 + Math.sin(t * 4.2 * a) * 0.14) * vib;
 
     // ドローンカメラ視点 (スタート画面表示中はヨットがカメラの下側に来るよう視線lk.yを高くする)
-    const ang = boat.h + this.yaw;
-    const menuLift = this.menuOffset ? (SMALL ? 7.2 : 5.8) : 0;
-    const d = (DRONE_D - (this.menuOffset ? 2 : 0)) * this.zoom;
-    const hgt = (DRONE_H - (this.menuOffset ? 1.6 : 0) + this.pitch * 12) * this.zoom;
-    w.set(boat.x - Math.sin(ang) * d, hgt, boat.z + Math.cos(ang) * d);
-    lk.set(boat.x + Math.sin(boat.h) * 8, 1.6 + menuLift, boat.z - Math.cos(boat.h) * 8);
+    const ang = (this.menuOffset ? boat.h : this.chaseH) + this.yaw;
+    const menuLift = this.menuOffset ? (SMALL ? 6.8 : 5.4) : 0;
+    const menuDistAdd = this.menuOffset ? 4.5 : 0;
+    const menuHgtAdd = this.menuOffset ? 2.2 : 0;
+    const speedLow = this.menuOffset ? 0 : spdRatio * 0.85;
+    const d = (DRONE_D + menuDistAdd - spdRatio * 1.1) * this.zoom;
+    const hgt = (DRONE_H + menuHgtAdd - speedLow + this.pitch * 10) * this.zoom;
+    // ヒールや回頭に合わせてカメラがわずかに外측へスイングし、船体とセールの迫力を見せる
+    const latOffset = this.menuOffset ? 0 : clamp(-hDiff * 3.2 - boat.heel * 1.4, -2.4, 2.4);
+    const rx = Math.cos(ang), rz = Math.sin(ang);
+    w.set(boat.x - Math.sin(ang) * d + rx * latOffset, hgt, boat.z + Math.cos(ang) * d + rz * latOffset);
+    const lookAhead = 9.5 + spdRatio * 3.5;
+    lk.set(boat.x + Math.sin(boat.h) * lookAhead, 1.45 + menuLift - spdRatio * 0.18, boat.z - Math.cos(boat.h) * lookAhead);
 
-    w.x += wob(1) * 0.25; w.y += wob(1.7) * 0.2; w.z += wob(2.3) * 0.25;
+    w.x += wob(1); w.y += wob(1.7) * 0.7; w.z += wob(2.3);
     if (!this.inited) { this.pos.copy(w); this.look.copy(lk); this.inited = true; }
     const k = 1 - Math.exp(-dt * follow), kl = 1 - Math.exp(-dt * lookRate);
     this.pos.lerp(w, k); this.look.lerp(lk, kl);
-    if (this.pos.y < 2.5) this.pos.y = 2.5;
+    const minY = Math.max(1.85, (boat.waveH || 0) + 1.75);
+    if (this.pos.y < minY) this.pos.y = minY;
     this.cam.position.copy(this.pos);
     this.cam.lookAt(this.look);
-    this.cam.rotateZ(Math.sin(t * 0.7) * 0.003 + Math.sin(t * 1.9) * 0.002);
-    
-    const fov = DRONE_FOV + clamp(boat.v / 7, 0, 1) * 6;
-    if (Math.abs(this.cam.fov - fov) > 0.01) { this.cam.fov += (fov - this.cam.fov) * 0.05; this.cam.updateProjectionMatrix(); }
+    const targetBank = this.menuOffset ? 0 : clamp(-hDiff * 0.14 - boat.heel * 0.08, -0.09, 0.09);
+    this.bank += (targetBank - this.bank) * (1 - Math.exp(-dt * 6));
+    this.cam.rotateZ(this.bank + Math.sin(t * 0.9) * 0.003 + Math.sin(t * 3.1) * 0.002 * (0.5 + spdRatio));
+
+    const fov = (this.menuOffset ? DRONE_FOV - 5 : DRONE_FOV) + spdRatio * 12.5;
+    if (Math.abs(this.cam.fov - fov) > 0.01) { this.cam.fov += (fov - this.cam.fov) * 0.08; this.cam.updateProjectionMatrix(); }
   }
 }
 
