@@ -29,20 +29,19 @@ export class AI {
     this.cLim = 110 + rng() * 50;
     this.tackCool = 26 + rng() * 18; // タック間隔を十分に取って全体のタック回数を抑制
     this.lastTack = -99;
-    // ラインを切る目標時刻(号砲=0秒の後): 強いCP艇は号砲ジャスト(0.2〜1.2秒)に端や好位置から飛び出す
-    const r = rng();
+    // ラインを切る目標時刻(号砲=0秒の後): 全CP艇が自分の位置に関係なくスタートライン直前にしっかり並び、号砲とともに飛び出す
     const isStrong = (b.skill || 1) >= 1.04;
     this.tc = isStrong
-      ? 0.25 + rng() * 1.1
-      : r < 0.02 ? -0.4 - rng() * 0.6 : r < 0.12 ? 2.5 + rng() * 3.5 : 0.6 + rng() * 2.2 + skillGap * (6.0 + rng() * 5.0);
+      ? 0.35 + rng() * 0.65
+      : 0.50 + rng() * 1.15 + skillGap * 1.8;
     this.go = false;
     this.layMargin = 0.02 + rng() * 0.09 + skillGap * 0.12;
     this.penDir = rng() < 0.5 ? 1 : -1;
     this.jit = (rng() - 0.5) * 14;
     this.vmgAt = 12 + rng() * 16;
-    // スタート前: ラインの手前 goDist[m] から加速を開始
-    this.goDist = 9 + rng() * 8;
-    this.creepExp = 1.4 + rng() * 0.8;
+    // スタート前: ラインの手前 goDist[m] (3.8〜6.2m) に並んで加速を開始
+    this.goDist = 3.8 + rng() * 2.4;
+    this.creepExp = 1.15 + rng() * 0.45;
     this.gap0 = null;
     this.avoidUntil = -999; this.avoidH = 0;
     this.roundR = 6.6 + rng() * 1.2; // マーク進入半径(ワイドイン)
@@ -190,8 +189,10 @@ export class AI {
 
   crowded(rad = 8.5) {
     const b = this.b, r2 = rad * rad;
+    const pre = (this.now ?? 0) < 0;
     for (const o of this.others) {
       if (o === b || o.finished || o.dsq) continue;
+      if (pre && o.isPlayer) continue; // プリスタート中は自艇の位置に関係なくスタートラインへ並ぶ
       const dx = o.x - b.x, dz = o.z - b.z;
       if (dx * dx + dz * dz < r2) return true;
     }
@@ -396,17 +397,18 @@ export class AI {
     };
     const h0 = desired ?? b.h;
     const threats = [];
+    const prestart = t < 0;
     for (const o of this.others) {
       if (o === b || o.finished || o.dsq) continue;
       const dx = o.x - b.x, dz = o.z - b.z;
       const d2 = dx * dx + dz * dz;
-      if (d2 > 1225) continue; // 35m以内を監視
+      // プリスタート中は自艇(isPlayer)がラインから離れていても絶対にそれにつられて針路を変えない(直前3.2mの接触回避のみ)
+      if (prestart && o.isPlayer && d2 > 10.5) continue;
+      if (d2 > (prestart ? 324 : 1225)) continue; // プリスタート中は18m以内、レース中は35m以内を監視
       const { cpa, tca } = cpaInfo(h0, o);
       const gw = giveWayBoat(b, o).gw;
       const isGiveWay = gw === b;
-      // 義務艇(特にポートタックb.tack===-1でスタボ艇と交差する場合)は早めに避け、
-      // 権利艇であっても自艇(isPlayer)や至近距離(cpa < 3.0)の艇にはぶつからないよう避ける
-      const thresh = isGiveWay ? DETECT : (o.isPlayer ? 3.6 : 2.8);
+      const thresh = isGiveWay ? (prestart ? 3.4 : DETECT) : (o.isPlayer ? (prestart ? 2.6 : 3.6) : 2.8);
       if (cpa < thresh && (tca > 0.05 || d2 < 36)) {
         threats.push({ o, isGiveWay, cpa, d2 });
       }
@@ -415,12 +417,14 @@ export class AI {
 
     const W = b.windFrom;
     let best = null, bestScore = -1e9, bestMinCpa = 0;
-    // 最大 ±78° (16ステップ × 0.085rad) まで広く回避コースを探索(ポート艇がスタボ艇のスターンを大きくダックできるようにする)
-    for (let i = 0; i <= 16; i++) {
+    const maxStep = prestart ? 6 : 16;
+    for (let i = 0; i <= maxStep; i++) {
       for (const s of i ? [1, -1] : [1]) {
         const dh = s * i * 0.085, h = wrap(h0 + dh);
         const twaH = Math.abs(wrap(W - h));
         if (twaH < 0.62) continue;
+        // プリスタート中は回避で風下へベアアウェイしすぎてスタートラインから離れるのを防ぐ
+        if (prestart && twaH > this.closeAngle + 0.25) continue;
         if (b.pole && twaH < POLE_MIN) continue;
         let minCpa = 99;
         for (const th of threats) {
@@ -577,16 +581,16 @@ export class AI {
       const posGap = Math.max(0, gap);
       const tw = Math.min(b.twa, 1.1);
       const upf = Math.max(0.48, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
-      if (this.gap0 === null) this.gap0 = Math.max(16, posGap);
-      if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -9.0 || posGap > 9.0)) this.go = true;
-      if (gap < 4.5 && t < -2.8) this.go = false; // 早すぎるライン到達(リコール)を防止
+      if (this.gap0 === null) this.gap0 = Math.max(14, posGap);
+      if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -9.5 || posGap > 7.5)) this.go = true;
+      if (gap < 3.8 && t < -1.8) this.go = false; // 早すぎるライン到達(リコール)を防止
       if (this.go) {
         b.throttle = 1;
         b.sheet = sheetOpt(b.twa);
-      } else if (gap < 4.5 && t < -2.2) {
-        // ライン直前まで早く着きすぎた場合はセールを出してシバーし、ライン手前で待機
-        b.throttle = 0.02;
-        b.sheet = 0.06;
+      } else if (gap < 3.4 && t < -1.8) {
+        // ライン直前(3.4m以内)まで着いたらセールを出してシバーし、ライン手前で待機
+        b.throttle = 0.04;
+        b.sheet = 0.10;
       } else {
         const vT = polar((this.closeAngle * 180) / Math.PI) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
         const goL = Math.min(this.goDist, this.gap0);
@@ -595,15 +599,15 @@ export class AI {
         const f = clamp((t - START_T) / span, 0, 1), p = this.creepExp;
         const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(f, p));
         const dDdt = (Math.max(0, this.gap0 - goL) * p * Math.pow(Math.max(f, 1e-3), p - 1)) / span;
-        // 低速時の下流れ(1.5倍リーウェイ＋風圧ドリフト)で後ろ(-a)に流されないようドリフト補償速度を加算
-        const driftComp = posGap > D - 1.5 ? 0.50 * SPEED_SCALE * (b.windF || 1) : 0;
-        const vDes = Math.max(0, dDdt + 0.36 * (posGap - D) + driftComp) / upf;
-        b.throttle = posGap < D - 1.2
-          ? clamp(vDes / Math.max(0.1, vT), 0.05, 0.30)
-          : clamp(vDes / Math.max(0.1, vT), 0.34, 0.90);
-        // セールはラインに近すぎるとき(posGap < D - 1.2)だけ緩めて減速し、通常アプローチ中は最適トリムで下流れを抑える
-        b.sheet = posGap < D - 1.2
-          ? Math.max(0.12, sheetOpt(b.twa) - 0.38)
+        // 低速時の下流れ(1.5倍リーウェイ＋風圧ドリフト)で後ろ(-a)に流されないようドリフト補償速度を加算し、スタートライン手前にしっかり並ばせる
+        const driftComp = posGap > D - 1.2 ? 0.62 * SPEED_SCALE * (b.windF || 1) : 0;
+        const vDes = Math.max(0, dDdt + 0.48 * (posGap - D) + driftComp) / upf;
+        b.throttle = posGap < D - 1.0
+          ? clamp(vDes / Math.max(0.1, vT), 0.08, 0.35)
+          : clamp(vDes / Math.max(0.1, vT), 0.42, 0.96);
+        // セールはラインに近すぎるとき(posGap < D - 1.0)だけ緩めて減速し、通常アプローチ中は最適トリムで下流れを抑える
+        b.sheet = posGap < D - 1.0
+          ? Math.max(0.15, sheetOpt(b.twa) - 0.35)
           : sheetOpt(b.twa);
       }
       const W = b.windFrom;
