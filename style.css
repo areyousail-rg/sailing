@@ -353,3 +353,86 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   .btnPractice{padding:8px 8px;font-size:.76rem}
   .weatherInfoBottom{font-size:.52rem;padding-top:4px}
 }
+
+/* ==========================================================================
+   スマブラ風オリエンテーション (HOW TO PLAY) 演出UI
+   ========================================================================== */
+body.orientOpen #boardPanel,
+body.orientOpen #pauseBtn,
+body.orientOpen #help,
+body.orientOpen #toasts,
+body.orientOpen #miniLog,
+body.orientOpen #touch{display:none!important}
+body.orientOpen #timerPanel{top:64px;left:16px;z-index:11;transition:top .25s}
+body.orientOpen #minimap{bottom:215px;right:16px;width:170px;height:170px;z-index:11}
+body.orientOpen #instr{bottom:215px;z-index:11;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+body.orientOpen .cell.orientHighlight{background:rgba(242,194,0,.22);box-shadow:inset 0 0 0 2px var(--accent);animation:orientPulse .9s ease-in-out infinite alternate}
+@keyframes orientPulse{from{background:rgba(242,194,0,.14)}to{background:rgba(242,194,0,.34)}}
+
+.orientOverlay{position:fixed;inset:0;z-index:16;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+.orientTopBar{pointer-events:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px;background:linear-gradient(90deg,#080c10 0%,#101820 65%,#080c10 100%);border-bottom:3px solid var(--accent);box-shadow:0 6px 20px rgba(0,0,0,.55)}
+.orientBrand{display:flex;align-items:baseline;gap:12px}
+.orientHowTo{display:inline-block;padding:3px 12px;background:var(--port);color:#fff;font-family:var(--f-num);font-size:1.15rem;font-weight:900;font-style:italic;letter-spacing:.12em;transform:skewX(-12deg);box-shadow:3px 3px 0 var(--accent)}
+.orientSubTitle{font-size:.88rem;font-weight:800;letter-spacing:.14em;color:var(--txt)}
+.orientStepDots{display:flex;align-items:center;gap:6px}
+.orientDot{pointer-events:auto;width:28px;height:8px;border:1px solid var(--line-2);background:var(--bg-2);transform:skewX(-16deg);cursor:pointer;padding:0;transition:all .18s}
+.orientDot:hover{background:var(--bg-3);border-color:var(--mute)}
+.orientDot.done{background:#4b5b68;border-color:#6c7d8c}
+.orientDot.active{width:42px;background:var(--accent);border-color:#fff;box-shadow:0 0 10px rgba(242,194,0,.6)}
+.orientTopActions{display:flex;align-items:center;gap:8px}
+.orientBtnRace{pointer-events:auto;padding:7px 14px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:2px;font-weight:800;font-size:.8rem;letter-spacing:.06em;cursor:pointer;transform:skewX(-10deg)}
+.orientBtnRace:hover{background:#ffd21a}
+.orientBtnClose{pointer-events:auto;padding:7px 12px;background:var(--bg-2);color:var(--txt);border:1px solid var(--line-2);border-radius:2px;font-weight:700;font-size:.76rem;cursor:pointer}
+.orientBtnClose:hover{background:var(--bg-3);border-color:var(--mute)}
+
+.orientFlash{position:fixed;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 30%,rgba(242,194,0,.22) 48%,rgba(255,255,255,.35) 50%,transparent 65%);opacity:0;transform:translateX(-40%)}
+.orientFlash.slash{animation:orientSlashFlash .42s cubic-bezier(.16,1,.3,1) forwards}
+@keyframes orientSlashFlash{
+  0%{opacity:1;transform:translateX(-45%)}
+  100%{opacity:0;transform:translateX(55%)}
+}
+
+.orientBottomBar{pointer-events:none;padding:0 18px 16px;display:flex;justify-content:center}
+.orientCard{pointer-events:auto;width:min(980px,96vw);background:linear-gradient(135deg,rgba(10,15,20,.96) 0%,rgba(19,28,37,.96) 100%);border:1px solid var(--line-2);border-left:6px solid var(--accent);border-right:3px solid var(--port);box-shadow:0 14px 38px rgba(0,0,0,.72);padding:14px 22px 12px;position:relative;overflow:hidden}
+.orientCard::before{content:"";position:absolute;top:0;right:64px;width:140px;height:100%;background:linear-gradient(90deg,transparent,rgba(242,194,0,.05),transparent);transform:skewX(-22deg);pointer-events:none}
+.orientCard.stepAnim{animation:orientCardIn .34s cubic-bezier(.18,.89,.32,1.15)}
+@keyframes orientCardIn{
+  0%{opacity:0;transform:translateX(-38px) skewX(-4deg)}
+  100%{opacity:1;transform:translateX(0) skewX(0)}
+}
+.orientStepHead{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px}
+.orientStepBadge{display:flex;align-items:baseline;gap:5px;background:var(--accent);color:var(--accent-ink);padding:4px 14px 4px 12px;transform:skewX(-12deg);box-shadow:3px 3px 0 var(--port);flex-shrink:0}
+.orientStepWord{font-family:var(--f-num);font-size:.76rem;font-weight:900;letter-spacing:.12em}
+#orientStepNum{font-family:var(--f-num);font-size:1.85rem;font-weight:900;line-height:1}
+#orientStepTotal{font-family:var(--f-num);font-size:.82rem;font-weight:800;opacity:.78}
+.orientTitleWrap{flex:1;min-width:210px}
+.orientEnTag{font-family:var(--f-num);font-size:.68rem;font-weight:800;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;line-height:1.1}
+#orientTitle{margin:2px 0 0;font-size:1.28rem;font-weight:900;letter-spacing:.03em;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+.orientKeyPills{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.orientPill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:var(--bg-3);border:1px solid var(--line-2);border-left:3px solid var(--accent);border-radius:2px;font-size:.75rem;font-weight:700;color:var(--txt);white-space:nowrap}
+.orientBody{margin:10px 0 11px;font-size:1.02rem;font-weight:700;line-height:1.58;color:#f1f5f9;letter-spacing:.02em}
+.orientBody strong{color:var(--accent);font-weight:900;padding:0 2px}
+.orientFooter{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.orientTimerTrack{flex:1;height:5px;background:var(--bg-3);border-radius:1px;overflow:hidden;border:1px solid var(--line)}
+.orientTimerFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#ff8a1f)}
+.orientNavBtns{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.orientNavBtn{pointer-events:auto;padding:6px 13px;background:var(--bg-2);border:1px solid var(--line-2);color:var(--txt);border-radius:2px;font-weight:700;font-size:.78rem;cursor:pointer}
+.orientNavBtn:hover{background:var(--bg-3);border-color:var(--mute)}
+.orientNavBtn.active{border-color:var(--accent);color:var(--accent)}
+.orientNavBtn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:800;padding:6px 16px}
+.orientNavBtn.primary:hover{background:#ffd21a}
+
+@media(max-width:700px){
+  .orientTopBar{padding:7px 10px;flex-wrap:wrap;gap:6px}
+  .orientHowTo{font-size:.9rem;padding:2px 8px}
+  .orientSubTitle{font-size:.74rem}
+  .orientDot{width:18px;height:6px}
+  .orientDot.active{width:28px}
+  .orientBottomBar{padding:0 8px 8px}
+  .orientCard{padding:10px 12px 9px}
+  #orientStepNum{font-size:1.35rem}
+  #orientTitle{font-size:1rem}
+  .orientBody{font-size:.84rem;margin:7px 0 8px;line-height:1.45}
+  body.orientOpen #minimap{display:none!important}
+  body.orientOpen #instr{bottom:178px;transform:translateX(-50%) scale(.78)}
+}
