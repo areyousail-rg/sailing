@@ -899,9 +899,13 @@ export function createWorld(scene) {
   const markObjs = {};
   const buoy = (color) => {
     const g = new THREE.Group();
+    const body = new THREE.Group();
     const cone = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.8, 14), new THREE.MeshLambertMaterial({ color }));
     cone.position.y = 0.9;
-    g.add(cone);
+    body.add(cone);
+    g.add(body);
+    g.userData.isMarkBuoy = true;
+    g.userData.body = body;
     return g;
   };
   const place = (key, obj) => { const p = toWorld(MARKS[key].a, MARKS[key].c); obj.position.set(p.x, 0, p.z); scene.add(obj); bob.push(obj); markObjs[key] = obj; };
@@ -911,13 +915,13 @@ export function createWorld(scene) {
   // アウター艇(ピン側のオレンジ旗艇) — 船首を風上に向けてアンカリング
   const flagSway = [];
   const courseBoats = [];
-  const putBoat = (b, a, c, relRot, isSpectator = false, idx = 0) => {
+  const putBoat = (b, a, c, relRot, isSpectator = false, idx = 0, markRef = null, daRef = 0, dcRef = 0) => {
     const head = Math.atan2(U.x, U.z);
     const p = toWorld(a, c);
     b.position.set(p.x, 0, p.z);
     b.rotation.y = head + relRot;
     scene.add(b); bob.push(b);
-    courseBoats.push({ b, a, c, relRot, isSpectator, ph: idx * 1.47 });
+    courseBoats.push({ b, a, c, relRot, isSpectator, ph: idx * 1.47, markRef, daRef, dcRef });
     b.traverse((o) => { if (o.userData.flag) flagSway.push(o); });
     return b;
   };
@@ -928,21 +932,31 @@ export function createWorld(scene) {
   const com = putBoat(makeMotorboat('committee', { flags: [ORG, { color: '#1c4fa0', w: 1.4, h: 0.9, text: 'P' }] }), MARKS.com.a, MARKS.com.c, -0.05);
   markObjs.com = com;
 
-  // コース周辺の観覧艇・サポート艇(レースエリアの外で海面上をわずかに移動しながら観戦)
+  // 1マーク・2マークの風上側近めに配置する濃紺RIB観覧・コーチボート(参考写真準拠) ＋ コース外周の観覧艇
   const specPositions = [
-    { a: 360, c: 40, rot: 1.2, type: 'cruiser' },
-    { a: 180, c: 180, rot: -0.8, type: 'rib' },
-    { a: 240, c: -232, rot: 2.1, type: 'cruiser' },
-    { a: 60, c: -228, rot: 0.4, type: 'rib' },
+    // 1マーク風上側近めの濃紺RIB観覧艇 (2艇)
+    { markRef: 'm1', da: 25, dc: 11, rot: 2.75, type: 'rib', tube: 0x263759, noFlag: true },
+    { markRef: 'm1', da: 31, dc: -14, rot: -2.65, type: 'rib', tube: 0x263759, noFlag: true },
+    // 2マーク風上側近めの濃紺RIB観覧艇 (2艇)
+    { markRef: 'm2', da: 24, dc: -9, rot: 2.55, type: 'rib', tube: 0x263759, noFlag: true },
+    { markRef: 'm2', da: 31, dc: 13, rot: -2.45, type: 'rib', tube: 0x263759, noFlag: true },
+    // コース外周の観覧艇・サポート艇
+    { a: 365, c: 52, rot: 1.2, type: 'cruiser' },
+    { a: 180, c: 180, rot: -0.8, type: 'rib', tube: 0x263759 },
+    { a: 245, c: -232, rot: 2.1, type: 'cruiser' },
+    { a: 60, c: -228, rot: 0.4, type: 'rib', tube: 0x263759 },
     { a: -90, c: -232, rot: -1.5, type: 'cruiser' },
-    { a: 372, c: -70, rot: 0.9, type: 'rib' },
     { a: 20, c: 190, rot: -2.2, type: 'cruiser' },
-    { a: 290, c: 192, rot: 0.1, type: 'rib' },
+    { a: 290, c: 192, rot: 0.1, type: 'rib', tube: 0x263759 },
     { a: -195, c: -20, rot: 2.6, type: 'cruiser' },
-    { a: -30, c: -262, rot: 0.9, type: 'rib' },
   ];
-  const TUBES = [0x2d3748, 0xc2410c, 0x1e3a8a, 0x374151];
-  specPositions.forEach((s, i) => putBoat(makeMotorboat(s.type, { tube: TUBES[i % 4], flags: s.type === 'rib' ? [{ color: i % 2 ? '#ffffff' : '#ffd23f', w: 0.8, h: 0.5 }] : [] }), s.a, s.c, s.rot, true, i));
+  const TUBES = [0x263759, 0x1e3a8a, 0x2d3748, 0x263759];
+  specPositions.forEach((s, i) => {
+    const a0 = s.markRef ? MARKS[s.markRef].a + s.da : s.a;
+    const c0 = s.markRef ? MARKS[s.markRef].c + s.dc : s.c;
+    const flags = s.type === 'rib' && !s.noFlag ? [{ color: i % 2 ? '#ffffff' : '#ffd23f', w: 0.8, h: 0.5 }] : [];
+    putBoat(makeMotorboat(s.type, { tube: s.tube ?? TUBES[i % 4], flags }), a0, c0, s.rot, true, i, s.markRef || null, s.da || 0, s.dc || 0);
+  });
   // スタートライン(水面すれすれの控えめなライン)
   const pa0 = toWorld(MARKS.pin.a, MARKS.pin.c), pb0 = toWorld(MARKS.com.a, MARKS.com.c);
   const len = Math.hypot(pb0.x - pa0.x, pb0.z - pa0.z);
@@ -1006,10 +1020,10 @@ export function createWorld(scene) {
   };
   const finLabel = lineLabel('FINISH', 'rgba(20,20,20,0.88)', 0, 0);
 
-  // フィニッシュ運営艇(青旗 + RRS 32.2コース短縮「S旗」+ オレンジライン旗)とピン
-  const fComBoat = putBoat(makeMotorboat('committee', { stripe: 0x1d4ed8, flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
+  // フィニッシュ運営艇(アウターと同じ種類の和船型サポートボート + 青旗・S旗・オレンジ旗)と反対側の通常マークブイ
+  const fComBoat = putBoat(makeMotorboat('outer', { flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
   markObjs.fcom = fComBoat;
-  const fPinObj = buoy(0x2a77ff, 0x2a77ff); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
+  const fPinObj = buoy(0xffc21a); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
 
   // 風向(W0)やコースモード(COURSE_MODE)変更時にすべてのコースマーク・ライン・観覧艇のワールド座標と表示状態を更新
   const syncCourseObjects = () => {
@@ -1031,6 +1045,10 @@ export function createWorld(scene) {
         ca = MARKS.pin.a; cc = MARKS.pin.c;
       } else if (cb.b === markObjs.com) {
         ca = MARKS.com.a; cc = MARKS.com.c;
+      } else if (cb.markRef && MARKS[cb.markRef]) {
+        ca = MARKS[cb.markRef].a + cb.daRef;
+        cc = MARKS[cb.markRef].c + cb.dcRef;
+        cb.b.visible = cb.markRef === 'm2' ? !isUpwindMode : true;
       } else if (isUpwindMode && cb.a >= 350) {
         // 1マーク北側の観覧艇は2倍レグ(a=600)の上側に退避
         ca = cb.a + 300;
@@ -1293,12 +1311,16 @@ export function createWorld(scene) {
       const head = Math.atan2(U.x, U.z);
       for (const cb of courseBoats) {
         if (!cb.isSpectator) continue;
-        const da = Math.sin(t * 0.11 + cb.ph) * 14.0;
-        const dc = Math.cos(t * 0.085 + cb.ph * 1.3) * 10.0;
+        // 1マーク・2マーク風上近傍の観覧RIBはマーク近くをキープしつつわずかに漂い、外周観覧艇はゆったり移動
+        const ampA = cb.markRef ? 2.4 : 14.0;
+        const ampC = cb.markRef ? 2.0 : 10.0;
+        const spd = cb.markRef ? 0.22 : 0.11;
+        const da = Math.sin(t * spd + cb.ph) * ampA;
+        const dc = Math.cos(t * (spd * 0.8) + cb.ph * 1.3) * ampC;
         const p = toWorld((cb.baseA ?? cb.a) + da, (cb.baseC ?? cb.c) + dc);
         cb.b.position.x = p.x;
         cb.b.position.z = p.z;
-        cb.b.rotation.y = head + cb.relRot + 0.16 * Math.cos(t * 0.11 + cb.ph);
+        cb.b.rotation.y = head + cb.relRot + (cb.markRef ? 0.08 : 0.16) * Math.cos(t * spd + cb.ph);
       }
       for (const ms of movingShips) {
         // 船首方向(+zがry回転した方向: sin(ry), cos(ry))へゆっくり巡航移動し、一定範囲で滑らかに往復/巡回
@@ -1306,11 +1328,28 @@ export function createWorld(scene) {
         ms.obj.position.x = ms.x0 + Math.sin(ms.ry) * d;
         ms.obj.position.z = ms.z0 + Math.cos(ms.ry) * d;
       }
-      // マーク・ブイは海面の高さに合わせて上下し、波で揺れる
+      // マーク・ブイ・運営艇は海面の波高・波傾斜に合わせて立体的に上下し、波に揺れる
       for (const o of bob) {
-        const ws = waveSample(o.position.x, o.position.z, SEA.clock, 1, 0);
-        o.position.y = ws.hLong + (ws.h - ws.hLong) * 0.6 + 0.05 + 0.03 * Math.sin(t * 1.4 + o.position.x);
-        o.rotation.z = clampN(Math.atan(ws.slope) * 0.6, -0.15, 0.15) + 0.03 * Math.sin(t * 1.1 + o.position.z);
+        const ox = o.position.x, oz = o.position.z;
+        const wsX = waveSample(ox, oz, SEA.clock, 1, 0);
+        const slX = wsX.slope;
+        const wsZ = waveSample(ox, oz, SEA.clock, 0, 1);
+        const slZ = wsZ.slope;
+        if (o.userData && o.userData.isMarkBuoy) {
+          // インフレータブルマークブイ: 波の通過に合わせて上下動＋前後左右に軽快に揺れる演出(上の番号ラベルは揺らさないようbodyのみ回転)
+          const waveY = wsX.hLong * 0.98 + (wsX.h - wsX.hLong) * 0.88;
+          const bobRip = 0.09 * Math.sin(t * 2.8 + ox * 0.17 + oz * 0.13) + 0.05 * Math.cos(t * 1.9 - oz * 0.21);
+          o.position.y = waveY + 0.04 + bobRip;
+          const body = o.userData.body;
+          if (body) {
+            body.rotation.z = clampN(-Math.atan(slX) * 1.35 + 0.14 * Math.sin(t * 2.5 + ox * 0.19) + 0.06 * Math.cos(t * 3.6 + oz * 0.15), -0.34, 0.34);
+            body.rotation.x = clampN(Math.atan(slZ) * 1.35 + 0.14 * Math.cos(t * 2.3 + oz * 0.17) + 0.06 * Math.sin(t * 3.4 - ox * 0.14), -0.34, 0.34);
+          }
+        } else {
+          o.position.y = wsX.hLong * 0.95 + (wsX.h - wsX.hLong) * 0.65 + 0.05 + 0.04 * Math.sin(t * 1.6 + ox * 0.1);
+          o.rotation.z = clampN(-Math.atan(slX) * 0.72, -0.18, 0.18) + 0.035 * Math.sin(t * 1.3 + oz * 0.1);
+          o.rotation.x = clampN(Math.atan(slZ) * 0.55, -0.14, 0.14) + 0.025 * Math.cos(t * 1.2 + ox * 0.1);
+        }
       }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
 
