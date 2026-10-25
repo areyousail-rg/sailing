@@ -396,6 +396,16 @@ export class BoatModel {
         }
       }
     }
+    this.root.position.set(boat.x, 0, boat.z);
+    this.root.rotation.y = -boat.h;
+  }
+
+  dispose() {
+    if (this.sailMat) {
+      if (this.sailMat.map) this.sailMat.map.dispose();
+      this.sailMat.dispose();
+    }
+    if (this.jibGeo) this.jibGeo.dispose();
   }
 
   setFirstPerson(on) {
@@ -509,9 +519,14 @@ export class BoatModel {
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
     this.mainPivot.rotation.y = -sgn * this.boomA;
-    // ジブ: 通常は風下側。ランチャー展開に合わせて風上側へ張り出す(観音開き)
+    // ジブ: クローズ引き込み時はタイト、落とす際(ベアアウェイ/リーチング)やシバーする時はしっかり外側へセールを出す
     const pk = b.poleK || 0;
-    const jibLee = Math.min(this.boomA * 0.8, 0.25); // ジブはシュラウドの内側を通す(緩めてもステーに当たって止まる)
+    const ease = Math.max(0, 0.97 - b.sheet);
+    const bearOut = Math.max(0, twa - 0.78) * 0.28;
+    const luffOut = luff * (0.28 + 0.09 * Math.sin(t * 21 + this.phase));
+    const jibDesired = 0.19 + ease * 0.72 + bearOut * 0.42 + luffOut;
+    const jibMaxAwa = Math.max(0.34, Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
+    const jibLee = clamp(Math.min(Math.max(this.boomA * 0.78, jibDesired), jibMaxAwa), 0.18, 0.82);
     const jibRot = -sgn * jibLee * (1 - pk) + sgn * JIB_WING * pk;
     this.jibRot = jibRot;
     this.jibPivot.rotation.y = 0; // ラフをフォアステーに完全固定するためjibPivot自体は回転させず頂点で展開
