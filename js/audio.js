@@ -212,6 +212,39 @@ function waveSlap(sp, heel) {
   o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.32);
 }
 
+// 5) 三角波・短周期波にはたかれた際、海に船底がたたきつけられる控えめな「ドン / バシャン」という水叩き音
+function hullWaveSlam(slam) {
+  if (!ctx || !noiseBuf || !boatBus) return;
+  const t = ctx.currentTime;
+  const intensity = clamp01(slam);
+  // 水面を叩く中低域スプラッシュ(控えめな音量)
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  s.playbackRate.value = 0.58 + Math.random() * 0.25;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.4;
+  lp.frequency.setValueAtTime(780 + intensity * 420, t);
+  lp.frequency.exponentialRampToValueAtTime(160, t + 0.26);
+  const g = ctx.createGain();
+  const vol = (0.045 + 0.075 * intensity) * (0.85 + Math.random() * 0.3);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+  s.connect(lp); lp.connect(g); g.connect(boatBus);
+  s.start(t, Math.random() * 1.0); s.stop(t + 0.30);
+
+  // FRPハルが海面に着水・叩きつけられる重みのある「ドン」という共鳴音(抑え目)
+  const o = ctx.createOscillator(), og = ctx.createGain();
+  o.type = 'triangle';
+  const f0 = 92 + Math.random() * 22;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.19);
+  const thudVol = (0.055 + 0.085 * intensity) * (0.85 + Math.random() * 0.3);
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.linearRampToValueAtTime(thudVol, t + 0.008);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.21);
+  o.connect(og); og.connect(boatBus);
+  o.start(t); o.stop(t + 0.23);
+}
+
 // シバー時の「バサバサッ」というセールクロスの連続はためきパルス
 function shiverFlap(lv) {
   if (!ctx || !noiseBuf) return;
@@ -289,6 +322,13 @@ export function updateSailingAudio(dt, b, active = true) {
     if (active && lv > 0.08) shiverFlap(lv);
   }
   if (!active) return;
+
+  // 三角波・急な波にはたかれた際の船底着水スラム音(抑え目)
+  if (b && b.waveSlam > 0) {
+    const slam = b.waveSlam;
+    b.waveSlam = 0;
+    hullWaveSlam(slam);
+  }
 
   // 気泡・チャインの水滴音
   tBubble -= dt;
