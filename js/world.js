@@ -24,10 +24,10 @@ let seed = 12345; const rnd = () => { seed = (seed * 16807) % 2147483647; return
 const SKY_FN = `
 uniform vec3 uSun;
 vec3 skyBase(vec3 d){
-  float h=clamp(d.y,0.0,1.0);
+  float h=clamp(d.y,0.0001,1.0);
   vec3 hor=vec3(0.74,0.86,0.94), zen=vec3(0.14,0.38,0.78);
   vec3 c=mix(hor,zen,pow(h,0.42));
-  float s=max(dot(d,uSun),0.0);
+  float s=clamp(dot(d,uSun),0.0001,1.0);
   c+=vec3(1.0,0.92,0.75)*(pow(s,600.0)*6.0+pow(s,12.0)*0.18);
   return c;
 }`;
@@ -41,7 +41,7 @@ void main(){
   // 長周期のうねり成分のみ頂点を実際に上下させる(カメラ周辺の局所パッチ)。外縁は下の海面(uBaseY)へ滑らかに沈める
   float h=0.0;
   for(int i=0;i<4;i++){ vec4 A=uSeaA[i]; vec4 B=uSeaB[i]; if(B.z>0.5) h+=A.w*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y); }
-  float r=length(w.xz-uPatchC.xz)/uPatchR;
+  float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.72,1.0,r));
 #endif
   vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w;
@@ -102,7 +102,7 @@ void main(){
   }
   vec3 n=normalize(vec3(-g.x,1.0,-g.y));
   float ndv=max(dot(n,V),0.0);
-  float F=0.03+0.97*pow(1.0-ndv,4.5);
+  float F=0.03+0.97*pow(max(1.0-ndv,0.0001),4.5);
   vec3 R=reflect(-V,n); R.y=abs(R.y);
   vec3 refl=skyBase(R);
   vec3 deep=vec3(0.012,0.14,0.24), shallow=vec3(0.06,0.34,0.42);
@@ -121,7 +121,8 @@ void main(){
     float streak=smoothstep(0.72,0.92,vn(vec2(wu*0.32,wv*0.03-uTime*1.1)));
     col+=vec3(0.55,0.62,0.66)*streak*0.11*(0.4+gust)*exp(-dist*0.0012);
   }
-  float fogF=1.0-exp(-pow(dist*${FOG_DENSITY.toFixed(7)},2.0));
+  float fd0=dist*${FOG_DENSITY.toFixed(7)};
+  float fogF=1.0-exp(-(fd0*fd0));
   col=mix(col,vec3(0.741,0.835,0.902),fogF);
   gl_FragColor=vec4(col,1.0);
 }`,
@@ -950,6 +951,8 @@ export function createWorld(scene) {
       const isHakkei = venue === 'hakkeijima';
       enoshimaGroup.visible = !isHakkei;
       hakkeijimaGroup.visible = isHakkei;
+      if (isHakkei) hakkeijimaGroup.updateMatrixWorld(true);
+      else enoshimaGroup.updateMatrixWorld(true);
       // 八景島は北風スタート(15°北北東の風)、江の島は南南西(200°)。リアル気象時は取得した風向を使用
       const deg = (typeof customWindDeg === 'number' && Number.isFinite(customWindDeg)) ? customWindDeg : (isHakkei ? 15 : 200);
       setWindDir(deg);
@@ -1948,11 +1951,12 @@ function bakeStatic(root) {
       mat.side = b.m.side; mat.transparent = b.m.transparent; mat.opacity = b.m.opacity; mat.depthWrite = b.m.depthWrite; mat.fog = b.m.fog;
     }
     for (const o of b.items) o.parent.remove(o);
-    const mesh = new THREE.Mesh(geo, mat); mesh.renderOrder = b.ro; mesh.matrixAutoUpdate = false; root.add(mesh);
+    const mesh = new THREE.Mesh(geo, mat); mesh.renderOrder = b.ro; mesh.frustumCulled = false; root.add(mesh);
   }
   // 空になったグループを取り除き、シーングラフの走査コストも減らす
   const prune = (o) => { for (const ch of [...o.children]) { prune(ch); if (!ch.isMesh && !ch.isSprite && !ch.isLight && ch.children.length === 0 && ch.type !== 'Scene') o.remove(ch); } };
   prune(root);
+  root.updateMatrixWorld(true);
 }
 
 // ---------- 静的オブジェクト用の小道具 (bakeStatic で結合される前提。マテリアル・ジオメトリは使い回す) ----------
