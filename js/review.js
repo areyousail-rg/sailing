@@ -509,12 +509,14 @@ export function openReview(rec, o) {
   function analysis() {
     const s = rec.d.get(sel);
     const fins = list.filter((x) => x.final);
-    const ref = s.final === 1 ? fins[1] || fins[0] : fins[0] || list[0];
+    const isWinner = s.final === 1;
+    const ref = isWinner ? fins[1] || fins[0] || list[1] || s : fins[0] || list[0];
     const isRefSelf = ref === s;
     const name = s.isPlayer ? 'あなた' : o.nameOf(s.boat);
     const refName = ref.isPlayer ? 'あなた' : o.nameOf(ref.boat);
+    const refRankStr = ref.final ? `${ref.final}位` : '比較艇';
     const vS = Math.max(0.1, s.avgV), vR = Math.max(0.1, ref.avgV);
-    // 所要時間差の要因分解(参照艇比)
+    // 所要時間差の要因分解(参照艇比: マイナスは参照艇より速い/有利、プラスは参照艇より遅い/ロス)
     const lossS = s.lostTotal, lossR = ref.lostTotal;
     const dLossT = (lossS - lossR) / vR;
     const dSpeed = s.dist / vS - s.dist / vR;
@@ -525,6 +527,7 @@ export function openReview(rec, o) {
       { k: '減速(タック・他艇・波など)', v: dLossT, d: `${s.events.length}回・平均${Math.round(s.avgDrop * 100)}%減速・損失約${Math.round(lossS)}m (比較艇 ${ref.events.length}回・${Math.round(lossR)}m)` },
     ];
     const worst = [...parts].sort((a, b) => b.v - a.v)[0];
+    const best = [...parts].sort((a, b) => a.v - b.v)[0];
 
     // 順位変動: レグごと
     const legRows = [];
@@ -536,19 +539,35 @@ export function openReview(rec, o) {
     });
     if (s.final && prev != null && (!s.legMarks.length || s.legMarks[s.legMarks.length - 1].leg < o.legs.length - 1)) legRows.push({ leg: legName(o.legs.length - 1), from: prev, to: s.final, t: s.finishTime });
 
-    const summary = isRefSelf
-      ? `${name}がトップ。2位との差の内訳を表示しています。`
-      : worst.v > 1.5
-        ? `${name}が比較艇(${refName}・${ref.final}位)に負けた最大の要因は「${worst.k}」です。`
-        : `比較艇との差は小さく、特定の大きな要因はありません。`;
+    let summary;
+    if (isWinner) {
+      if (isRefSelf) {
+        summary = `${name}が見事トップでフィニッシュしました！`;
+      } else if (best.v < -0.5) {
+        summary = `${name}が見事1位でフィニッシュ！ 2位(${refName})に差をつけた最大の勝因は「${best.k}」(${sec(best.v)})です。${worst.v > 1.5 ? `（「${worst.k}」をさらに抑えるとよりリードを広げられます）` : ''}`;
+      } else {
+        summary = `${name}が見事1位でフィニッシュ！ 2位(${refName})との接戦を制しました。`;
+      }
+    } else if (worst.v > 1.5) {
+      summary = `${name}が${refRankStr}(${refName})に遅れた最大の要因は「${worst.k}」(${sec(worst.v)})です。`;
+    } else {
+      summary = `${refRankStr}(${refName})との差は小さく、特定の大きな遅れ要因はありません。`;
+    }
+
+    const diffLabel = isWinner
+      ? `2位(${refName})との時間差の内訳 (−はリード / +はロス)`
+      : `${refRankStr}(${refName})との時間差の内訳 (+は遅れ / −はリード)`;
 
     const ws = rec.windSummary || { blowSideTxt: '記録なし', shifts: [] };
 
     $('rvAnalysis').innerHTML = `
       <div class="rvLbl">分析: ${name} ${s.status || s.final + '位'}</div>
       <p class="rvSummary">${summary}</p>
-      <div class="rvSubLbl">比較艇との時間差の内訳 (+は遅れ)</div>
-      <table class="rvMini">${parts.map((p) => `<tr class="${p === worst && p.v > 1.5 ? 'hl' : ''}"><th>${p.k}</th><td class="rvNum ${p.v > 0 ? 'bad' : 'good'}">${sec(p.v)}</td></tr><tr class="rvDetail"><td colspan="2">${p.d}</td></tr>`).join('')}</table>
+      <div class="rvSubLbl">${diffLabel}</div>
+      <table class="rvMini">${parts.map((p) => {
+        const isHl = isWinner ? (p === best && p.v < -0.5) : (p === worst && p.v > 1.5);
+        return `<tr class="${isHl ? 'hl' : ''}"><th>${p.k}</th><td class="rvNum ${p.v > 0 ? 'bad' : 'good'}">${sec(p.v)}</td></tr><tr class="rvDetail"><td colspan="2">${p.d}</td></tr>`;
+      }).join('')}</table>
       <div class="rvSubLbl">艇速・平均角度・マニューバー内訳 (比較艇: ${refName})</div>
       <table class="rvMini">
         <tr><th>上り平均艇速 / 平均角度</th><td class="rvNum">${fmtKt2(s.avgUpV)} / ${fmtAng2(s.avgUpAng)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgUpV)} / ${fmtAng2(ref.avgUpAng)})</span></td></tr>
