@@ -91,11 +91,145 @@ export function sheetOpt(twa) {
   return 0.12;
 }
 
+// ---------- 海況(波) ----------
+// 海面・風向ごとの実際の波の特徴:
+//  ・八景島 × 北風: 東京湾奥の短い吹送距離＋護岸・八景島の岸壁反射で、向きの違う短い波が交差する「三角波」
+//  ・江の島 × 南風: 相模湾外洋から入る周期の長い「うねり」(＋その上に乗る小さな風浪)
+//  ・江の島 × 北風: 陸からの吹き出しで吹送距離が短く、周期の短い細かい風浪
+// 各成分: { A:振幅[m], k:波数, w:角周波数, dx,dz:進行方向, ph:位相, long:ジオメトリ変位する長周期成分か }
+export const SEA = { type: 'mixed', label: '', H: 0.3, steep: 0.55, surf: 0.12, maxSlope: 0.1, comps: [], longAmp: 0, clock: 0 };
+export function setSeaState(venue, windDeg, kt) {
+  const d = ((windDeg % 360) + 360) % 360;
+  const north = d >= 290 || d <= 80;
+  const south = d >= 125 && d <= 260;
+  const R = Math.PI / 180;
+  const from = d * R; // 風(波)が来る方位
+  const comps = [];
+  // 方位 brg から来て反対方向へ進む波 (x=東, z=南)
+  const add = (A, lambda, brgFrom, ph, long = false) => {
+    const k = (2 * Math.PI) / lambda;
+    comps.push({ A, k, w: Math.sqrt(9.81 * k), dx: -Math.sin(brgFrom), dz: Math.cos(brgFrom), ph, long });
+  };
+  let type, label, H;
+  if (venue === 'hakkeijima' && north) {
+    type = 'chop'; label = '三角波(北風・護岸反射の交差波)';
+    H = clamp(0.16 + 0.026 * kt, 0.22, 0.65);
+    add(H * 0.30, 7.0, from, 0.0);
+    add(H * 0.24, 6.0, from + 52 * R, 1.9); // 岸壁からの反射波が斜めに交差
+    add(H * 0.20, 5.2, from - 47 * R, 4.1);
+    add(H * 0.10, 11.0, from + 8 * R, 2.6);
+    Object.assign(SEA, { steep: 1.0, surf: 0.06 });
+  } else if (venue === 'enoshima' && south) {
+    type = 'swell'; label = '長周期のうねり(南風・相模湾)';
+    H = clamp(0.55 + 0.035 * kt, 0.6, 1.4);
+    add(H * 0.36, 96, 205 * R, 0.0, true); // 南南西からの外洋うねり(周期約8秒)
+    add(H * 0.14, 64, 190 * R, 2.2, true);
+    add(0.05 + 0.008 * kt, 9.0, from, 1.1);  // うねりに乗る風浪
+    add(0.035 + 0.006 * kt, 6.5, from + 25 * R, 3.7);
+    Object.assign(SEA, { steep: 0.32, surf: 0.30 });
+  } else if (venue === 'enoshima' && north) {
+    type = 'short'; label = '周期の短い風浪(北風・陸からの吹き出し)';
+    H = clamp(0.14 + 0.028 * kt, 0.2, 0.7);
+    add(H * 0.34, 10.0, from, 0.0);
+    add(H * 0.24, 8.0, from + 18 * R, 2.3);
+    add(H * 0.16, 13.0, from - 14 * R, 4.4);
+    add(H * 0.08, 5.5, from + 40 * R, 1.2);
+    Object.assign(SEA, { steep: 0.75, surf: 0.14 });
+  } else {
+    type = 'mixed'; label = '風浪';
+    H = clamp(0.15 + 0.025 * kt, 0.2, 0.6);
+    add(H * 0.32, 11.0, from, 0.0);
+    add(H * 0.22, 8.5, from + 22 * R, 2.0);
+    add(H * 0.16, 30, from - 12 * R, 4.0, true);
+    add(H * 0.08, 6.0, from - 35 * R, 1.3);
+    Object.assign(SEA, { steep: 0.55, surf: 0.14 });
+  }
+  let ms = 0, la = 0;
+  for (const c of comps) { ms += c.A * c.k; if (c.long) la += c.A; }
+  Object.assign(SEA, { type, label, H, comps, maxSlope: Math.max(0.02, ms * 0.7), longAmp: la });
+}
+// 点(x,z)・時刻tの海面: h=全成分の高さ, hLong=長周期成分の高さ, slope=進行方向(hx,hz)の傾き(+なら上り坂)
+const _ws = { h: 0, hLong: 0, slope: 0, slopeLong: 0 };
+export function waveSample(x, z, t, hx = 0, hz = 0) {
+  let h = 0, hl = 0, sl = 0, sll = 0;
+  for (const c of SEA.comps) {
+    const ph = c.k * (c.dx * x + c.dz * z) - c.w * t + c.ph;
+    const s = Math.sin(ph), co = Math.cos(ph);
+    const g = c.A * c.k * co * (c.dx * hx + c.dz * hz);
+    h += c.A * s; sl += g;
+    if (c.long) { hl += c.A * s; sll += g; }
+  }
+  _ws.h = h; _ws.hLong = hl; _ws.slope = sl; _ws.slopeLong = sll;
+  return _ws;
+}
+
+// ---------- 風の振れ(シフト) ----------
+// 実際のレース同様、①左右に振れて戻る「オシレーション」、②徐々に回って戻らない「パーシステントシフト」、
+// ③ブローと共に短時間で振れる「ステップ的なシフト」をランダムな順番・長さで組み合わせた時系列を毎レース生成する
+const SHIFT_T0 = -150, SHIFT_DT = 0.5, SHIFT_SPAN = 1500;
+const SHIFT_N = Math.ceil(SHIFT_SPAN / SHIFT_DT) + 2;
+const SHIFT_TAB = new Float32Array(SHIFT_N);
+export const SHIFT_LOG = []; // 振り返り用: { t, type, deg }
+export function randomizeWindShifts(seed = Date.now()) {
+  let s = (Math.abs(Math.floor(seed)) % 2147483646) + 1;
+  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const D = Math.PI / 180, LIM = 12 * D;
+  let mean = (r() - 0.5) * 6 * D, meanT = mean, rate = 0.2 * D;
+  let amp = (3 + r() * 4) * D, ampT = amp, per = 50 + r() * 40, phase = r() * 6.283;
+  let segEnd = SHIFT_T0;
+  SHIFT_LOG.length = 0;
+  for (let i = 0; i < SHIFT_N; i++) {
+    const t = SHIFT_T0 + i * SHIFT_DT;
+    if (t >= segEnd) {
+      const u = r();
+      if (u < 0.42) {
+        // オシレーション: 平均はほぼそのまま、左右に周期的に振れる
+        meanT = clamp(mean + (r() - 0.5) * 3 * D, -LIM, LIM); rate = 0.1 * D;
+        ampT = (3 + r() * 4.5) * D; per = 40 + r() * 60;
+        segEnd = t + 50 + r() * 70;
+        SHIFT_LOG.push({ t, type: 'osc', deg: Math.round((ampT / D) * 10) / 10 });
+      } else if (u < 0.78) {
+        // パーシステント: 一方向へゆっくり回り、そのまま戻らない(既に大きく振れている側へさらに回る確率は低め)
+        let dir = r() < 0.5 ? -1 : 1;
+        if (Math.sign(mean) === dir && r() < Math.abs(mean) / LIM) dir = -dir;
+        const mag = (5 + r() * 8) * D;
+        meanT = clamp(mean + dir * mag, -LIM, LIM);
+        rate = Math.abs(meanT - mean) / (35 + r() * 70);
+        ampT = (1.5 + r() * 3) * D; per = 35 + r() * 40;
+        segEnd = t + 70 + r() * 90;
+        SHIFT_LOG.push({ t, type: 'persist', deg: Math.round(((meanT - mean) / D) * 10) / 10 });
+      } else {
+        // ステップ: ブローと共に短時間で振れる(後で戻ることも戻らないこともある)
+        const dir = Math.sign(mean) !== 0 && r() < Math.abs(mean) / LIM ? -Math.sign(mean) : r() < 0.5 ? -1 : 1;
+        meanT = clamp(mean + dir * (4 + r() * 6) * D, -LIM, LIM);
+        rate = Math.abs(meanT - mean) / (5 + r() * 8);
+        ampT = (2 + r() * 3) * D; per = 30 + r() * 30;
+        segEnd = t + 25 + r() * 45;
+        SHIFT_LOG.push({ t, type: 'step', deg: Math.round(((meanT - mean) / D) * 10) / 10 });
+      }
+    }
+    const dm = meanT - mean, st = rate * SHIFT_DT;
+    mean += Math.abs(dm) <= st ? dm : Math.sign(dm) * st;
+    amp += (ampT - amp) * (SHIFT_DT / 18);
+    phase += (2 * Math.PI * SHIFT_DT) / per;
+    SHIFT_TAB[i] = mean + amp * Math.sin(phase);
+  }
+}
+randomizeWindShifts(Date.now());
+export function shiftAt(t) {
+  let u = (t - SHIFT_T0) / SHIFT_DT;
+  if (u < 0) u = 0;
+  if (u > SHIFT_N - 2) u = u % (SHIFT_N - 2); // 練習モードの長時間航行時はループ
+  const i = Math.floor(u), f = u - i;
+  return SHIFT_TAB[i] + (SHIFT_TAB[i + 1] - SHIFT_TAB[i]) * f;
+}
+
 // ブランケット(風影)・リーバウ効果(風下前方からの吹き上げリフト＆風上艇へのバックウィンド)・別タック艇スターン通過リフト
 const SHADOW_LEN = 34; // ディンギーの風影影響圏(約7艇身: マスト高約6mの約5〜6倍に相当する実戦的なブランケット距離)
 export function computeBlanket(boats) {
   for (const b of boats) {
     b.coverT = 0;
+    b.backT = 0;      // うちバックウインド(風下艇のリーチからの吹き返し)成分
     b.windBendT = 0;  // +ならリフト(のぼせる)、-ならヘダー(落とされる) [rad]
     b.flowBoostT = 0; // 局所的な増速効果
     b.aeroTag = '';
@@ -183,6 +317,7 @@ export function computeBlanket(boats) {
               const backK = kLee * smoothstep(-0.2, 2.0, ahead);
               A.windBendT -= 0.092 * backK;
               A.coverT = clamp(A.coverT + 0.65 * backK, 0, 1.0);
+              A.backT = clamp(A.backT + 0.65 * backK, 0, 1.0);
               if (backK > 0.20 && !A.aeroTag) A.aeroTag = 'backwind';
             }
           }
@@ -227,7 +362,7 @@ export function windAt(x, z, t) {
   const sideNorm = clamp(c / 160, -1.2, 1.2);
   const geoPressure = SIDE_BIAS * sideNorm * 0.065;
   const geoShift = SIDE_BIAS * sideNorm * 0.075;
-  const osc = 0.12 * Math.sin(t * 0.038 + 0.7) + 0.06 * Math.sin(t * 0.095 + 1.3);
+  const osc = shiftAt(t); // オシレーション/パーシステント/ステップを組み合わせた時系列の振れ
   const puffShift = 0.06 * Math.sin(adv * 0.028 - c * 0.021);
   const shift = osc + puffShift + geoShift;
   const f = clamp(0.86 + 0.34 * puff + geoPressure, 0.72, 1.32);
@@ -246,7 +381,8 @@ export class Boat {
     this.a = undefined; this.c = 0; this.visit = null;
     this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.hike = 0.15; this.turned = 0;
     this.sOpt = 1; this.luff = 0; this.stall = 0;
-    this.cover = 0; this.coverT = 0;
+    this.cover = 0; this.coverT = 0; this.back = 0; this.backT = 0;
+    this.waveF = 1; this.waveH = 0; this.waveSlope = 0; this.waveLoss = 0;
     this.windBend = 0; this.windBendT = 0;
     this.flowBoost = 0; this.flowBoostT = 0;
     this.aeroTag = ''; this.aeroClimb = 0;
@@ -302,6 +438,7 @@ export class Boat {
   update(dt, t, boats) {
     const w = windAt(this.x, this.z, t);
     this.cover += (this.coverT - this.cover) * (1 - Math.exp(-dt / 0.45));
+    this.back += (this.backT - this.back) * (1 - Math.exp(-dt / 0.45));
     this.windBend += (this.windBendT - this.windBend) * (1 - Math.exp(-dt / 0.35));
     this.flowBoost += (this.flowBoostT - this.flowBoost) * (1 - Math.exp(-dt / 0.40));
     // 風影(ブランケット)に入った際に素早く明確に風速低下＆ヘダーが効くよう調整
@@ -410,6 +547,23 @@ export class Boat {
     // ランチャー: 下レグ(深い角度)でジブが開いて若干速くなる。リーチより上では逆効果
     const poleF = 1 + this.poleK * (0.065 * smoothstep(1.85, 2.6, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
     let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : 0.18) * Math.abs(steer)) * this.throttle;
+    // 波: 上りでは波面を登るたびに叩かれて失速(短く急な波ほど大きい)、リーチング〜ランニングでは波の前面を滑り降りて加速(サーフィン)
+    {
+      const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));
+      this.waveH = ws.h; this.waveSlope = ws.slope;
+      const Hn = SEA.H / 0.5;
+      const climb = clamp(ws.slope / SEA.maxSlope, -1, 1);
+      const upw = 1 - smoothstep(0.95, 1.65, twa);
+      const down = smoothstep(1.15, 1.9, twa);
+      let wf = 1 - upw * 0.10 * Hn * SEA.steep * (0.55 + 0.9 * Math.max(0, climb));
+      if (turning) wf -= 0.10 * Hn * SEA.steep; // 波の中でのタックは行き足が止まりやすい
+      const windOk = clamp((localWindKt - 5.5) / 6, 0, 1);
+      wf += down * SEA.surf * Math.max(0, -climb) * (0.3 + 0.7 * windOk) * clamp(this.v / (2.2 * SPEED_SCALE), 0.3, 1);
+      if (SEA.type === 'chop') wf -= down * 0.035 * Hn * (0.5 + 0.5 * Math.abs(climb)); // 三角波は追い波でも乗りにくく揺さぶられる
+      this.waveF = wf;
+      this.waveLoss = Math.max(0, 1 - wf);
+      target *= wf;
+    }
     // 完全風上(0°〜5° / 355°〜360°付近)に向くと風圧で少しずつバック(後退)する
     if (twaDeg < 12 && !turning) {
       const irons = clamp((10 - twaDeg) / 5, 0, 1); // 0°〜5°で最大1.0
