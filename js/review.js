@@ -1,4 +1,4 @@
-// レース振り返り: 全艇の航跡・艇速・走行距離・スタート順位・減速(原因別)・順位変動を記録し、レース後に分析表示する
+// レース振り返り: 全艇の航跡・艇速(上り/下り/リーチング)・対風角(上り/下り)・走行距離・スタート順位・タック/ジャイブ数・海面風況を記録し分析表示する
 const CAUSES = ['タック/ジャイブ', 'ブランケット', 'バックウインド', '波', '接触', 'ペナルティ', 'マーク回航', '風の弱まり・振れ'];
 
 function causeOf(b) {
@@ -20,12 +20,21 @@ export class Recorder {
     this.acc = 1;
     this.endT = 0;
     this.n = boats.length;
+    this.windHistory = [];
+    this.seaStats = { leftF: 0, rightF: 0, centerF: 0, leftPuff: 0, rightPuff: 0, count: 0 };
     for (const b of boats) {
       this.d.set(b.id, {
         id: b.id, color: b.color, isPlayer: b.isPlayer, sailNo: b.sailNo, nat: b.nat, boat: b,
-        track: [], dist: 0, lx: b.x, lz: b.z, spdSum: 0, spdT: 0,
+        track: [], dist: 0, lx: b.x, lz: b.z,
+        spdSum: 0, spdT: 0,
+        upSpdSum: 0, upSpdT: 0,
+        dnSpdSum: 0, dnSpdT: 0,
+        rcSpdSum: 0, rcSpdT: 0,
+        upAngSum: 0, upAngT: 0, upAngRawSum: 0, upAngRawT: 0,
+        dnAngSum: 0, dnAngT: 0, dnAngRawSum: 0, dnAngRawT: 0,
         startCross: null, startRank: null, gunRank: null,
-        ref: Math.abs(b.v), ev: null, events: [], tacks: 0, lastTack: b.tack, stableTack: b.tack, pendT: null,
+        ref: Math.abs(b.v), ev: null, events: [],
+        tacks: 0, gybes: 0, lastTack: b.tack, stableTack: b.tack, pendT: null, pendKind: 'tack',
         blkT: 0, backT: 0, lossBlk: 0, lossBack: 0, lossWave: 0, contacts: 0, touches: 0, penalties: 0, hadPen: false,
         legMarks: [], lastLeg: b.leg, finishTime: null, done: false, lastRank: null,
       });
@@ -45,7 +54,41 @@ export class Recorder {
       this.acc = 0;
       const sorted = [...boats].sort((a, b) => progressOf(b) - progressOf(a));
       ranks = new Map(); sorted.forEach((b, i) => ranks.set(b.id, i + 1));
+
+      // 海面全体の風況サンプリング (1秒ごと)
+      if (t >= 0 && this.meta.windAt && this.meta.toWorld) {
+        const wAt = this.meta.windAt;
+        const toW = this.meta.toWorld;
+        const sampleA = [90, 190, 270];
+        let lSum = 0, rSum = 0, cSum = 0, lPuff = 0, rPuff = 0;
+        for (const a of sampleA) {
+          const pL1 = toW(a, -105), pL2 = toW(a, -50);
+          const pC = toW(a, 0);
+          const pR1 = toW(a, 50), pR2 = toW(a, 105);
+          const wL1 = wAt(pL1.x, pL1.z, t), wL2 = wAt(pL2.x, pL2.z, t);
+          const wC = wAt(pC.x, pC.z, t);
+          const wR1 = wAt(pR1.x, pR1.z, t), wR2 = wAt(pR2.x, pR2.z, t);
+          lSum += (wL1.f + wL2.f) * 0.5;
+          cSum += wC.f;
+          rSum += (wR1.f + wR2.f) * 0.5;
+          lPuff += (wL1.puff + wL2.puff) * 0.5;
+          rPuff += (wR1.puff + wR2.puff) * 0.5;
+        }
+        const k = sampleA.length;
+        this.seaStats.leftF += lSum / k;
+        this.seaStats.centerF += cSum / k;
+        this.seaStats.rightF += rSum / k;
+        this.seaStats.leftPuff += lPuff / k;
+        this.seaStats.rightPuff += rPuff / k;
+        this.seaStats.count++;
+      }
+      if (t >= -10 && this.meta.shiftAt) {
+        const shiftDeg = (this.meta.shiftAt(t) * 180) / Math.PI;
+        this.windHistory.push({ t, shiftDeg });
+      }
     }
+
+    const isUpwindCourse = this.meta.courseMode === 'upwind';
     for (const b of boats) {
       const s = this.d.get(b.id); if (!s) continue;
       const active = t >= 0 && !s.done && !b.dsq;
@@ -53,12 +96,45 @@ export class Recorder {
         s.dist += Math.hypot(b.x - s.lx, b.z - s.lz);
         const v = Math.abs(b.v);
         s.spdSum += v * dt; s.spdT += dt;
+
+        // レグ種別(上り / 下り / リーチング)ごとの艇速および上り・下り対風角の集計
+        const twaDeg = (b.twa * 180) / Math.PI;
+        const effTwaDeg = b.effTwaDeg ?? twaDeg;
+        const isUpLeg = isUpwindCourse ? true : (b.leg === 0 || b.leg === 3);
+        const isDnLeg = isUpwindCourse ? false : (b.leg === 2 || b.leg === 5);
+        const isRcLeg = isUpwindCourse ? false : (b.leg === 1 || b.leg === 4 || b.leg === 6);
+
+        if (isUpLeg) {
+          s.upSpdSum += v * dt; s.upSpdT += dt;
+          s.upAngRawSum += twaDeg * dt; s.upAngRawT += dt;
+          if (!b.maneuver && !b.tacking && !b.penalty && twaDeg >= 24 && twaDeg <= 72) {
+            s.upAngSum += twaDeg * dt; s.upAngT += dt;
+          }
+        } else if (isDnLeg) {
+          s.dnSpdSum += v * dt; s.dnSpdT += dt;
+          s.dnAngRawSum += effTwaDeg * dt; s.dnAngRawT += dt;
+          if (!b.maneuver && !b.penalty && twaDeg >= 110) {
+            s.dnAngSum += effTwaDeg * dt; s.dnAngT += dt;
+          }
+        } else if (isRcLeg) {
+          s.rcSpdSum += v * dt; s.rcSpdT += dt;
+        }
+
         if (s.startCross === null && !b.ocs && b.a > lineA(b.c) + 0.5) s.startCross = t;
-        // タック/ジャイブ数: 真後ろ付近での左右判定のちらつきを除くため、新しい舷が4秒以上続いたら1回と数える
-        if (b.tack !== s.stableTack) {
-          if (s.pendT === null) s.pendT = t;
-          else if (t - s.pendT > 4) { s.tacks++; s.stableTack = b.tack; s.pendT = null; }
-        } else s.pendT = null;
+        // タック数・ジャイブ数を分離して集計 (ペナルティ回転中は除外し、新しい舷が3.0秒以上続いたら1回と数える)
+        if (!b.penalty && b.tack !== s.stableTack) {
+          if (s.pendT === null) {
+            s.pendT = t;
+            s.pendKind = b.twa < Math.PI / 2 ? 'tack' : 'gybe';
+          } else if (t - s.pendT > 3.0) {
+            if (s.pendKind === 'tack') s.tacks++;
+            else s.gybes++;
+            s.stableTack = b.tack;
+            s.pendT = null;
+          }
+        } else {
+          s.pendT = null;
+        }
         if (b.penalty && !s.hadPen) s.penalties++;
         s.hadPen = !!b.penalty;
         // 風速低下による推定損失距離(艇速は風速比の0.8乗に比例)
@@ -68,7 +144,7 @@ export class Recorder {
         s.lossBack += lossV * backFrac * dt; s.lossBlk += lossV * (1 - backFrac) * dt;
         if (b.back > 0.2) s.backT += dt; else if (b.cover > 0.2) s.blkT += dt;
         if (b.waveF < 1) s.lossWave += v * (1 / Math.max(0.5, b.waveF) - 1) * dt;
-        // 減速イベント検出: 直近の巡航速度(ref)から15%以上落ちた区間を1回と数え、原因ごとに損失距離を積算
+        // 減速イベント検出: 直近の巡航速度(ref)から15%以上落ちた区間を1回と数え、損失距離を積算
         if (!s.ev) {
           s.ref += (v - s.ref) * (1 - Math.exp(-dt / 6));
           if (t > 6 && v < s.ref * 0.85 && s.ref > 0.8) s.ev = { t0: t, ref: s.ref, minV: v, lost: 0, w: {} };
@@ -118,11 +194,106 @@ export class Recorder {
       s.final = fin.indexOf(b) >= 0 ? fin.indexOf(b) + 1 : null;
       s.status = b.dsq ? 'DSQ' : s.final ? '' : 'DNF';
       s.avgV = s.spdT > 0 ? s.spdSum / s.spdT : 0;
+      s.avgUpV = s.upSpdT > 0 ? s.upSpdSum / s.upSpdT : null;
+      s.avgDnV = s.dnSpdT > 0 ? s.dnSpdSum / s.dnSpdT : null;
+      s.avgRcV = s.rcSpdT > 0 ? s.rcSpdSum / s.rcSpdT : null;
+      s.avgUpAng = s.upAngT > 0 ? s.upAngSum / s.upAngT : (s.upAngRawT > 0 ? s.upAngRawSum / s.upAngRawT : null);
+      s.avgDnAng = s.dnAngT > 0 ? s.dnAngSum / s.dnAngT : (s.dnAngRawT > 0 ? s.dnAngRawSum / s.dnAngRawT : null);
       s.lossEv = {}; for (const c of CAUSES) s.lossEv[c] = { n: 0, lost: 0 };
       for (const e of s.events) { s.lossEv[e.cause].n++; s.lossEv[e.cause].lost += e.lost; }
       s.avgDrop = s.events.length ? s.events.reduce((x, e) => x + e.drop, 0) / s.events.length : 0;
       s.lostTotal = s.events.reduce((x, e) => x + e.lost, 0);
     }
+    this.windSummary = this.buildWindSummary();
+  }
+
+  buildWindSummary() {
+    const baseKt = this.meta.baseWindKt || 9;
+    const baseDeg = this.meta.windDeg ?? 15;
+    const n = Math.max(1, this.seaStats.count);
+    const leftKt = baseKt * (this.seaStats.leftF / n || 1);
+    const rightKt = baseKt * (this.seaStats.rightF / n || 1);
+    const diffKt = leftKt - rightKt;
+    let blowSideTxt = '';
+    if (Math.abs(diffKt) >= 0.12) {
+      const side = diffKt > 0 ? '左海面(コース左側)' : '右海面(コース右側)';
+      blowSideTxt = `${side}に強いブローが多く入りました（左海面 平均 ${leftKt.toFixed(2)}kt ／ 右海面 平均 ${rightKt.toFixed(2)}kt）`;
+    } else {
+      blowSideTxt = `左右の風速差は小さく、中央を含め広い範囲にブローが入りました（左海面 平均 ${leftKt.toFixed(2)}kt ／ 右海面 平均 ${rightKt.toFixed(2)}kt）`;
+    }
+    if (this.meta.sideBiasDesc) {
+      blowSideTxt += ` ― 地形傾向: ${this.meta.sideBiasDesc}`;
+    }
+
+    // 風の振れ(シフト)イベントの抽出
+    const shifts = [];
+    const wh = this.windHistory.filter((p) => p.t >= 0 && p.t <= this.endT);
+    if (wh.length > 0) {
+      const startShift = wh[0].shiftDeg;
+      const startDir = ((baseDeg + startShift) % 360 + 360) % 360;
+      shifts.push({
+        t: 0,
+        timeStr: '0:00 (スタート時)',
+        desc: `風向 ${startDir.toFixed(1)}° (${startShift >= 0 ? '右 +' : '左 −'}${Math.abs(startShift).toFixed(1)}°)`,
+        kind: '基準風向',
+      });
+      // 20秒窓で2.2°以上の振れを検出し、連続する同方向の振れを統合する
+      let seg = null;
+      for (let i = 1; i < wh.length; i++) {
+        const prev = wh[Math.max(0, i - 15)];
+        const cur = wh[i];
+        const delta = cur.shiftDeg - prev.shiftDeg;
+        if (Math.abs(delta) >= 2.0) {
+          const dir = Math.sign(delta);
+          if (!seg || seg.dir !== dir || cur.t - seg.t1 > 22) {
+            if (seg) shifts.push(seg);
+            seg = {
+              t0: prev.t,
+              t1: cur.t,
+              t: prev.t,
+              dir,
+              deg0: prev.shiftDeg,
+              deg1: cur.shiftDeg,
+              delta,
+            };
+          } else {
+            seg.t1 = cur.t;
+            seg.deg1 = cur.shiftDeg;
+            seg.delta = seg.deg1 - seg.deg0;
+          }
+        }
+      }
+      if (seg) shifts.push(seg);
+    }
+
+    const fmtT = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    const logList = (this.meta.shiftLog || []).filter((x) => x.t <= this.endT + 30);
+    const formattedShifts = shifts.map((s) => {
+      if (s.timeStr) return s;
+      const d = s.delta;
+      const side = d > 0 ? '右' : '左';
+      const fromDir = ((baseDeg + s.deg0) % 360 + 360) % 360;
+      const toDir = ((baseDeg + s.deg1) % 360 + 360) % 360;
+      // SHIFT_LOGの種別を照合
+      let logMatch = null;
+      for (const lg of logList) {
+        if (lg.t <= s.t1 && lg.t >= s.t0 - 80) logMatch = lg;
+      }
+      const kind = logMatch?.type === 'persist'
+        ? '回頭(戻らないシフト)'
+        : logMatch?.type === 'step'
+          ? 'ブローを伴う急シフト'
+          : '周期的な振れ(オシレーション)';
+      return {
+        t: s.t0,
+        timeStr: `${fmtT(s.t0)}〜${fmtT(s.t1)}`,
+        desc: `${side}へ ${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(1)}° 振れ (${fromDir.toFixed(0)}°→${toDir.toFixed(0)}°)`,
+        kind,
+        dir: s.dir,
+      };
+    });
+
+    return { blowSideTxt, leftKt, rightKt, shifts: formattedShifts };
   }
 }
 
@@ -134,6 +305,7 @@ function addCss() {
 }
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 const f1 = (x) => (Math.round(x * 10) / 10).toFixed(1);
+const f2 = (x) => (Math.round(x * 100) / 100).toFixed(2);
 const sec = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}秒`;
 
 export function openReview(rec, o) {
@@ -144,6 +316,8 @@ export function openReview(rec, o) {
   root.id = 'review';
   document.body.appendChild(root);
   const toKt = (v) => v / o.speedScale / o.kt;
+  const fmtKt2 = (v) => (v == null ? '−' : `${f2(toKt(v))}kt`);
+  const fmtAng2 = (a) => (a == null ? '−' : `${f2(a)}°`);
   const list = rec.order.map((id) => rec.d.get(id));
   let sel = o.playerId;
   let tNow = rec.endT;
@@ -170,6 +344,7 @@ export function openReview(rec, o) {
           <button type="button" id="rvPlay" class="rvBtn">再生</button>
           <input type="range" id="rvT" min="-40" max="${Math.ceil(rec.endT)}" step="1" value="${Math.ceil(rec.endT)}">
           <span id="rvTLbl" class="rvNum"></span>
+          <span id="rvLiveRank" class="rvLiveRank rvNum"></span>
         </div>
       </div>
       <div class="rvBlock">
@@ -184,7 +359,7 @@ export function openReview(rec, o) {
   <div class="rvBlock rvTableWrap">
     <div class="rvLbl">全艇データ</div>
     <table class="rvTable"><thead><tr>
-      <th>順位</th><th>艇</th><th>平均艇速</th><th>走行距離</th><th>スタート</th><th>減速</th><th>タック/ジャイブ</th><th>風の影響</th><th>接触</th>
+      <th>順位</th><th>艇</th><th>平均艇速</th><th>上り艇速</th><th>下り艇速</th><th>リーチング艇速</th><th>上り角度</th><th>下り角度</th><th>走行距離</th><th>スタート</th><th>タック数</th><th>ジャイブ数</th><th>減速</th><th>風の影響</th><th>接触</th>
     </tr></thead><tbody id="rvRows"></tbody></table>
   </div>`;
 
@@ -198,11 +373,17 @@ export function openReview(rec, o) {
     return `<tr data-id="${s.id}" class="${s.isPlayer ? 'me' : ''}">
       <td class="rvNum">${st}</td>
       <td><span class="rvSw" style="background:${hex(s.color)}"></span>${o.nameOf(s.boat)}</td>
-      <td class="rvNum">${f1(toKt(s.avgV))}kt</td>
+      <td class="rvNum">${fmtKt2(s.avgV)}</td>
+      <td class="rvNum">${fmtKt2(s.avgUpV)}</td>
+      <td class="rvNum">${fmtKt2(s.avgDnV)}</td>
+      <td class="rvNum">${fmtKt2(s.avgRcV)}</td>
+      <td class="rvNum">${fmtAng2(s.avgUpAng)}</td>
+      <td class="rvNum">${fmtAng2(s.avgDnAng)}</td>
       <td class="rvNum">${Math.round(s.dist)}m</td>
       <td class="rvNum">${s.startRank ?? '−'}位${s.startCross !== null ? ` / ${f1(s.startCross)}s` : ''}</td>
-      <td class="rvNum">${s.events.length}回 (平均${Math.round(s.avgDrop * 100)}%)</td>
       <td class="rvNum">${s.tacks}</td>
+      <td class="rvNum">${s.gybes}</td>
+      <td class="rvNum">${s.events.length}回 (平均${Math.round(s.avgDrop * 100)}%)</td>
       <td class="rvNum">${Math.round(s.blkT + s.backT)}s</td>
       <td class="rvNum">${s.contacts + s.touches}</td>
     </tr>`;
@@ -220,6 +401,31 @@ export function openReview(rec, o) {
 
   const map = $('rvMap'), mc = map.getContext('2d');
   const rk = $('rvRank'), rc = rk.getContext('2d');
+
+  // 再生バー右側のその時点の順位表示を更新
+  function updateTimeAndLiveRank() {
+    const t = Math.max(-40, tNow);
+    $('rvTLbl').textContent = t < 0 ? `−0:${String(Math.ceil(-t)).padStart(2, '0')}` : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    const snap = [];
+    for (const st of list) {
+      let p = null;
+      for (const q of st.track) { if (q.t > tNow) break; p = q; }
+      if (p && p.rank != null) snap.push({ st, rank: p.rank });
+    }
+    snap.sort((a, b) => a.rank - b.rank);
+    const curS = snap.find((x) => x.st.id === sel);
+    const meS = snap.find((x) => x.st.id === o.playerId);
+    const topStr = snap.slice(0, 3).map((x) => `${x.rank}位 ${x.st.isPlayer ? 'あなた' : x.st.sailNo}`).join(' · ');
+    let badge = '';
+    if (curS && curS.st.id !== o.playerId && meS) {
+      badge = `選択艇 ${curS.rank}位 ｜ あなた ${meS.rank}位/${rec.n}艇`;
+    } else if (meS) {
+      badge = `あなた ${meS.rank}位/${rec.n}艇`;
+    }
+    if (topStr) badge += ` (${topStr})`;
+    const lrEl = $('rvLiveRank');
+    if (lrEl) lrEl.textContent = badge;
+  }
 
   function drawMap() {
     const W = map.width, H = map.height, pad = 18;
@@ -266,7 +472,11 @@ export function openReview(rec, o) {
       mc.fillStyle = hex(st.color); mc.strokeStyle = '#0f1d27'; mc.lineWidth = 1;
       mc.beginPath(); mc.arc(0, 0, big ? 5 : 3.2, 0, 7); mc.fill(); mc.stroke();
       mc.restore();
-      if (big) { mc.fillStyle = '#e9edf0'; mc.font = '11px sans-serif'; mc.fillText(st.isPlayer ? 'あなた' : st.sailNo, X(p.c) + 7, Y(p.a) + 4); }
+      if (big) {
+        mc.fillStyle = '#e9edf0'; mc.font = '11px sans-serif';
+        const rkTxt = p.rank ? ` (${p.rank}位)` : '';
+        mc.fillText((st.isPlayer ? 'あなた' : st.sailNo) + rkTxt, X(p.c) + 7, Y(p.a) + 4);
+      }
     }
   }
 
@@ -302,6 +512,7 @@ export function openReview(rec, o) {
     const ref = s.final === 1 ? fins[1] || fins[0] : fins[0] || list[0];
     const isRefSelf = ref === s;
     const name = s.isPlayer ? 'あなた' : o.nameOf(s.boat);
+    const refName = ref.isPlayer ? 'あなた' : o.nameOf(ref.boat);
     const vS = Math.max(0.1, s.avgV), vR = Math.max(0.1, ref.avgV);
     // 所要時間差の要因分解(参照艇比)
     const lossS = s.lostTotal, lossR = ref.lostTotal;
@@ -310,12 +521,11 @@ export function openReview(rec, o) {
     const parts = [
       { k: 'スタート', v: (s.startCross ?? 8) - (ref.startCross ?? 8), d: `ライン通過 号砲${s.startCross !== null ? f1(s.startCross) : '−'}秒後 (比較艇 ${ref.startCross !== null ? f1(ref.startCross) : '−'}秒後)・25秒後の順位 ${s.startRank ?? '−'}位` },
       { k: 'コース(走行距離)', v: (s.dist - ref.dist) / vR, d: `${Math.round(s.dist)}m (比較艇 ${Math.round(ref.dist)}m / ${s.dist >= ref.dist ? '+' : '−'}${Math.abs(Math.round(s.dist - ref.dist))}m)` },
-      { k: '純粋な艇速', v: dSpeed - dLossT, d: `平均 ${f1(toKt(s.avgV))}kt (比較艇 ${f1(toKt(ref.avgV))}kt)` },
+      { k: '純粋な艇速', v: dSpeed - dLossT, d: `全体平均 ${fmtKt2(s.avgV)} (比較艇 ${fmtKt2(ref.avgV)})` },
       { k: '減速(タック・他艇・波など)', v: dLossT, d: `${s.events.length}回・平均${Math.round(s.avgDrop * 100)}%減速・損失約${Math.round(lossS)}m (比較艇 ${ref.events.length}回・${Math.round(lossR)}m)` },
     ];
     const worst = [...parts].sort((a, b) => b.v - a.v)[0];
-    // 原因別
-    const byCause = Object.entries(s.lossEv).filter(([, x]) => x.n > 0).sort((a, b) => b[1].lost - a[1].lost);
+
     // 順位変動: レグごと
     const legRows = [];
     let prev = s.startRank ?? s.gunRank;
@@ -325,52 +535,51 @@ export function openReview(rec, o) {
       prev = m.rank;
     });
     if (s.final && prev != null && (!s.legMarks.length || s.legMarks[s.legMarks.length - 1].leg < o.legs.length - 1)) legRows.push({ leg: legName(o.legs.length - 1), from: prev, to: s.final, t: s.finishTime });
-    // 20秒単位で大きく順位が動いた場面
-    const swings = [];
-    const tr = s.track.filter((p) => p.t >= 0);
-    for (let i = 20; i < tr.length; i += 10) {
-      const dr = tr[i].rank - tr[i - 20].rank;
-      if (Math.abs(dr) >= 2) {
-        const evs = s.events.filter((e) => e.t >= tr[i - 20].t && e.t <= tr[i].t);
-        const cause = dr < 0 ? '追い上げ' : evs.length ? evs.sort((a, b) => b.lost - a.lost)[0].cause : '艇速・コース差';
-        swings.push({ t0: tr[i - 20].t, t1: tr[i].t, dr, cause });
-      }
-    }
-    // 重複をまとめる
-    const sw = [];
-    for (const w of swings) { const l = sw[sw.length - 1]; if (l && w.t0 <= l.t1 && Math.sign(w.dr) === Math.sign(l.dr)) { if (Math.abs(w.dr) > Math.abs(l.dr)) Object.assign(l, w); } else sw.push({ ...w }); }
-    const fmtT = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
     const summary = isRefSelf
       ? `${name}がトップ。2位との差の内訳を表示しています。`
       : worst.v > 1.5
-        ? `${name}が比較艇(${ref.isPlayer ? 'あなた' : o.nameOf(ref.boat)}・${ref.final}位)に負けた最大の要因は「${worst.k}」です。`
+        ? `${name}が比較艇(${refName}・${ref.final}位)に負けた最大の要因は「${worst.k}」です。`
         : `比較艇との差は小さく、特定の大きな要因はありません。`;
+
+    const ws = rec.windSummary || { blowSideTxt: '記録なし', shifts: [] };
 
     $('rvAnalysis').innerHTML = `
       <div class="rvLbl">分析: ${name} ${s.status || s.final + '位'}</div>
       <p class="rvSummary">${summary}</p>
       <div class="rvSubLbl">比較艇との時間差の内訳 (+は遅れ)</div>
       <table class="rvMini">${parts.map((p) => `<tr class="${p === worst && p.v > 1.5 ? 'hl' : ''}"><th>${p.k}</th><td class="rvNum ${p.v > 0 ? 'bad' : 'good'}">${sec(p.v)}</td></tr><tr class="rvDetail"><td colspan="2">${p.d}</td></tr>`).join('')}</table>
-      <div class="rvSubLbl">減速の原因</div>
-      ${byCause.length ? `<table class="rvMini">${byCause.map(([k, x]) => `<tr><th>${k}</th><td class="rvNum">${x.n}回 / 約${Math.round(x.lost)}m</td></tr>`).join('')}</table>` : '<p class="rvNote">大きな減速はありませんでした。</p>'}
-      <p class="rvNote">ブランケット ${Math.round(s.blkT)}秒・バックウインド ${Math.round(s.backT)}秒 (風速低下による損失 約${Math.round(s.lossBlk + s.lossBack)}m)、波による損失 約${Math.round(s.lossWave)}m、タック/ジャイブ ${s.tacks}回</p>
+      <div class="rvSubLbl">艇速・平均角度・マニューバー内訳 (比較艇: ${refName})</div>
+      <table class="rvMini">
+        <tr><th>上り平均艇速 / 平均角度</th><td class="rvNum">${fmtKt2(s.avgUpV)} / ${fmtAng2(s.avgUpAng)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgUpV)} / ${fmtAng2(ref.avgUpAng)})</span></td></tr>
+        <tr><th>下り平均艇速 / 平均角度</th><td class="rvNum">${fmtKt2(s.avgDnV)} / ${fmtAng2(s.avgDnAng)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgDnV)} / ${fmtAng2(ref.avgDnAng)})</span></td></tr>
+        <tr><th>リーチング平均艇速</th><td class="rvNum">${fmtKt2(s.avgRcV)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgRcV)})</span></td></tr>
+        <tr><th>タック数 / ジャイブ数</th><td class="rvNum">タック ${s.tacks}回 / ジャイブ ${s.gybes}回 <span class="rvDim">(比較艇 ${ref.tacks}回 / ${ref.gybes}回)</span></td></tr>
+      </table>
+      <p class="rvNote">ブランケット ${Math.round(s.blkT)}秒・バックウインド ${Math.round(s.backT)}秒 (損失 約${Math.round(s.lossBlk + s.lossBack)}m)、波による損失 約${Math.round(s.lossWave)}m</p>
       <div class="rvSubLbl">レグごとの順位</div>
       ${legRows.length ? `<table class="rvMini">${legRows.map((r) => { const d = r.from - r.to; return `<tr><th>${r.leg}</th><td class="rvNum">${r.from ?? '−'}→${r.to}位 <span class="${d > 0 ? 'good' : d < 0 ? 'bad' : ''}">${d > 0 ? '▲' + d : d < 0 ? '▼' + -d : '±0'}</span></td></tr>`; }).join('')}</table>` : '<p class="rvNote">記録なし</p>'}
-      <div class="rvSubLbl">順位が大きく動いた場面</div>
-      ${sw.length ? `<table class="rvMini">${sw.slice(0, 6).map((w) => `<tr data-t="${w.t1}" class="rvJump"><th>${fmtT(w.t0)}〜${fmtT(w.t1)}</th><td class="rvNum"><span class="${w.dr < 0 ? 'good' : 'bad'}">${w.dr < 0 ? '▲' + -w.dr : '▼' + w.dr}</span> ${w.cause}</td></tr>`).join('')}</table>` : '<p class="rvNote">大きな変動はありませんでした。</p>'}
+      <div class="rvSubLbl">海面全体のブロー傾向・風の振れ履歴</div>
+      <p class="rvNote">${ws.blowSideTxt}</p>
+      ${ws.shifts.length ? `<table class="rvMini">${ws.shifts.map((w) => `<tr data-t="${w.t}" class="rvJump"><th>${w.timeStr}</th><td class="rvNum">${w.desc} <span class="rvDim">[${w.kind}]</span></td></tr>`).join('')}</table>` : '<p class="rvNote">大きな風向シフトはありませんでした。</p>'}
     `;
     for (const el of $('rvAnalysis').querySelectorAll('.rvJump')) el.onclick = () => { tNow = +el.dataset.t; $('rvT').value = tNow; render(); };
   }
 
   function render() {
     for (const tr of rows.querySelectorAll('tr')) tr.classList.toggle('sel', +tr.dataset.id === sel);
-    const t = Math.max(-40, tNow);
-    $('rvTLbl').textContent = t < 0 ? `−0:${String(Math.ceil(-t)).padStart(2, '0')}` : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    updateTimeAndLiveRank();
     drawMap(); drawRank(); analysis();
   }
 
-  $('rvT').oninput = (e) => { tNow = +e.target.value; playing = false; $('rvPlay').textContent = '再生'; drawMap(); drawRank(); const t = tNow; $('rvTLbl').textContent = t < 0 ? `−0:${String(Math.ceil(-t)).padStart(2, '0')}` : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`; };
+  $('rvT').oninput = (e) => {
+    tNow = +e.target.value;
+    playing = false;
+    $('rvPlay').textContent = '再生';
+    updateTimeAndLiveRank();
+    drawMap();
+    drawRank();
+  };
   $('rvPlay').onclick = () => {
     playing = !playing; $('rvPlay').textContent = playing ? '停止' : '再生';
     if (playing) {
@@ -379,8 +588,10 @@ export function openReview(rec, o) {
       const tick = (now) => {
         if (!playing || !document.body.contains(root)) return;
         tNow = Math.min(rec.endT, tNow + ((now - last) / 1000) * 20); last = now; // 20倍速
-        $('rvT').value = tNow; drawMap(); drawRank();
-        const t = tNow; $('rvTLbl').textContent = t < 0 ? `−0:${String(Math.ceil(-t)).padStart(2, '0')}` : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+        $('rvT').value = tNow;
+        updateTimeAndLiveRank();
+        drawMap();
+        drawRank();
         if (tNow >= rec.endT) { playing = false; $('rvPlay').textContent = '再生'; return; }
         raf = requestAnimationFrame(tick);
       };
