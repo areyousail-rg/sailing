@@ -44,7 +44,7 @@ export class AI {
     this.goDist = 9 + rng() * 8;
     this.creepExp = 1.4 + rng() * 0.8;
     this.gap0 = null;
-    this.avoidUntil = 0; this.avoidH = 0;
+    this.avoidUntil = -999; this.avoidH = 0;
     this.roundR = 6.6 + rng() * 1.2; // マーク進入半径(ワイドイン)
     this.roundROut = 2.50;            // マーク脱出半径(タイトアウト)
     this.rp = null;
@@ -61,8 +61,8 @@ export class AI {
   runUpTime(L) {
     const b = this.b;
     const wKt = BASE_WIND_KT * (b.windF || 1);
-    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
-    const tau = 2.4, v0 = b.v;
+    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill * 0.82;
+    const tau = 2.6, v0 = Math.max(0, b.v * 0.85);
     const dist = (T) => vT * T - (vT - v0) * tau * (1 - Math.exp(-T / tau));
     let lo = 0, hi = 60;
     for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (dist(mid) < L) lo = mid; else hi = mid; }
@@ -567,15 +567,27 @@ export class AI {
       if (b.pole) b.setPole(false);
       heading = this.headingFor(COURSE_MODE === 'upwind' ? { a: 665, c: 55 } : { a: -170, c: -40 }, t, false);
     } else if (prestart) {
-      // プリスタート: 強いCP艇は上側の端っこ(本部船すぐ内側 c=+60〜+69)や有利端からもスタートできるよう制御
-      const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 6, LINE_HALF - 5);
-      const gap = Math.max(0, lineA(b.c) - b.a);
-      const tw = Math.min(b.twa, 1.3);
-      const upf = Math.max(0.35, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
-      if (this.gap0 === null) this.gap0 = gap;
-      if (!this.go && t >= this.tc - this.runUpTime(gap / upf)) this.go = true;
-      if (this.go) { b.throttle = 1; b.sheet = sheetOpt(b.twa); }
-      else {
+      // プリスタート: 強いCP艇は上側の端っこ(本部船すぐ内側 c=+58〜+71)や有利端からも確実にスタートできるよう、
+      // 本部船よりも右側(c > LINE_HALF)からスターボードタックでアプローチして本部船スターンをかわして上端へ入る
+      const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 6, LINE_HALF - 4.0);
+      const lineAtTgt = lineA(tgtC);
+      const lineHere = lineA(clamp(b.c, -LINE_HALF, LINE_HALF));
+      const targetLineA = b.c > LINE_HALF - 8 ? lineAtTgt : Math.min(lineHere, lineAtTgt + 2.5);
+      const gap = targetLineA - b.a;
+      const posGap = Math.max(0, gap);
+      const tw = Math.min(b.twa, 1.1);
+      const upf = Math.max(0.48, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
+      if (this.gap0 === null) this.gap0 = Math.max(16, posGap);
+      if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -9.0 || posGap > 9.0)) this.go = true;
+      if (gap < 4.5 && t < -2.8) this.go = false; // 早すぎるライン到達(リコール)を防止
+      if (this.go) {
+        b.throttle = 1;
+        b.sheet = sheetOpt(b.twa);
+      } else if (gap < 4.5 && t < -2.2) {
+        // ライン直前まで早く着きすぎた場合はセールを出してシバーし、ライン手前で待機
+        b.throttle = 0.02;
+        b.sheet = 0.06;
+      } else {
         const vT = polar((this.closeAngle * 180) / Math.PI) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
         const goL = Math.min(this.goDist, this.gap0);
         const tGo = this.tc - this.runUpTime(goL / upf);
@@ -583,22 +595,40 @@ export class AI {
         const f = clamp((t - START_T) / span, 0, 1), p = this.creepExp;
         const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(f, p));
         const dDdt = (Math.max(0, this.gap0 - goL) * p * Math.pow(Math.max(f, 1e-3), p - 1)) / span;
-        const vDes = Math.max(0, dDdt + 0.24 * (gap - D)) / upf;
-        b.throttle = clamp(vDes / Math.max(0.1, vT), 0.06, 0.88);
-        b.sheet = Math.max(0, sheetOpt(b.twa) - 0.05 - 0.25 * (1 - b.throttle));
+        // 低速時の下流れ(1.5倍リーウェイ＋風圧ドリフト)で後ろ(-a)に流されないようドリフト補償速度を加算
+        const driftComp = posGap > D - 1.5 ? 0.50 * SPEED_SCALE * (b.windF || 1) : 0;
+        const vDes = Math.max(0, dDdt + 0.36 * (posGap - D) + driftComp) / upf;
+        b.throttle = posGap < D - 1.2
+          ? clamp(vDes / Math.max(0.1, vT), 0.05, 0.30)
+          : clamp(vDes / Math.max(0.1, vT), 0.34, 0.90);
+        // セールはラインに近すぎるとき(posGap < D - 1.2)だけ緩めて減速し、通常アプローチ中は最適トリムで下流れを抑える
+        b.sheet = posGap < D - 1.2
+          ? Math.max(0.12, sheetOpt(b.twa) - 0.38)
+          : sheetOpt(b.twa);
       }
       const W = b.windFrom;
-      const cPred = b.c - gap * Math.tan(this.closeAngle) * 0.72;
-      const preAngle = b.tack === 1 ? clamp(this.closeAngle + (cPred - tgtC) * 0.014, 0.64, 0.94) : this.closeAngle;
+      // スターボードタック(左進)で号砲時に見込まれる横座標cPred (残り時間の下流れ＋前進による左移動を考慮)
+      const driftLeft = Math.max(0, -t - 8) * 0.16;
+      const cPred = b.c - posGap * Math.tan(this.closeAngle) * 0.90 - driftLeft;
+      let preAngle = this.closeAngle;
+      if (b.tack === 1) {
+        // 目標tgtCより右(+c)に余裕がある時は少しだけベアして左へ流し、左(-c)へ流れすぎそうな時は少しピンチして上側を維持
+        preAngle = clamp(this.closeAngle + (cPred - tgtC) * 0.012, this.closeAngle - 0.06, this.closeAngle + 0.14);
+        if (b.c > LINE_HALF - 2.5 && b.a > MARKS.com.a - 4.5) {
+          // 本部船のすぐ真下に迫った時だけ少しベアして本部船の左(ライン内側)へかわす
+          preAngle = Math.max(preAngle, this.closeAngle + 0.22);
+        }
+      }
       heading = wrap(W - b.tack * preAngle);
       if (t - this.lastTack > 9) {
         let wantTack = false;
-        // 右舷タック(左へ進む)で目標tgtCより左へ流れすぎそうならポートに返して上側(右/+c)へ戻す
-        if (b.tack === 1 && (b.c < -LINE_HALF + 8 || (t < -9 && cPred < tgtC - 6))) wantTack = true;
-        // 左舷タック(右へ進む)で目標tgtCの風上レイラインまで十分上がったか、残り7秒を切ったら右舷タックへ返す
-        // ただし本部船の外側(c > LINE_HALF - 5)へ出ないよう手前で確実に返す
-        if (b.tack === -1 && (b.c > LINE_HALF - 6 || cPred >= tgtC + 4 || t > -6.5)) wantTack = true;
-        if (wantTack && !this.crowded(6.0) && !this.nearObstacle(7)) { this.lastTack = t; b.startManeuver('tack'); }
+        // 右舷タック(左へ進む)で目標tgtCより大きく左へ流れすぎた場合のみポートに返して上側(右/+c)へ上り直す
+        if (b.tack === 1 && (b.c < -LINE_HALF + 8 || (t < -15 && cPred < tgtC - 11))) wantTack = true;
+        // 左舷タック(右へ進む): 目標レイラインに戻ったか残り10秒を切ったら必ずスターボードタックへ返す
+        const maxPortC = tgtC >= 48 ? LINE_HALF + 32 : LINE_HALF - 6;
+        if (b.tack === -1 && (b.c > maxPortC || cPred >= tgtC + 2 || t > -10.5)) wantTack = true;
+        const crowdLim = (b.tack === -1 && t > -11) ? 3.2 : 5.5;
+        if (wantTack && !this.crowded(crowdLim) && !this.nearObstacle(6.5)) { this.lastTack = t; b.startManeuver('tack'); }
       }
     } else if (b.ocs) {
       b.throttle = 1;
