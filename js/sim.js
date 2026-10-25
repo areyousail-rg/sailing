@@ -648,26 +648,26 @@ export class Boat {
       const byLeePenalty = 0.10 * near180 + 0.26 * clamp(over180 / 18, 0, 1); // 180°超で最大約36%減速
       polarV *= (1 - byLeePenalty);
     }
-    // ランチャー: 下レグ(深い角度)でジブが開いて若干速くなる。リーチより上では逆効果
-    const poleF = 1 + this.poleK * (0.065 * smoothstep(1.85, 2.6, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
+    // ランチャー: 下レグ(深い角度)でジブが開き、センターボード引き上げ(抵抗減)＆フォアステイ緩和で速くなる。リーチより上では逆効果
+    const poleF = 1 + this.poleK * (0.072 * smoothstep(1.80, 2.55, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
     let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : 0.18) * Math.abs(steer)) * this.throttle;
-    // 波: 艇速がない時は波にしっかりはたかれ、クローズで艇速がある時は少し抑え目に、リーチング等で艇速が出ている時は波頭を切るためはたかれにくくする
+    // 波: 艇速がない時はしっかり波にはたかれ、艇速がある時や下レグでは気にならない程度に抑える
     {
       const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));
       this.waveH = ws.h; this.waveSlope = ws.slope;
       const Hn = SEA.H / 0.5;
       const climb = clamp(ws.slope / SEA.maxSlope, -1, 1);
-      const speedNorm = clamp(Math.abs(this.v) / (2.0 * SPEED_SCALE), 0, 1);
-      const slowFactor = 1 - speedNorm; // 艇速がない時は 1.0 (従来通りはたかれる)
-      const isReach = smoothstep(0.92, 1.28, twa) * (1 - smoothstep(2.35, 2.75, twa));
-      const upw = 1 - smoothstep(0.95, 1.65, twa);
+      const speedNorm = clamp(Math.abs(this.v) / (1.85 * SPEED_SCALE), 0, 1);
+      const slowFactor = Math.pow(1 - speedNorm, 1.35); // 艇速がない時は 1.0 (大きくはたかれる)、艇速が出ると急速に小さくなる
+      const downFactor = smoothstep(1.05, 1.70, twa);   // 下レグ・リーチングでは 1.0
+      const upw = 1 - downFactor;
       const down = smoothstep(1.15, 1.9, twa);
-      const poundScale = (0.56 + 0.44 * slowFactor) * (1 - 0.72 * isReach * speedNorm);
-      let wf = 1 - upw * 0.10 * Hn * SEA.steep * (0.55 + 0.9 * Math.max(0, climb)) * poundScale;
-      if (turning) wf -= 0.08 * Hn * SEA.steep * (0.65 + 0.35 * slowFactor); // 波の中でのタックは行き足が止まりやすい
+      const poundScale = (0.28 + 1.05 * slowFactor) * (1 - 0.80 * downFactor * speedNorm);
+      let wf = 1 - upw * 0.12 * Hn * SEA.steep * (0.55 + 0.95 * Math.max(0, climb)) * poundScale;
+      if (turning) wf -= 0.09 * Hn * SEA.steep * (0.55 + 0.55 * slowFactor); // 波の中でのタック・低速回頭は行き足が止まりやすい
       const windOk = clamp((localWindKt - 5.5) / 6, 0, 1);
       wf += down * SEA.surf * Math.max(0, -climb) * (0.3 + 0.7 * windOk) * clamp(this.v / (2.2 * SPEED_SCALE), 0.3, 1);
-      if (SEA.type === 'chop') wf -= down * 0.035 * Hn * (0.5 + 0.5 * Math.abs(climb)) * (0.22 + 0.78 * slowFactor) * (1 - 0.75 * isReach * speedNorm);
+      if (SEA.type === 'chop') wf -= down * 0.032 * Hn * (0.5 + 0.5 * Math.abs(climb)) * slowFactor;
       this.waveF = wf;
       this.waveLoss = Math.max(0, 1 - wf);
       target *= wf;
@@ -675,13 +675,13 @@ export class Boat {
       this.waveSlamCD = Math.max(0, (this.waveSlamCD || 0) - dt);
       const prevClimb = this._prevClimb || 0;
       this._prevClimb = climb;
-      if (this.waveSlamCD <= 0 && SEA.steep >= 0.65 && Math.abs(this.v) > 0.35) {
+      if (this.waveSlamCD <= 0 && SEA.steep >= 0.65 && Math.abs(this.v) > 0.25) {
         const drop = prevClimb - climb;
-        if ((prevClimb > 0.24 && drop > 0.18) || (climb > 0.58 && prevClimb <= 0.58)) {
-          const slam = clamp((drop * 0.85 + Math.max(0, climb) * 0.45) * (SEA.steep / 1.1) * (1 - 0.65 * isReach * speedNorm), 0, 1);
-          if (slam > 0.22) {
+        if ((prevClimb > 0.22 && drop > 0.16) || (climb > 0.54 && prevClimb <= 0.54)) {
+          const slam = clamp((drop * 0.85 + Math.max(0, climb) * 0.48) * (SEA.steep / 1.05) * (0.45 + 0.75 * slowFactor) * (1 - 0.78 * downFactor * speedNorm), 0, 1);
+          if (slam > 0.20) {
             this.waveSlam = slam;
-            this.waveSlamCD = 1.25 + Math.random() * 1.1;
+            this.waveSlamCD = 1.15 + Math.random() * 1.0;
           }
         }
       }
