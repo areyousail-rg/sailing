@@ -12,8 +12,10 @@
 #review .rvHint{font-weight:400;letter-spacing:0;color:var(--dim,#5c6873);margin-left:8px}
 #review .rvSubLbl{font-size:.62rem;font-weight:600;letter-spacing:.12em;color:var(--mute,#8794a0);margin:14px 0 4px;padding-top:8px;border-top:1px solid var(--line,#28343e)}
 #review canvas{display:block;width:100%;height:auto;border:1px solid var(--line,#28343e);border-radius:2px}
-#review .rvScrub{display:flex;align-items:center;gap:10px;margin-top:8px}
-#review .rvScrub input{flex:1;accent-color:var(--accent,#f2c200)}
+#review .rvScrub{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-top:8px}
+#review .rvScrub input{flex:1;min-width:140px;accent-color:var(--accent,#f2c200)}
+#review .rvLiveRank{font-size:.72rem;color:var(--mute,#8794a0);background:var(--bg,#0e1419);border:1px solid var(--line,#28343e);border-radius:2px;padding:3px 8px;margin-left:auto}
+#review .rvDim{color:var(--dim,#5c6873);font-size:.72rem;margin-left:4px}
 #review .rvNum{font-family:var(--f-num,sans-serif);font-variant-numeric:tabular-nums;white-space:nowrap}
 #review .rvSummary{font-size:.9rem;line-height:1.55;margin:2px 0 4px}
 #review .rvNote{font-size:.76rem;color:var(--mute,#8794a0);line-height:1.5;margin:6px 0 0}
@@ -26,7 +28,7 @@
 #review .rvJump:hover th{text-decoration:underline}
 #review .good{color:var(--good,#2fae67)}
 #review .bad{color:var(--bad,#e0464b)}
-#review .rvTable{width:100%;border-collapse:collapse;font-size:.8rem;min-width:720px}
+#review .rvTable{width:100%;border-collapse:collapse;font-size:.8rem;min-width:980px}
 #review .rvTable th{position:static;background:none;text-align:left;font-size:.62rem;font-weight:600;letter-spacing:.1em;color:var(--mute,#8794a0);padding:6px 8px;border-bottom:1px solid var(--line-2,#3b4955)}
 #review .rvTable td{padding:6px 8px;border-bottom:1px solid var(--line,#28343e);background:none}
 #review .rvTable tbody tr{cursor:pointer}
