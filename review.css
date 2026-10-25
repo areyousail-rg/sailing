@@ -1,0 +1,42 @@
+/* 振り返り画面 (style.css のデザイン変数に準拠) */
+#review{position:fixed;inset:0;z-index:60;background:var(--bg,#0e1419);color:var(--txt,#e9edf0);font-family:var(--f-ui,sans-serif);overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 24px}
+#review .rvHead{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg,#0e1419);border-bottom:1px solid var(--line,#28343e)}
+#review .rvTitle{font-size:1rem;font-weight:700;letter-spacing:.04em;border-left:3px solid var(--accent,#f2c200);padding-left:8px}
+#review .rvSub{font-size:.72rem;font-weight:400;color:var(--mute,#8794a0);margin-left:10px}
+#review .rvClose,#review .rvBtn{background:transparent;color:var(--txt,#e9edf0);border:1px solid var(--line-2,#3b4955);border-radius:var(--r,3px);padding:6px 14px;font:inherit;font-size:.82rem;cursor:pointer}
+#review .rvClose:hover,#review .rvBtn:hover{background:var(--bg-3,#1e2932)}
+#review .rvBody{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:12px;padding:12px 16px 0}
+#review .rvBlock{background:var(--bg-2,#151d24);border:1px solid var(--line,#28343e);border-radius:var(--r,3px);padding:10px 12px;margin-bottom:12px}
+#review .rvTableWrap{margin:0 16px;overflow-x:auto}
+#review .rvLbl{font-size:.64rem;font-weight:600;letter-spacing:.14em;color:var(--mute,#8794a0);margin-bottom:8px}
+#review .rvHint{font-weight:400;letter-spacing:0;color:var(--dim,#5c6873);margin-left:8px}
+#review .rvSubLbl{font-size:.62rem;font-weight:600;letter-spacing:.12em;color:var(--mute,#8794a0);margin:14px 0 4px;padding-top:8px;border-top:1px solid var(--line,#28343e)}
+#review canvas{display:block;width:100%;height:auto;border:1px solid var(--line,#28343e);border-radius:2px}
+#review .rvScrub{display:flex;align-items:center;gap:10px;margin-top:8px}
+#review .rvScrub input{flex:1;accent-color:var(--accent,#f2c200)}
+#review .rvNum{font-family:var(--f-num,sans-serif);font-variant-numeric:tabular-nums;white-space:nowrap}
+#review .rvSummary{font-size:.9rem;line-height:1.55;margin:2px 0 4px}
+#review .rvNote{font-size:.76rem;color:var(--mute,#8794a0);line-height:1.5;margin:6px 0 0}
+#review .rvMini{width:100%;border-collapse:collapse;font-size:.8rem}
+#review .rvMini th{text-align:left;font-weight:500;color:var(--txt,#e9edf0);padding:4px 6px 4px 0}
+#review .rvMini td{text-align:right;padding:4px 0}
+#review .rvMini tr.hl th,#review .rvMini tr.hl td{color:var(--accent,#f2c200);font-weight:700}
+#review .rvMini tr.rvDetail td{text-align:left;font-size:.7rem;color:var(--dim,#5c6873);padding:0 0 6px;border-bottom:1px solid var(--line,#28343e)}
+#review .rvJump{cursor:pointer}
+#review .rvJump:hover th{text-decoration:underline}
+#review .good{color:var(--good,#2fae67)}
+#review .bad{color:var(--bad,#e0464b)}
+#review .rvTable{width:100%;border-collapse:collapse;font-size:.8rem;min-width:720px}
+#review .rvTable th{position:static;background:none;text-align:left;font-size:.62rem;font-weight:600;letter-spacing:.1em;color:var(--mute,#8794a0);padding:6px 8px;border-bottom:1px solid var(--line-2,#3b4955)}
+#review .rvTable td{padding:6px 8px;border-bottom:1px solid var(--line,#28343e);background:none}
+#review .rvTable tbody tr{cursor:pointer}
+#review .rvTable tbody tr:hover td{background:var(--bg-3,#1e2932)}
+#review .rvTable tr.me td{color:var(--accent,#f2c200)}
+#review .rvTable tr.sel td{background:var(--bg-3,#1e2932)}
+#review .rvTable tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--accent,#f2c200)}
+#review .rvSw{display:inline-block;width:8px;height:8px;border-radius:1px;margin-right:6px;vertical-align:middle}
+@media (max-width:820px){
+  #review .rvBody{grid-template-columns:1fr;padding:10px 10px 0}
+  #review .rvTableWrap{margin:0 10px}
+  #review .rvHead{padding:8px 10px}
+}
