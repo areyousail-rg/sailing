@@ -173,16 +173,73 @@
         <span class="orientHowTo">HOW TO PLAY</span>
         <span class="orientSubTitle">オリエンテーション</span>
       </div>
-      <div class="orientStepDots" id="orientDots"></div>
       <div class="orientTopActions">
-        <button id="orientRaceBtn" class="orientBtnRace" type="button">今すぐレースへ</button>
-        <button id="orientExitBtn" class="orientBtnClose" type="button">スタート画面へ戻る [ESC]</button>
+        <button id="orientPauseBtn" class="orientBtnPause" type="button">停止</button>
+        <button id="orientExitBtn" class="orientBtnClose" type="button">終了</button>
       </div>
     </div>
 
     <div id="orientFlash" class="orientFlash"></div>
+    <svg id="orientPointerSvg" class="orientPointerSvg" aria-hidden="true"></svg>
+    <div id="orientCallout" class="orientCallout hidden">
+      <span id="orientCalloutBadge" class="orientCalloutBadge">注目 UI</span>
+      <span id="orientCalloutText" class="orientCalloutText"></span>
+    </div>
 
-    <div class="orientBottomBar">
+    <div id="orientReviewDemo" class="orientReviewDemo hidden" aria-hidden="true">
+      <div class="orientRevCard">
+        <div class="orientRevHeader">
+          <div>
+            <span class="eyebrow">POST-RACE REVIEW</span>
+            <h3>レース振り返り・航跡リプレイ画面</h3>
+          </div>
+          <span class="orientRevCloseMock">閉じる</span>
+        </div>
+        <div class="orientRevGrid">
+          <div class="orientRevMapPane" id="orientRevMapTarget">
+            <div class="orientRevMapTitle">航跡リプレイ＆風向シフト履歴</div>
+            <div class="orientRevMapMock">
+              <svg viewBox="0 0 240 150" class="orientRevSvg">
+                <rect width="240" height="150" fill="#091929"/>
+                <line x1="55" y1="128" x2="175" y2="128" stroke="#fde047" stroke-width="2" stroke-dasharray="4 3"/>
+                <circle cx="115" cy="24" r="5" fill="#ff7a1a"/>
+                <text x="124" y="27" fill="#fff" font-size="9" font-weight="bold">1マーク</text>
+                <path d="M 148 128 L 82 76 L 115 24" stroke="#ff5a1f" stroke-width="2.5" fill="none"/>
+                <path d="M 110 128 L 154 78 L 115 24" stroke="#38bdf8" stroke-width="1.8" stroke-dasharray="3 2" fill="none"/>
+                <circle cx="82" cy="76" r="4" fill="#ff5a1f"/>
+              </svg>
+              <div class="orientRevRankMini">
+                <b>再生時点の順位</b>
+                <div>1. あなた</div>
+                <div>2. JPN 29410</div>
+                <div>3. ITA 31022</div>
+              </div>
+            </div>
+            <div class="orientRevPlayBar" id="orientRevPlayTarget">
+              <span class="orientRevPlayBtn">▶ 再生</span>
+              <div class="orientRevScrub"><div class="orientRevScrubFill"></div></div>
+              <span class="orientRevTime">01:24 / 04:12</span>
+            </div>
+          </div>
+          <div class="orientRevStatsPane" id="orientRevStatsTarget">
+            <div class="orientRevMapTitle">各艇パフォーマンス比較（艇速・角度・距離・スタート）</div>
+            <table class="orientRevTable">
+              <thead>
+                <tr><th>順位</th><th>艇</th><th>スタート</th><th>走行距離</th><th>上り艇速/角度</th><th>下り艇速/角度</th><th>T/J</th></tr>
+              </thead>
+              <tbody>
+                <tr class="me"><td>1</td><td>あなた</td><td>2位</td><td>1,420m</td><td>4.62kt / 41.80°</td><td>5.84kt / 142.50°</td><td>6 / 3</td></tr>
+                <tr><td>2</td><td>JPN 29410</td><td>1位</td><td>1,468m</td><td>4.58kt / 42.40°</td><td>5.71kt / 144.10°</td><td>8 / 4</td></tr>
+                <tr><td>3</td><td>ITA 31022</td><td>5位</td><td>1,495m</td><td>4.51kt / 43.10°</td><td>5.66kt / 141.20°</td><td>9 / 4</td></tr>
+              </tbody>
+            </table>
+            <div class="orientRevWindNote">🌬 海面ブロー・振れ履歴: 左海面ブロー優勢 ／ 01:15 右へ+7°シフト ／ 02:40 左へ-5°シフト</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="orientCardWrap">
       <div id="orientCard" class="orientCard">
         <div class="orientStepHead">
           <div class="orientStepBadge">
@@ -199,11 +256,6 @@
         <p id="orientBody" class="orientBody"></p>
         <div class="orientFooter">
           <div class="orientTimerTrack"><div id="orientTimerFill" class="orientTimerFill"></div></div>
-          <div class="orientNavBtns">
-            <button id="orientPrevBtn" class="orientNavBtn" type="button">◀ 前へ</button>
-            <button id="orientAutoBtn" class="orientNavBtn active" type="button">自動送り ON</button>
-            <button id="orientNextBtn" class="orientNavBtn primary" type="button">次へ ▶</button>
-          </div>
         </div>
       </div>
     </div>
