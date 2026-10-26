@@ -11,7 +11,7 @@ export function setWindDir(deg) {
 export const toWorld = (a, c) => ({ x: U.x * a + Rv.x * c, z: U.z * a + Rv.z * c });
 export const toCourse = (x, z) => ({ a: x * U.x + z * U.z, c: x * Rv.x + z * Rv.z });
 
-export const LINE_HALF = 75; // スタートライン半幅
+export const LINE_HALF = 50; // スタートライン半幅 (従来の2/3の長さ = 全幅100m)
 // 実際のスタートラインは風に対して完全な直角ではなく、どちらかのエンドが少し有利になる。
 // LINE_SKEW>0: 本部船(上/右)側が風上=上有利 / <0: ピン(下/左)側が風上=下有利。
 // 偏りが出ないよう、前回と逆サイドになる確率を高めつつ約50/50の確率で上有利・下有利を決定する。
