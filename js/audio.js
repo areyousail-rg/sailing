@@ -503,115 +503,124 @@ export function sailFlog(vol = 0.8) {
   og.gain.setValueAtTime(0.0001, t0 + 0.06); og.gain.linearRampToValueAtTime(0.28 * vol, t0 + 0.09); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
   o.connect(og); og.connect(master); o.start(t0 + 0.06); o.stop(t0 + 0.32);
 }
-// ランチャー上げ下げの実艇音「シャキンッ！＋バサッ！」:
-// ①アルミポールとステンレスリングが擦れる鮮明な金属スライド音「シャ」→
-// ②ストッパー金具・ステンレスフックとアルミパイプがぶつかり共鳴するクリアな高域金属音「キンッ！」→ ③ジブが張るダクロン布の「バサッ」
-export function poleClank(up = true, vol = 0.85) {
+// ランチャー上げ下げの実艇音「シャキンーーッ！＋バサッ！」:
+// ①アルミポールとステンレスリングが擦れる長めで鮮明な金属スライド音「シャーー」→
+// ②ストッパー金具・ステンレスフックとアルミパイプがぶつかり共鳴する伸びのある高域金属音「キーンッ！」→ ③ジブが風をはらむ明確なダクロン布音「バサッ！」
+export function poleClank(up = true, vol = 0.88) {
   if (!ctx || vol <= 0.02) return;
   const t = ctx.currentTime;
-  const slideDur = 0.088;
+  const slideDur = up ? 0.195 : 0.105;
 
-  // 1) 「シャ」: アルミポールがステンレス製ランチャーリングを高速で滑る金属擦過音(高域レゾナンス付き)
+  // 1) 「シャーー」: アルミポールがステンレス製ランチャーリングを滑る長めの金属擦過音(高域レゾナンス付き)
   const sSlide = ctx.createBufferSource(); sSlide.buffer = noiseBuf;
-  sSlide.playbackRate.value = up ? 1.18 : 0.96;
-  const bpSlide = ctx.createBiquadFilter(); bpSlide.type = 'bandpass'; bpSlide.Q.value = 4.2;
-  bpSlide.frequency.setValueAtTime(up ? 2600 : 4800, t);
-  bpSlide.frequency.exponentialRampToValueAtTime(up ? 5800 : 2300, t + slideDur);
+  sSlide.playbackRate.value = up ? 1.12 : 0.96;
+  const bpSlide = ctx.createBiquadFilter(); bpSlide.type = 'bandpass'; bpSlide.Q.value = up ? 4.8 : 4.0;
+  bpSlide.frequency.setValueAtTime(up ? 2350 : 4800, t);
+  bpSlide.frequency.exponentialRampToValueAtTime(up ? 6200 : 2300, t + slideDur);
   const gSlide = ctx.createGain();
   gSlide.gain.setValueAtTime(0.0001, t);
-  gSlide.gain.linearRampToValueAtTime(0.52 * vol, t + 0.010);
-  gSlide.gain.setValueAtTime(0.48 * vol, t + slideDur - 0.012);
-  gSlide.gain.exponentialRampToValueAtTime(0.0001, t + slideDur + 0.020);
+  gSlide.gain.linearRampToValueAtTime(0.56 * vol, t + 0.016);
+  gSlide.gain.setValueAtTime(0.52 * vol, t + slideDur - 0.018);
+  gSlide.gain.exponentialRampToValueAtTime(0.0001, t + slideDur + 0.032);
   sSlide.connect(bpSlide); bpSlide.connect(gSlide); gSlide.connect(master);
-  sSlide.start(t, Math.random() * 1.2); sSlide.stop(t + slideDur + 0.028);
+  sSlide.start(t, Math.random() * 1.2); sSlide.stop(t + slideDur + 0.040);
 
-  // アルミチューブがリングを滑る金属倍音スイープ(「シャ」に金属の質感を付与)
-  for (const [f0, f1, a] of [[2400, 3900, 0.14], [3850, 6200, 0.12]]) {
+  // アルミチューブがリングを滑る金属倍音スイープ(長めの「シャーー」にリアルな金属管の擦れ感を付与)
+  for (const [f0, f1, a] of [[2200, 4150, 0.16], [3600, 6450, 0.14], [5100, 8200, 0.08]]) {
     const om = ctx.createOscillator(), ogm = ctx.createGain();
     om.type = 'sine';
     om.frequency.setValueAtTime(up ? f0 : f1, t);
     om.frequency.exponentialRampToValueAtTime(up ? f1 : f0, t + slideDur);
     ogm.gain.setValueAtTime(0.0001, t);
-    ogm.gain.linearRampToValueAtTime(a * vol, t + 0.012);
-    ogm.gain.exponentialRampToValueAtTime(0.0001, t + slideDur);
+    ogm.gain.linearRampToValueAtTime(a * vol, t + 0.018);
+    ogm.gain.setValueAtTime(a * 0.9 * vol, t + slideDur * 0.78);
+    ogm.gain.exponentialRampToValueAtTime(0.0001, t + slideDur + 0.015);
     om.connect(ogm); ogm.connect(master);
-    om.start(t); om.stop(t + slideDur + 0.01);
+    om.start(t); om.stop(t + slideDur + 0.02);
   }
 
-  // 2) 「キンッ！」: アルミポール先端金具・ステンレスリング・カムクリートが噛み合う硬く澄んだ金属打撃＆高域非整数次倍音リング
-  const tk = t + slideDur * 0.85;
+  // 2) 「キーンッ！」: アルミポール先端金具・ステンレスリング・ストッパーが噛み合う硬く澄んだ金属打撃＆長めの高域余韻リング
+  const tk = t + slideDur * 0.84;
   const sClick = ctx.createBufferSource(); sClick.buffer = noiseBuf;
-  const hpClick = ctx.createBiquadFilter(); hpClick.type = 'bandpass'; hpClick.frequency.value = up ? 6200 : 5200; hpClick.Q.value = 3.2;
+  const hpClick = ctx.createBiquadFilter(); hpClick.type = 'bandpass'; hpClick.frequency.value = up ? 6300 : 5100; hpClick.Q.value = 3.5;
   const gClick = ctx.createGain();
   gClick.gain.setValueAtTime(0.0001, tk);
-  gClick.gain.linearRampToValueAtTime(0.68 * vol, tk + 0.0015);
-  gClick.gain.exponentialRampToValueAtTime(0.0001, tk + 0.024);
+  gClick.gain.linearRampToValueAtTime(0.72 * vol, tk + 0.0015);
+  gClick.gain.exponentialRampToValueAtTime(0.0001, tk + 0.032);
   sClick.connect(hpClick); hpClick.connect(gClick); gClick.connect(master);
-  sClick.start(tk, Math.random() * 1.0); sClick.stop(tk + 0.030);
+  sClick.start(tk, Math.random() * 1.0); sClick.stop(tk + 0.038);
 
-  // アルミパイプ＋ステンレス金具特有の非整数倍音モード(「キーン/キンッ」という鮮明な金属の響き)
+  // アルミパイプ＋ステンレス金具特有の非整数倍音モード(アップ時は余韻を約2倍長くして「シャキンーーッ！」を強調)
+  const ringMul = up ? 2.15 : 1.15;
   for (const [f, a, d, delay] of [
-    [1940, 0.24, 0.085, 0.0],
-    [2890, 0.34, 0.105, 0.0],
-    [4180, 0.36, 0.095, 0.002],
-    [5640, 0.28, 0.080, 0.002],
-    [7420, 0.20, 0.065, 0.004],
-    [9150, 0.12, 0.048, 0.004],
-    // 二段目のわずかな金具ラッチ音(「カチンッ」の立体感)
-    [3480, 0.22, 0.070, 0.018],
-    [5220, 0.20, 0.060, 0.018],
+    [1940, 0.26, 0.105, 0.0],
+    [2890, 0.38, 0.130, 0.0],
+    [4180, 0.40, 0.120, 0.002],
+    [5640, 0.30, 0.095, 0.002],
+    [7420, 0.22, 0.080, 0.004],
+    [9150, 0.14, 0.060, 0.004],
+    // 二段目の金具ラッチ音(「カチンッ」の立体感と余韻)
+    [3480, 0.25, 0.095, 0.024],
+    [5220, 0.22, 0.085, 0.024],
   ]) {
     const o = ctx.createOscillator(), og = ctx.createGain();
     o.type = 'sine';
     const tStart = tk + delay;
+    const dur = d * ringMul;
     const fStart = f * (up ? 1.0 : 0.90);
     o.frequency.setValueAtTime(fStart * 1.05, tStart);
-    o.frequency.exponentialRampToValueAtTime(fStart, tStart + 0.009);
+    o.frequency.exponentialRampToValueAtTime(fStart, tStart + 0.011);
     og.gain.setValueAtTime(0.0001, tStart);
-    og.gain.linearRampToValueAtTime(a * vol, tStart + 0.0012);
-    og.gain.exponentialRampToValueAtTime(0.0001, tStart + d);
+    og.gain.linearRampToValueAtTime(a * vol, tStart + 0.0014);
+    og.gain.exponentialRampToValueAtTime(0.0001, tStart + dur);
     o.connect(og); og.connect(master);
-    o.start(tStart); o.stop(tStart + d + 0.01);
+    o.start(tStart); o.stop(tStart + dur + 0.015);
   }
 
-  // 3) 「バサッ！」: ポールが突き出てジブセールが風をはらむ(または収納で裏返る)リアルなダクロン布音
-  const tf = tk + 0.038;
-  // 布の先端が弾けるアタック
-  const sSnap = ctx.createBufferSource(); sSnap.buffer = noiseBuf; sSnap.playbackRate.value = 0.82;
-  const bpSnap = ctx.createBiquadFilter(); bpSnap.type = 'bandpass'; bpSnap.frequency.value = up ? 860 : 720; bpSnap.Q.value = 1.1;
-  const gSnap = ctx.createGain();
-  gSnap.gain.setValueAtTime(0.0001, tf);
-  gSnap.gain.linearRampToValueAtTime((up ? 0.52 : 0.38) * vol, tf + 0.008);
-  gSnap.gain.exponentialRampToValueAtTime(0.0001, tf + 0.065);
-  sSnap.connect(bpSnap); bpSnap.connect(gSnap); gSnap.connect(master);
-  sSnap.start(tf, Math.random() * 1.0); sSnap.stop(tf + 0.075);
+  // 3) 「バサッ！」: ポールが突き出てジブセールが風をはらむ(または収納で裏返る)明確で厚みのあるダクロンセール布音
+  const tf = tk + (up ? 0.072 : 0.038);
+  // 布のリーチ・クリューが弾ける鮮明なアタック(2連フラップで「バサッ！」の質感を再現)
+  for (const [subDelay, rate, freq, gainA, dur] of [
+    [0.000, 0.88, up ? 920 : 760, up ? 0.72 : 0.48, 0.085],
+    [0.052, 0.76, up ? 680 : 580, up ? 0.64 : 0.40, 0.110],
+  ]) {
+    const tSub = tf + subDelay;
+    const sSnap = ctx.createBufferSource(); sSnap.buffer = noiseBuf; sSnap.playbackRate.value = rate;
+    const bpSnap = ctx.createBiquadFilter(); bpSnap.type = 'bandpass'; bpSnap.frequency.value = freq; bpSnap.Q.value = 1.05;
+    const gSnap = ctx.createGain();
+    gSnap.gain.setValueAtTime(0.0001, tSub);
+    gSnap.gain.linearRampToValueAtTime(gainA * vol, tSub + 0.009);
+    gSnap.gain.exponentialRampToValueAtTime(0.0001, tSub + dur);
+    sSnap.connect(bpSnap); bpSnap.connect(gSnap); gSnap.connect(master);
+    sSnap.start(tSub, Math.random() * 1.0); sSnap.stop(tSub + dur + 0.015);
+  }
 
   // セールクロス全体の「バサッ」という中低域の布擦れ＋膨らみ音
   const sf = ctx.createBufferSource(); sf.buffer = noiseBuf;
   sf.playbackRate.value = up ? 0.72 : 0.78;
-  const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.Q.value = 0.70;
-  bpf.frequency.setValueAtTime(up ? 340 : 420, tf);
-  bpf.frequency.exponentialRampToValueAtTime(up ? 680 : 540, tf + 0.055);
-  bpf.frequency.exponentialRampToValueAtTime(210, tf + 0.25);
+  const bpf = ctx.createBiquadFilter(); bpf.type = 'bandpass'; bpf.Q.value = 0.68;
+  bpf.frequency.setValueAtTime(up ? 380 : 420, tf);
+  bpf.frequency.exponentialRampToValueAtTime(up ? 760 : 540, tf + 0.068);
+  bpf.frequency.exponentialRampToValueAtTime(210, tf + 0.34);
   const gf = ctx.createGain();
-  const flapVol = (up ? 0.58 : 0.44) * vol;
+  const flapVol = (up ? 0.78 : 0.52) * vol;
   gf.gain.setValueAtTime(0.0001, tf);
-  gf.gain.linearRampToValueAtTime(flapVol * 0.85, tf + 0.020);
-  gf.gain.linearRampToValueAtTime(flapVol, tf + 0.068);
-  gf.gain.exponentialRampToValueAtTime(0.0001, tf + 0.27);
+  gf.gain.linearRampToValueAtTime(flapVol * 0.90, tf + 0.022);
+  gf.gain.linearRampToValueAtTime(flapVol, tf + 0.082);
+  gf.gain.exponentialRampToValueAtTime(0.0001, tf + 0.35);
   sf.connect(bpf); bpf.connect(gf); gf.connect(master);
-  sf.start(tf, Math.random() * 1.0); sf.stop(tf + 0.29);
+  sf.start(tf, Math.random() * 1.0); sf.stop(tf + 0.37);
 
   // セールが風を受け止める低い「ボフッ」という空気圧音
   const bf = ctx.createOscillator(), bfg = ctx.createGain();
   bf.type = 'sine';
-  bf.frequency.setValueAtTime(up ? 98 : 84, tf + 0.015);
-  bf.frequency.exponentialRampToValueAtTime(42, tf + 0.19);
-  bfg.gain.setValueAtTime(0.0001, tf + 0.015);
-  bfg.gain.linearRampToValueAtTime((up ? 0.30 : 0.20) * vol, tf + 0.042);
-  bfg.gain.exponentialRampToValueAtTime(0.0001, tf + 0.21);
+  bf.frequency.setValueAtTime(up ? 108 : 86, tf + 0.018);
+  bf.frequency.exponentialRampToValueAtTime(42, tf + 0.24);
+  bfg.gain.setValueAtTime(0.0001, tf + 0.018);
+  bfg.gain.linearRampToValueAtTime((up ? 0.42 : 0.24) * vol, tf + 0.048);
+  bfg.gain.exponentialRampToValueAtTime(0.0001, tf + 0.26);
   bf.connect(bfg); bfg.connect(master);
-  bf.start(tf + 0.015); bf.stop(tf + 0.23);
+  bf.start(tf + 0.018); bf.stop(tf + 0.28);
 }
 
 // オリエンテーション(スマブラ風 HOW TO PLAY)のステップ切り替え効果音: シャープな風切りスラッシュ＋重厚なインパクト音
