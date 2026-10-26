@@ -406,11 +406,11 @@ export class BoatModel {
     const mast = new THREE.Mesh(mastGeo, spar); mast.position.set(0, 3.85, -0.9); this.body.add(mast);
     this.mast = mast;
 
-    // 舵 (白ラダーブレード & 白ラダーヘッド) & アルミティラー + エクステンションバー
-    // 波でラダーが半分以上水面から飛び出さないよう十分な深さ(長さ1.04m, 下端y=-0.66m)を確保
+    // 舵 (白ラダーヘッド & 水線上のラダー上部) & アルミティラー + エクステンションバー
+    // 海中のラダーブレード下部が見えてしまわないよう、トランサム水線上部(y=-0.06〜+0.46)のみを描画
     const rudderGroup = new THREE.Group(); rudderGroup.position.set(0, 0.4, 2.36);
     const rudderHead = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.22, 0.20), M.gel); rudderHead.position.set(0, -0.05, 0.08); rudderGroup.add(rudderHead);
-    const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.036, 1.04, 0.32), M.gel); rudder.position.set(0, -0.54, 0.14); rudderGroup.add(rudder);
+    const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.42, 0.26), M.gel); rudder.position.set(0, -0.25, 0.12); rudderGroup.add(rudder);
     const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 1.18, 10), M.alu); tiller.rotation.x = Math.PI / 2; tiller.position.set(0, 0.05, -0.58); rudderGroup.add(tiller);
     const ext = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.95, 8), carbonMat); ext.rotation.z = Math.PI / 4; ext.position.set(0.28, 0.09, -1.06); rudderGroup.add(ext);
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
@@ -730,24 +730,22 @@ export class BoatModel {
     this.root.rotation.y = -b.h;
     const ph = t * 1.6 + this.phase;
     // 海況に合わせた上下動(ヒーブ)と縦揺れ(ピッチ):
-    // 艇速がない時は波にしっかりはたかれ、艇速がある時や下レグでは気にならない程度に抑える
-    // 波頭(waveCrest > 0)に対しては常に船体がしっかり追従して浮き上がり、波で船底・コクピット床が海面色になるのを完全に防ぐ
+    // 波に100%完全追従して一定の高さが常に海上に出続けるのではなく、船体の慣性で波頭に少し沈み込んだり谷で海面に出たりを繰り返す実艇の挙動を再現
+    // (船内・コクピット底への海面貫通は海面フラグメントシェーダー側の船内マスクで防止)
     const hx = Math.sin(b.h), hz = -Math.cos(b.h);
     const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
     const speedNorm = clamp(Math.abs(b.v) / 2.6, 0, 1);
     const slowFactor = Math.pow(1 - speedNorm, 1.35);
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
     const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
-    const shortWave = ws.h - ws.hLong;
-    const heave = ws.hLong * 1.02 + (shortWave >= 0 ? shortWave * 0.90 : shortWave * 0.55 * Math.min(1, chopRespond));
-    // 船尾(z=+2.36)のラダーが波で水面上に半分以上飛び出さないようピッチ角の前傾側(-0.052)を抑えつつ、低速時の波によるはたかれ(+0.098)はしっかり表現
-    const pitchW = clamp(Math.atan(ws.slopeLong * 0.68 + (ws.slope - ws.slopeLong) * 0.66 * chopRespond), -0.052, 0.098);
+    const heave = ws.hLong * 0.68 + (ws.h - ws.hLong) * 0.28 * chopRespond + 0.042 * Math.sin(ph * 1.35);
+    // 船尾(z=+2.36)のラダーが波で水面上に飛び出さないようピッチ角の前傾側(-0.045)を抑えつつ、波による上下・縦揺れを表現
+    const pitchW = clamp(Math.atan(ws.slopeLong * 0.65 + (ws.slope - ws.slopeLong) * 0.62 * chopRespond), -0.045, 0.095);
     // 横方向の傾き(三角波の交差波で左右にも揺さぶられる + 他艇の引き波通過時の揺れ)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
     const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
-    // コクピット床(FLOOR_Y)および船底が波でも海面より下に潜って海面色にならないよう基準高さ(0.25m)を確保
-    this.body.position.y = 0.25 + Math.abs(b.heel) * 0.14 + heave + 0.016 * Math.sin(ph);
+    this.body.position.y = 0.14 + Math.abs(b.heel) * 0.09 + heave;
     this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
     this.body.rotation.x = pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 14, 0, 0.25) * 0.032;
 
