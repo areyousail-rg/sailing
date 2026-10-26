@@ -6,7 +6,7 @@ const L = 2.36;
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const uOf = (z) => clamp01((z + L) / (2 * L));
 
-export const FLOOR_Y = 0.12; // コクピット床(自己排水フロア・波頭が貫通しない十分な乾舷高さを確保)
+export const FLOOR_Y = 0.15; // コクピット床(自己排水フロア・波頭が貫通しない十分な乾舷高さを確保)
 export const COAM = 0.50; // コクピット半幅 (スナイプ級の広いコクピット幅)
 export const ZC0 = -0.58, ZC1 = 1.66; // コクピット前端・後端
 
