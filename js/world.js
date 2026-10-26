@@ -174,32 +174,16 @@ void main(){
   vec4 w=modelMatrix*vec4(position,1.0);
   float h=0.0;
 #ifdef PATCH
-  // カメラ周辺の局所パッチでは waveSample と同じ波浪成分で頂点を上下させ、船底・コクピット床を突き抜けないようクランプする
+  // カメラ周辺の局所パッチでは waveSample と同じ波浪成分で頂点を上下させ、船体外側で波に沈んだり出たりする自然な海面高さを維持する
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
     float wgt=B.z>0.5?1.08:0.82;
     if(A.w>0.001) h+=A.w*wgt*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y);
   }
-  float bd=length(w.xz-uBoatPos.xy);
   vec2 wdV=vec2(-sin(uW0+uShift),cos(uW0+uShift));
   vec2 wpV=vec2(-wdV.y,wdV.x);
-  float vRip=(0.080*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.22)+0.056*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.34))*smoothstep(3.8,6.8,bd);
+  float vRip=0.075*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.22)+0.052*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.34);
   h+=vRip;
-  // 自艇およびカメラ近傍の艇(最大8艇)の周囲でメッシュ格子間隔(約2.6m)より十分広い楕円領域(横4.2m×縦5.6m)の海面頂点を船底以下に抑え、
-  // 三角ポリゴンが波頭をまたいで船底・コクピット床が海の色になるのを完全に防ぐ
-  for(int bi=0;bi<8;bi++){
-    vec4 bp=uNearBoats[bi];
-    if(bp.z<-900.0) continue;
-    vec2 bRel=w.xz-bp.xy;
-    if(dot(bRel,bRel)>38.0) continue;
-    float ch=cos(bp.w), sh=sin(bp.w);
-    vec2 bLoc=vec2(bRel.x*ch+bRel.y*sh,-bRel.x*sh+bRel.y*ch);
-    float bEll=length(vec2(bLoc.x/4.2,bLoc.y/5.6));
-    if(bEll<1.0){
-      float keepBelow=bp.z-0.32*(1.0-bEll*0.55);
-      h=min(h,mix(keepBelow,h,smoothstep(0.55,1.0,bEll)));
-    }
-  }
   float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.70,1.0,r));
 #endif
@@ -219,12 +203,28 @@ const waterMat = new THREE.ShaderMaterial({
   vertexShader: SEA_VS,
   fragmentShader: `
 precision highp float;
-varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4];
+varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
 ${SKY_FN}
 float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
 void main(){
-  vec2 p=vW.xz; vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
+  vec2 p=vW.xz;
+  // 船体外側の海面高さは一切下げずに波で船体が少し海中に沈んだり出たりする挙動を保ちつつ、
+  // 船体内側(コクピット床・内底)の領域のみピクセル単位で海面をマスクして船の底が海の色になるのを防ぐ
+  for(int bi=0;bi<8;bi++){
+    vec4 bp=uNearBoats[bi];
+    if(bp.z<-900.0) continue;
+    vec2 bRel=p-bp.xy;
+    if(dot(bRel,bRel)>6.0) continue;
+    float ch=cos(bp.w), sh=sin(bp.w);
+    vec2 bLoc=vec2(bRel.x*ch+bRel.y*sh,-bRel.x*sh+bRel.y*ch);
+    if(bLoc.y>-2.20 && bLoc.y<2.20){
+      float uH=clamp((bLoc.y+2.36)/4.72,0.0,1.0);
+      float hb=uH<0.48 ? 0.74*pow(sin(uH/0.48*1.570796),0.62) : 0.74-0.15*pow((uH-0.48)/0.52,1.65);
+      if(abs(bLoc.x)<hb) discard;
+    }
+  }
+  vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
   // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd)へ流れるブローとシフトを先に算出する
   vec2 uDir=vec2(sin(uW0),-cos(uW0));
   vec2 rDir=vec2(cos(uW0),sin(uW0));
@@ -1134,21 +1134,23 @@ export function createWorld(scene) {
   let activeMarkKeys = ['m1'];
   const camDir = new THREE.Vector3();
 
-  // ---------- 航跡・引き波(ケルビンV字波紋) ----------
-  // 白い点の羅列ではなく、ヨットが通過した後の「水面のなめらかな溝(航跡溝)」と左右へわずかに広がる「引き波(ケルビン波の斜め波紋)」をリアルに表現
-  const TRAIL_N = 28, MAXB = 40, PER = 4, LIFE = 3.1;
+  // ---------- バウしぶき・引き波・ラダー抵抗泡 (実艇動画 0:40〜0:45 / 1:01 準拠) ----------
+  // ・バウ(船首)が波にぶつかって水を切った時に白いしぶきが上がる
+  // ・艇の左右後方にはごくわずかに引き波(ケルビンV字波紋)が立つ(黒ずみや不自然な白い帯は出さない)
+  // ・ラダー周辺には、舵を切ってラダーに抵抗があった時だけわずかに白くなる
+  const TRAIL_N = 28, MAXB = 40, PER = 4, LIFE = 2.8;
   const wakeTex = (() => {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128;
     const x = c.getContext('2d');
     x.clearRect(0, 0, 128, 128);
-    // 縦方向に伸びる繊細な水面波紋グラデーション(端が自然に消え、中央に波の明暗筋が入る)
+    // 端が滑らかに0へ減衰するソフトなしぶき・波紋テクスチャ(Additive合成で黒くならないよう純白アルファで構成)
     for (let py = 0; py < 128; py++) {
       const ny = (py - 64) / 64;
-      const envY = Math.exp(-ny * ny * 2.8);
+      const envY = Math.exp(-ny * ny * 3.0);
       for (let px = 0; px < 128; px++) {
         const nx = (px - 64) / 64;
-        const envX = Math.exp(-nx * nx * 3.6);
-        const ripple = 0.72 + 0.28 * Math.cos(nx * Math.PI * 3.0) * Math.cos(ny * Math.PI * 1.5);
+        const envX = Math.exp(-nx * nx * 3.8);
+        const ripple = 0.78 + 0.22 * Math.cos(nx * Math.PI * 2.5);
         const a = Math.max(0, Math.min(1, envX * envY * ripple));
         if (a > 0.01) {
           x.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
@@ -1160,8 +1162,9 @@ export function createWorld(scene) {
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   })();
-  const trailGeo = new THREE.PlaneGeometry(1.5, 1.8, 1, 1); trailGeo.rotateX(-Math.PI / 2);
-  const trailMat = new THREE.MeshBasicMaterial({ map: wakeTex, color: 0xffffff, transparent: true, opacity: 0.42, blending: THREE.NormalBlending, depthWrite: false });
+  const trailGeo = new THREE.PlaneGeometry(1.4, 1.7, 1, 1); trailGeo.rotateX(-Math.PI / 2);
+  // AdditiveBlending にすることで col=(0,0,0) の箇所が完全に透明になり、航跡が黒くなる現象を完全に防ぐ
+  const trailMat = new THREE.MeshBasicMaterial({ map: wakeTex, color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false });
   const trail = new THREE.InstancedMesh(trailGeo, trailMat, TRAIL_N * PER * MAXB);
   trail.frustumCulled = false; trail.position.y = 0.04; scene.add(trail);
   trail.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1177,16 +1180,24 @@ export function createWorld(scene) {
         if (!h) { h = { pts: [], acc: 0 }; hist.set(b.id, h); }
         h.acc += dt;
         const rDrag = clampN(b.rudderDrag || 0, 0, 1);
-        if (h.acc > (rDrag > 0.25 ? 0.052 : 0.075) && (b.v > 0.38 || rDrag > 0.20)) {
+        if (h.acc > (rDrag > 0.22 ? 0.048 : 0.068) && (b.v > 0.38 || rDrag > 0.16)) {
           h.acc = 0;
           const fx = Math.sin(b.h), fz = -Math.cos(b.h);
-          const bx = b.x - fx * 2.25, bz = b.z - fz * 2.25;
+          const sternX = b.x - fx * 2.36, sternZ = b.z - fz * 2.36;
+          const bowX = b.x + fx * 1.92, bowZ = b.z + fz * 1.92;
+          // バウ(船首)が波の斜面・波頭にぶつかって水を切る強さを算出
+          const wsBow = waveSample(bowX, bowZ, SEA.clock, fx, fz);
+          const waveCut = Math.max(0, wsBow.h * 3.2) + Math.max(0, wsBow.slope * 4.6) + (b.waveSlam || 0) * 1.15;
+          const spdCut = clampN((b.v - 0.35) / 1.75, 0, 1.25);
+          const bowImpact = clampN((0.12 + waveCut) * spdCut, 0, 1);
           h.pts.unshift({
-            x: bx, z: bz,
-            bowX: b.x + fx * 0.85, bowZ: b.z + fz * 0.85,
+            x: sternX, z: sternZ,
+            bowX, bowZ,
+            midX: b.x - fx * 0.45, midZ: b.z - fz * 0.45,
             h: b.h, age: 0,
-            s: clampN(b.v / 5.8, 0.14, 0.92),
+            s: clampN(b.v / 5.6, 0.12, 0.95),
             rudder: rDrag,
+            bowImpact,
           });
           if (h.pts.length > TRAIL_N) h.pts.pop();
         }
@@ -1195,56 +1206,61 @@ export function createWorld(scene) {
           const p = h.pts[i];
           if (!p || p.age >= LIFE) { for (let j = 0; j < PER; j++) hide(k++); continue; }
           const life = 1 - p.age / LIFE, fade = life * life;
-          const ws = waveSample(p.x, p.z, SEA.clock);
-          const py = ws.hLong * 0.92 + (ws.h - ws.hLong) * 0.42; // 立体波浪の上に航跡を沿わせる
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           const rFoam = (p.rudder || 0) * Math.pow(life, 0.78);
-          tq.setFromAxisAngle(yAx, -p.h);
-          // 1) 中央の航跡溝(スリップストリーム): 白く塗るのではなく、船が通った後の落ち着いた濃紺〜青緑の水面変化として表現し、急舵時のみわずかに白泡を混ぜる
-          ts.set(0.32 + p.age * 0.22 + rFoam * 0.14, 1, 0.85 + p.age * 0.28);
-          m4.compose(tv.set(p.x, py + 0.005, p.z), tq, ts); trail.setMatrixAt(k, m4);
-          const cFade = (0.38 * p.s + 0.42 * rFoam) * fade;
-          col.setRGB(
-            (0.05 + 0.62 * rFoam) * cFade,
-            (0.24 + 0.52 * rFoam) * cFade,
-            (0.42 + 0.44 * rFoam) * cFade
-          );
-          trail.setColorAt(k++, col);
-          // 2, 3) 左右に広がる引き波(ケルビンV字波): わずかに盛り上がる青緑〜水色の斜面ハイライト筋(白飛びさせず水面波紋の屈折感を表現)
-          const off = 0.34 + p.age * (0.58 + p.s * 0.82);
-          for (const s of [-1, 1]) {
-            const a = p.h - s * 0.42;
-            tq.setFromAxisAngle(yAx, -a);
-            ts.set(0.11 + p.age * 0.065, 1, 0.92 + p.age * 0.48);
-            const ridgeY = py + 0.022 * fade * p.s;
-            m4.compose(tv.set(p.x + rx * s * off, ridgeY, p.z + rz * s * off), tq, ts); trail.setMatrixAt(k, m4);
-            const wInt = (0.45 * p.s + 0.22 * rFoam) * fade;
-            col.setRGB(
-              (0.14 + 0.25 * life + 0.30 * rFoam) * wInt,
-              (0.42 + 0.28 * life + 0.22 * rFoam) * wInt,
-              (0.60 + 0.26 * life + 0.18 * rFoam) * wInt
-            );
-            trail.setColorAt(k++, col);
+
+          // 1, 2) バウ(船首)で波にぶつかった時に水を切って左右へ上がる白いしぶき(Bow Spray)
+          if (p.bowImpact > 0.08 && p.age < 0.82) {
+            const bLife = 1 - p.age / 0.82;
+            const bFade = Math.pow(bLife, 1.45);
+            const wsB = waveSample(p.bowX, p.bowZ, SEA.clock);
+            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.65 + 0.05 + 0.16 * Math.sin((p.age / 0.82) * Math.PI) * p.bowImpact;
+            const sprayOff = 0.22 + p.age * (1.28 + p.s * 0.92);
+            for (const s of [-1, 1]) {
+              const sa = p.h - s * 0.44;
+              tq.setFromAxisAngle(yAx, -sa);
+              ts.set(0.15 + p.age * 0.22 * p.bowImpact, 1, 0.48 + p.age * 0.36);
+              m4.compose(tv.set(p.bowX + rx * s * sprayOff, bowY, p.bowZ + rz * s * sprayOff), tq, ts);
+              trail.setMatrixAt(k, m4);
+              const sprayBright = (0.14 + 0.26 * p.bowImpact) * bFade;
+              col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
+              trail.setColorAt(k++, col);
+            }
+          } else {
+            hide(k++);
+            hide(k++);
           }
-          // 4) 第2引き波(内側のV字波紋の谷) または 急舵時のラダー直後乱流
-          if (rFoam > 0.22 && p.age < 0.85) {
-            const rFade = Math.pow(1 - p.age / 0.85, 1.6);
-            tq.setFromAxisAngle(yAx, -p.h + (i % 2 === 0 ? 0.16 : -0.16));
-            ts.set(0.18 + p.age * 0.14, 1, 0.45 + p.age * 0.22);
-            m4.compose(tv.set(p.x, py + 0.014, p.z), tq, ts);
-            trail.setMatrixAt(k, m4);
-            col.setRGB(0.68, 0.82, 0.90).multiplyScalar(0.42 * rFoam * rFade);
-            trail.setColorAt(k++, col);
-          } else if (p.s > 0.25) {
+
+          // 3) わずかに立つ引き波(ケルビンV字波紋): 白く飛びすぎず、黒くもならない繊細な水面の光沢筋として左右交互に配置
+          if (p.s > 0.16) {
             const sideS = i % 2 === 0 ? 1 : -1;
-            const innerOff = 0.20 + p.age * (0.36 + p.s * 0.52);
-            const ia = p.h - sideS * 0.28;
-            tq.setFromAxisAngle(yAx, -ia);
-            ts.set(0.09 + p.age * 0.05, 1, 0.78 + p.age * 0.36);
-            m4.compose(tv.set(p.x + rx * sideS * innerOff, py + 0.012 * fade, p.z + rz * sideS * innerOff), tq, ts);
+            const wakeOff = 0.36 + p.age * (0.64 + p.s * 0.86);
+            const wx = p.midX + rx * sideS * wakeOff;
+            const wz = p.midZ + rz * sideS * wakeOff;
+            const wsW = waveSample(wx, wz, SEA.clock);
+            const wy = wsW.hLong * 0.95 + (wsW.h - wsW.hLong) * 0.55 + 0.02;
+            const wa = p.h - sideS * 0.38;
+            tq.setFromAxisAngle(yAx, -wa);
+            ts.set(0.055 + p.age * 0.038, 1, 0.90 + p.age * 0.48);
+            m4.compose(tv.set(wx, wy, wz), tq, ts);
             trail.setMatrixAt(k, m4);
-            const iInt = 0.34 * p.s * fade;
-            col.setRGB(0.10 * iInt, 0.34 * iInt, 0.52 * iInt);
+            const wakeGlint = 0.036 * p.s * fade;
+            col.setRGB(0.62, 0.80, 0.92).multiplyScalar(wakeGlint);
+            trail.setColorAt(k++, col);
+          } else {
+            hide(k++);
+          }
+
+          // 4) ラダー周辺の白泡: ラダーに抵抗があった時(rFoam > 0.14)だけラダー周辺がわずかに白くなる(直進時は完全に非表示)
+          if (rFoam > 0.14 && p.age < 1.05) {
+            const rFade = Math.pow(1 - p.age / 1.05, 1.55);
+            const wsR = waveSample(p.x, p.z, SEA.clock);
+            const ry = wsR.hLong * 0.95 + (wsR.h - wsR.hLong) * 0.55 + 0.03;
+            tq.setFromAxisAngle(yAx, -p.h + (i % 2 === 0 ? 0.14 : -0.14));
+            ts.set(0.16 + p.age * 0.15, 1, 0.42 + p.age * 0.24);
+            m4.compose(tv.set(p.x, ry, p.z), tq, ts);
+            trail.setMatrixAt(k, m4);
+            col.setRGB(0.86, 0.94, 0.99).multiplyScalar(0.18 * rFoam * rFade);
             trail.setColorAt(k++, col);
           } else {
             hide(k++);
