@@ -388,8 +388,8 @@ export class Boat {
     this.aeroTag = ''; this.aeroClimb = 0;
     this.awa = 0; this.aws = 0; this.awx = -Math.sin(W0); this.awz = Math.cos(W0);
     this.dnf = false; this.dsq = false; this.dsqReason = '';
-    this.pole = false; this.poleK = 0; // ランチャー(上げる指示 / 展開度0..1)
-    this.rudderDrag = 0; this.snagCD = 0; // 急舵時のラダー抵抗白波強度 / アンカーロープ引っかかりCD
+    this.pole = false; this.poleK = 0; this.gybePoleRestore = 0; // ランチャー(上げる指示 / 展開度0..1 / ジャイブ後の自動再アップタイマー)
+    this.rudderDrag = 0; this.snagCD = 0; this.wakeWave = 0; // 急舵時のラダー抵抗白波強度 / アンカーロープ引っかかりCD / 他艇の引き波影響度
   }
   place(x, z, h) {
     this.x = x; this.z = z; this.h = h;
@@ -406,8 +406,8 @@ export class Boat {
     if (this.maneuver) return false;
     const k = kind || (this.twa < Math.PI / 2 ? 'tack' : 'gybe');
     if (k === 'tack' && this.pole) return false; // ランチャーを上げたまま風上へは回れない
-    const restorePole = k === 'gybe' && this.pole;
-    if (k === 'gybe') this.pole = false; // ジャイブ回頭中は一旦ランチャーを下ろし、ジャイブ後に自動で再アップする
+    const restorePole = k === 'gybe' && (this.pole || this.gybePoleRestore > 0);
+    if (k === 'gybe') { this.pole = false; this.gybePoleRestore = 0; } // ジャイブ回頭中は一旦ランチャーを下ろし、ジャイブ後に自動で再アップする
     const s0 = this.tack || (Math.sign(this.rel) || 1);
     // ジャイブは180°ちょうどではなくセールが出ているため160°(旧タックから見て200°)付近で返して安定させる
     const gybeTargetRad = (162 * Math.PI) / 180;
@@ -418,6 +418,7 @@ export class Boat {
   }
   setPole(on) {
     if (on && (this.twa < POLE_MIN || this.maneuver || this.penalty)) return false;
+    if (!on) { this.gybePoleRestore = 0; if (this.maneuver) this.maneuver.restorePole = false; }
     this.pole = on; return true;
   }
   startPenalty(rule) {
@@ -491,7 +492,8 @@ export class Boat {
         const crossed160 = relNow * m.s0 < 0 && Math.abs(relNow) <= (168 * Math.PI) / 180;
         if (crossed160 && !m.flipped) {
           m.flipped = true;
-          if (m.restorePole && !this.penalty) { this.pole = true; m.restorePole = false; }
+          // セールが返った直後(0.36秒後)にランチャーを自動で再アップし、ランチャーダウン音→セール返し音→ランチャーアップ音が明確に鳴るようにする
+          if (m.restorePole && !this.penalty) { this.gybePoleRestore = 0.36; m.restorePole = false; }
         }
         if (m.t < 0.38) {
           rollCmd = -m.s0 * 0.19; // アンヒール(風上側へ起こす/逆ヒール)をかけてから落とす
@@ -504,7 +506,7 @@ export class Boat {
           steer = -clamp(err * 2.4, -1, 1);
         }
         if ((m.flipped && Math.abs(err) < 0.08) || m.t > 8) {
-          if (m.restorePole && !this.penalty && Math.abs(relNow) >= POLE_MIN) this.pole = true;
+          if (m.restorePole && !this.penalty && Math.abs(relNow) >= POLE_MIN) { this.gybePoleRestore = 0.22; m.restorePole = false; }
           this.maneuver = null; steer = 0;
         }
       }
@@ -526,6 +528,14 @@ export class Boat {
       }
     }
     this.rollBias += (rollCmd - this.rollBias) * (1 - Math.exp(-dt * 7.5));
+    // ジャイブ後のランチャー自動再アップタイマー処理
+    if (this.gybePoleRestore > 0) {
+      this.gybePoleRestore -= dt;
+      if (this.gybePoleRestore <= 0) {
+        this.gybePoleRestore = 0;
+        if (!this.penalty && Math.abs(wrap(w.from - this.h)) >= POLE_MIN - 0.15) this.pole = true;
+      }
+    }
     // ランチャー展開/収納(数秒かかる)。上げている間は POLE_MIN より風上へは切れ上がらない
     this.poleK = clamp(this.poleK + (this.pole ? dt / 1.6 : -dt / 0.9), 0, 1);
     if (this.pole && !this.maneuver && !this.penalty) {
@@ -610,8 +620,10 @@ export class Boat {
         this.v *= 0.92;
         this.tack = rawSign;
         if (this.pole) {
-          if (this.maneuver && this.maneuver.kind === 'gybe') this.pole = false;
-          else this.poleK = 0.08; // 手動ジャイブでもランチャーアップ状態を維持し反対舷へ自動再アップ
+          // ジャイブ時(手動ジャイブ含む)も一旦ランチャーを下ろしてダウン音を鳴らし、直後(0.42秒後)に反対舷へ自動再アップしてアップ音を鳴らす
+          this.pole = false;
+          this.poleK = Math.min(this.poleK, 0.22);
+          if (!this.maneuver && !this.penalty) this.gybePoleRestore = 0.42;
         }
         if (t >= 0 && !this.finished && !this.dsq && !this.penalty) this.gybeCount++;
       }
@@ -694,6 +706,40 @@ export class Boat {
             this.waveSlamCD = 1.15 + Math.random() * 1.0;
           }
         }
+      }
+    }
+    // 他艇の引き波(ケルビンV字波・航跡波)を通過した際のわずかな揺れと艇速への影響
+    {
+      let wakeHit = 0;
+      if (boats) {
+        for (const o of boats) {
+          if (o === this || o.finished || o.dsq || o.v < 0.65) continue;
+          const dx = this.x - o.x, dz = this.z - o.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > 20 * 20) continue;
+          const fx = Math.sin(o.h), fz = -Math.cos(o.h);
+          const rx = Math.cos(o.h), rz = Math.sin(o.h);
+          const behind = -(dx * fx + dz * fz) - 2.1;
+          if (behind > 0.3 && behind < 17.5) {
+            const lat = Math.abs(dx * rx + dz * rz);
+            const vArm = 0.34 + behind * 0.35; // ケルビンV字引き波の広がり幅
+            const armDist = Math.abs(lat - vArm);
+            const armW = 0.72 + behind * 0.08;
+            const centerW = 0.85 + behind * 0.11;
+            const hitArm = Math.max(0, 1 - armDist / armW);
+            const hitCenter = Math.max(0, 1 - lat / centerW) * 0.72;
+            const hitF = Math.max(hitArm, hitCenter);
+            if (hitF > 0) {
+              const spdF = clamp(o.v / (2.1 * SPEED_SCALE), 0.25, 1.1) * (1 - behind / 17.5);
+              wakeHit = Math.max(wakeHit, hitF * spdF);
+            }
+          }
+        }
+      }
+      this.wakeWave += (wakeHit - (this.wakeWave || 0)) * (1 - Math.exp(-dt * 8.0));
+      if (this.wakeWave > 0.04) {
+        target *= (1 - 0.042 * this.wakeWave);
+        this.rollBias += Math.sin(t * 9.2 + this.id * 1.7) * 0.026 * this.wakeWave * (1 - Math.exp(-dt * 8.0));
       }
     }
     // 完全風上(0°〜5° / 355°〜360°付近)に向くと風圧で少しずつバック(後退)する
