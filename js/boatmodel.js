@@ -565,43 +565,91 @@ export class BoatModel {
     // if (this.crewRig) this.crewRig.visible = !on;
   }
 
-  // フォアステイの更新: クローズではピンと直線に張り、ランチャーアップ(pk>0)時はテンションを少し緩めて前・風下側へわずかにサギングさせる
+  // ドローンカメラ時に他艇(CP艇)がカメラと自艇の間に入って視界を遮る際、そのCP艇を半透明化する
+  setOccludingAlpha(alpha) {
+    const a = clamp(alpha, 0.18, 1.0);
+    if (this._occAlpha === undefined) this._occAlpha = 1.0;
+    if (Math.abs(a - this._occAlpha) < 0.01 && (a >= 0.99) === (this._occAlpha >= 0.99)) return;
+    this._occAlpha = a;
+    if (!this._occMats) {
+      this._occMats = [];
+      const matMap = new Map();
+      this.body.traverse((obj) => {
+        if (!obj.isMesh || !obj.material) return;
+        const cloneMat = (m) => {
+          if (matMap.has(m)) return matMap.get(m);
+          const cm = (m === this.sailMat || m === this.jibMat) ? m : m.clone();
+          matMap.set(m, cm);
+          this._occMats.push({ mat: cm, baseOp: cm.opacity !== undefined ? cm.opacity : 1.0, baseTrans: !!cm.transparent });
+          return cm;
+        };
+        if (Array.isArray(obj.material)) obj.material = obj.material.map(cloneMat);
+        else obj.material = cloneMat(obj.material);
+      });
+    }
+    const isTrans = a < 0.98;
+    for (const item of this._occMats) {
+      item.mat.transparent = isTrans ? true : item.baseTrans;
+      item.mat.opacity = item.baseOp * a;
+      item.mat.depthWrite = !isTrans;
+    }
+  }
+
+  // フォアステイの更新: クローズではピンと直線に張り、ランチャーアップ(pk>0)時はテンションを抜いて前・風上側へはっきりサギングさせる
   syncForestay(pk, sgn) {
     if (!this.forestaySegs) return;
     const N = this.forestaySegs.length;
     const y0 = JIB_DECK_Y, z0 = JIB_TACK_Z;
-    const y1 = 5.95, z1 = -0.90 - 0.045 * pk;
+    const y1 = 5.95, z1 = -0.90 - 0.065 * pk;
     for (let i = 0; i < N; i++) {
       const u0 = i / N, u1 = (i + 1) / N;
       const s0 = pk * Math.sin(Math.PI * u0), s1 = pk * Math.sin(Math.PI * u1);
-      _p0.set(-sgn * 0.045 * s0, y0 + (y1 - y0) * u0, z0 + (z1 - z0) * u0 - 0.095 * s0);
-      _p1.set(-sgn * 0.045 * s1, y0 + (y1 - y0) * u1, z0 + (z1 - z0) * u1 - 0.095 * s1);
+      _p0.set(-sgn * 0.095 * s0, y0 + (y1 - y0) * u0 - 0.045 * s0, z0 + (z1 - z0) * u0 - 0.145 * s0);
+      _p1.set(-sgn * 0.095 * s1, y0 + (y1 - y0) * u1 - 0.045 * s1, z0 + (z1 - z0) * u1 - 0.145 * s1);
       placeSeg(this.forestaySegs[i], _p0, _p1);
     }
   }
 
-  // ジブのラフ(v=0)をフォアステーへ固定し、ランチャー展開時(pk>0)はフォアステイテンション緩和によるサギングを反映
-  // クローズ等でメインセール前部(z > -0.90)と重なる領域では、必ずメインセールより風下側(外側)へクリアランスを保って貫通を完全に防ぐ
+  // ジブのラフ(v=0)をフォアステーへ固定し、ランチャー展開時(pk>0)はフォアステイ＆ジブのテンションを抜いた丸みのある形状を反映
+  // クローズ時はフット中央(v≈0.25..0.72)がフォアデッキに密接し、先端(v=0)と手前クリュー側(v=1)は船体から浮いた実艇形状を再現
   evalJibPoint(u, v, clewX, clewLocalY, clewLocalZ, camberSigned, pk, out) {
     const sgn = this.boat.tack || 1;
-    const headY = JIB_HEAD_Y, headZ = JIB_HEAD_Z - 0.045 * pk;
+    const headY = JIB_HEAD_Y - 0.055 * pk, headZ = JIB_HEAD_Z - 0.065 * pk;
     const sag = pk * Math.sin(Math.PI * u);
-    const lx = -sgn * 0.045 * sag, ly = headY * u, lz = headZ * u - 0.095 * sag;
+    const lx = -sgn * 0.095 * sag, ly = headY * u - 0.045 * sag, lz = headZ * u - 0.145 * sag;
     const rx = clewX * (1 - u);
     const ry = clewLocalY + (headY - clewLocalY) * u;
     const rz = clewLocalZ + (headZ - clewLocalZ) * u;
-    // コード(ラフ→リーチ)に対する法線方向へキャンバー(膨らみ)を付与。上部(u→1)およびランチャー展開時はピンと張る
+    // コード(ラフ→リーチ)に対する法線方向へキャンバー(膨らみ)を付与。ランチャー展開時(pk>0)はテンションを抜いた深いポケット形状にする
     const dx = rx - lx, dz = rz - lz;
     const clen = Math.hypot(dx, dz) || 1;
     const nx = dz / clen, nz = -dx / clen;
-    const upperTension = Math.pow(1 - u, 0.85) * (1 - 0.38 * pk * u);
-    const b = camberSigned * Math.sin(Math.PI * v) * upperTension;
+    const upperTension = Math.pow(1 - u, 0.85) * (1 - 0.12 * pk * u) + 0.46 * pk * Math.sin(Math.PI * u);
+    const footProfile = Math.sin(Math.PI * Math.pow(v, 0.85 - 0.18 * pk));
+    const b = camberSigned * footProfile * upperTension;
     let px = lx + v * dx + nx * b;
-    const py = ly + v * (ry - ly);
+    let py = ly + v * (ry - ly);
     const pz = lz + v * dz + nz * b;
+    const zBody = JIB_TACK_Z + pz;
+
+    // クローズ走行時: ジブセールの底(フット u→0)の真ん中あたり(v≈0.22..0.76)は船体(フォアデッキ)と密接し、
+    // 先端(バウ側 v→0: ジブタック紐で浮く)や手前側(クリュー側 v→1)は船体にくっついていない形状を再現
+    const closeF = this._closeFactor ?? 0;
+    if (pk < 0.35 && closeF > 0.05 && u < 0.42) {
+      const midFootBell = Math.pow(Math.sin(Math.PI * v), 1.65); // v=0とv=1で0、中央(v=0.5)で1
+      const footUWeight = Math.exp(-u * 6.8) * closeF * (1 - pk);
+      const deckLocalY = deckY(zBody, px) - JIB_TACK_Y + 0.006;
+      const dropToDeck = (py - deckLocalY) * midFootBell * footUWeight;
+      py -= dropToDeck;
+      if (u < 0.08 && v > 0.15 && v < 0.85) {
+        py = Math.max(py, deckLocalY);
+      }
+    } else if (pk > 0.1) {
+      // ランチャーアップ時はテンションを抜いた自然なフットのたるみ・丸みを付与
+      py -= 0.10 * pk * Math.sin(Math.PI * v) * Math.pow(1 - u, 1.3);
+    }
 
     // メインセール貫通防止ガード: マスト(z = -0.90)より後方へ重なる頂点は、メインセールの同高さ・同前後位置の風下変位より必ず外側に保つ
-    const zBody = JIB_TACK_Z + pz;
     if (pk < 0.35 && zBody > -0.92) {
       const yBody = JIB_TACK_Y + py;
       const zMain = Math.max(0, zBody - (-0.90));
@@ -614,7 +662,7 @@ export class BoatModel {
       const mainScale = this.mainSail ? Math.abs(this.mainSail.scale.x) : 1;
       const mainLeeDist = zMain * Math.sin(boomAng) + (bMain + twMain) * mainScale * Math.cos(boomAng);
       const leeSign = sgn > 0 ? -1 : 1; // スターボード(sgn=1)の風下は -x、ポート(sgn=-1)の風下は +x
-      const minOutboard = mainLeeDist + 0.055;
+      const minOutboard = mainLeeDist + 0.032;
       if (leeSign * px < minOutboard) {
         px = leeSign * minOutboard;
       }
@@ -623,12 +671,14 @@ export class BoatModel {
   }
 
   updateJibShape(pk, jibRot, camberSigned) {
+    const closeF = this._closeFactor ?? 0;
     const eps = this.boat.isPlayer ? 0.004 : 0.015;
-    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps && Math.abs((this.boomA || 0) - (this._lastBoomA || 0)) < eps) return;
-    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned; this._lastBoomA = this.boomA || 0;
+    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps && Math.abs((this.boomA || 0) - (this._lastBoomA || 0)) < eps && Math.abs(closeF - (this._lastCloseF || 0)) < eps) return;
+    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned; this._lastBoomA = this.boomA || 0; this._lastCloseF = closeF;
 
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
-    const clewLocalY = 0.16 + 0.88 * pk;
+    // ランチャー展開時はクリューが跳ね上がりすぎずテンションを抜いた自然な高さ(0.16 + 0.54*pk)に保つ
+    const clewLocalY = 0.16 + 0.54 * pk;
     const clewLocalZ = JIB_CLEW_LEN * Math.cos(jibRot);
     const pos = this.jibGeo.attributes.position;
     const norm = this.jibGeo.attributes.normal;
@@ -652,7 +702,7 @@ export class BoatModel {
   syncTells(t, camberSigned, luff, stall, pk = 0, jibRot = 0) {
     const sgn = this.boat.tack;
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
-    const clewLocalY = 0.16 + 0.88 * pk;
+    const clewLocalY = 0.16 + 0.54 * pk;
     const clewLocalZ = JIB_CLEW_LEN * Math.cos(jibRot);
     // リーバウ効果やスターン通過リフト(windBend > 0)を受けている時はテルテールがリフト反応を示す
     const leeBowLift = clamp((this.boat.windBend || 0) * 6.0, -0.5, 0.65);
@@ -681,20 +731,23 @@ export class BoatModel {
     const ph = t * 1.6 + this.phase;
     // 海況に合わせた上下動(ヒーブ)と縦揺れ(ピッチ):
     // 艇速がない時は波にしっかりはたかれ、艇速がある時や下レグでは気にならない程度に抑える
+    // 波頭(waveCrest > 0)に対しては常に船体がしっかり追従して浮き上がり、波で船底・コクピット床が海面色になるのを完全に防ぐ
     const hx = Math.sin(b.h), hz = -Math.cos(b.h);
     const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
     const speedNorm = clamp(Math.abs(b.v) / 2.6, 0, 1);
     const slowFactor = Math.pow(1 - speedNorm, 1.35);
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
     const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
-    const heave = ws.hLong * 0.95 + (ws.h - ws.hLong) * 0.60 * chopRespond;
+    const shortWave = ws.h - ws.hLong;
+    const heave = ws.hLong * 1.02 + (shortWave >= 0 ? shortWave * 0.90 : shortWave * 0.55 * Math.min(1, chopRespond));
     // 船尾(z=+2.36)のラダーが波で水面上に半分以上飛び出さないようピッチ角の前傾側(-0.052)を抑えつつ、低速時の波によるはたかれ(+0.098)はしっかり表現
     const pitchW = clamp(Math.atan(ws.slopeLong * 0.68 + (ws.slope - ws.slopeLong) * 0.66 * chopRespond), -0.052, 0.098);
-    // 横方向の傾き(三角波の交差波で左右にも揺さぶられる)
+    // 横方向の傾き(三角波の交差波で左右にも揺さぶられる + 他艇の引き波通過時の揺れ)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
-    const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond, -0.115, 0.115);
-    // コクピット床(FLOOR_Y)およびスターンの角がヒール時や波でも海面より下に潜って海面色にならないよう基準高さを確保
-    this.body.position.y = 0.21 + Math.abs(b.heel) * 0.13 + heave + 0.016 * Math.sin(ph);
+    const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
+    const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
+    // コクピット床(FLOOR_Y)および船底が波でも海面より下に潜って海面色にならないよう基準高さ(0.25m)を確保
+    this.body.position.y = 0.25 + Math.abs(b.heel) * 0.14 + heave + 0.016 * Math.sin(ph);
     this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
     this.body.rotation.x = pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 14, 0, 0.25) * 0.032;
 
@@ -702,9 +755,10 @@ export class BoatModel {
       this.rudderGroup.rotation.y = b.steer * 0.6;
     }
 
-    // セール: クローズ走行時はブーム・メインセールを画像1枚目のようにセンターライン近くまでしっかり引き込み、上部リーチがツイストして開く
+    // セール: クローズ走行時はブーム・メインセールをセンターライン近くまでしっかり引き込み、上部リーチがツイストして開く
     const twa = b.twa, luff = b.luff;
     const closeFactor = clamp(1 - (twa - 0.65) / 0.38, 0, 1);
+    this._closeFactor = closeFactor;
     const effMainSheet = clamp(b.sheet + closeFactor * 0.045, 0, 1);
     const sheetAng = (0.012 + (1 - closeFactor) * 0.052) + Math.pow(1 - effMainSheet, 1.12) * 1.34;
     let ang = Math.min(sheetAng, Math.max(0.012, Math.abs(b.awa) - 0.12 * closeFactor - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
@@ -712,26 +766,29 @@ export class BoatModel {
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
     this.mainPivot.rotation.y = -sgn * this.boomA;
-    // ジブ: クローズ引き込み時は画像1枚目のようにしっかりタイトに引き込み、クローズ以外の角度では従来の自然な引き具合を維持
+    // ジブ: クローズ時はさらに一段タイトに引き込み、クローズ以外の角度では従来の自然な引き具合を維持
+    // ランニングのランチャーアップ時は、ジブが手前(アフト側)に引かれて風とほぼ直角(90°)になる角度(1.52〜1.66 rad)へ展開
     const pk = b.poleK || 0;
     // ランチャーアップ時はセンターボードを少し引き上げ(+22cm)、フォアステイのテンションを緩めてマストをわずかに前傾させる
     if (this.cbBoard) this.cbBoard.position.y = pk * 0.22;
     if (this.mast) {
-      this.mast.rotation.x = -0.014 * pk;
-      this.mast.position.z = -0.90 - 0.022 * pk;
+      this.mast.rotation.x = -0.018 * pk;
+      this.mast.position.z = -0.90 - 0.028 * pk;
     }
     this.syncForestay(pk, sgn);
 
     const ease = Math.max(0, 0.97 - b.sheet);
     const bearOut = Math.max(0, twa - 0.78) * 0.28;
     const luffOut = luff * (0.28 + 0.09 * Math.sin(t * 21 + this.phase));
-    const baseJibIn = 0.102 * closeFactor + 0.19 * (1 - closeFactor);
-    const easeWeight = 0.28 * closeFactor + 0.72 * (1 - closeFactor);
+    const baseJibIn = 0.076 * closeFactor + 0.19 * (1 - closeFactor);
+    const easeWeight = 0.24 * closeFactor + 0.72 * (1 - closeFactor);
     const jibDesired = baseJibIn + ease * easeWeight + bearOut * 0.42 + luffOut;
-    const jibMaxAwa = Math.max(0.105 + 0.235 * (1 - closeFactor), Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
-    const minJibLee = 0.102 * closeFactor + 0.18 * (1 - closeFactor);
-    const jibLee = clamp(Math.min(Math.max(this.boomA * 0.72, jibDesired), jibMaxAwa), minJibLee, 0.82);
-    const jibRot = -sgn * jibLee * (1 - pk) + sgn * JIB_WING * pk;
+    const jibMaxAwa = Math.max(0.082 + 0.258 * (1 - closeFactor), Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
+    const minJibLee = 0.076 * closeFactor + 0.18 * (1 - closeFactor);
+    const jibLee = clamp(Math.min(Math.max(this.boomA * (0.62 * closeFactor + 0.72 * (1 - closeFactor)), jibDesired), jibMaxAwa), minJibLee, 0.82);
+    // ランニングのランチャー展開時: 風に対して鈍角(前出)にならず、手前(コクピット側)へ引いて風とほぼ直角になる角度(約88°〜95° = 1.54〜1.66 rad)にする
+    const wingAngle = clamp(Math.PI - twa + 0.36, 1.52, 1.66);
+    const jibRot = -sgn * jibLee * (1 - pk) + sgn * wingAngle * pk;
     this.jibRot = jibRot;
     this.jibPivot.rotation.y = 0; // ラフをフォアステーに完全固定するためjibPivot自体は回転させず頂点で展開
     const bulgeSign = sgn > 0 ? -1 : 1;
@@ -751,15 +808,17 @@ export class BoatModel {
         r.m.rotation.x = -0.05 + 0.16 * Math.sin(t * 14 + r.ph) * (0.3 + Math.max(luff, stall));
       }
     }
-    const jibCamberScale = 0.135 * closeFactor + 0.23 * (1 - closeFactor);
-    const jibCamber = jibBulge * jibCamberScale * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * (1 - 0.65 * Math.sin(Math.PI * pk));
+    // ランチャーアップ時はテンションを抜いてふっくら風をはらんだ深いポケット(0.31)を表現
+    const jibCamberScale = 0.132 * closeFactor + (0.23 + 0.085 * pk) * (1 - closeFactor);
+    const transitDip = 1 - 0.55 * Math.sin(Math.PI * pk) * (1 - pk * 0.85);
+    const jibCamber = jibBulge * jibCamberScale * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * transitDip;
     this.jibSail.scale.x = 1;
     this.jibSail.rotation.x = 0;
     this.updateJibShape(pk, jibRot, jibCamber);
 
-    // ジブクリュー(セール後端角)の正確な3Dボディ座標 (セール頂点 [clewX, 0.16 + 0.88*pk, clewLocalZ] と完全一致)
+    // ジブクリュー(セール後端角)の正確な3Dボディ座標 (セール頂点 [clewX, 0.16 + 0.54*pk, clewLocalZ] と完全一致)
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
-    const clewY = JIB_TACK_Y + 0.16 + 0.88 * pk;
+    const clewY = JIB_TACK_Y + 0.16 + 0.54 * pk;
     const clewZ = JIB_TACK_Z + JIB_CLEW_LEN * Math.cos(jibRot);
 
     // ランチャーポール: ブーム基部(y=1.36, z=-0.92)からジブクリューの頂点座標まで寸分違わず届くように配置
