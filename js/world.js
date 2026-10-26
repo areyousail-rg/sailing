@@ -209,20 +209,16 @@ float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*437
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
 void main(){
   vec2 p=vW.xz;
-  // 船体外側の海面高さは一切下げずに波で船体が少し海中に沈んだり出たりする挙動を保ちつつ、
-  // 船体内側(コクピット床・内底)の領域のみピクセル単位で海面をマスクして船の底が海の色になるのを防ぐ
+  // 船体外側の喫水線(船と海面が触れる部分)で海面が欠けて海中の白い船底が見えてしまわないよう、
+  // 垂直なコクピット側壁(|x|=0.50m)より内側のコクピット床領域(z=-0.52..+1.58m, |x|<0.43m)のみをマスクする
   for(int bi=0;bi<8;bi++){
     vec4 bp=uNearBoats[bi];
     if(bp.z<-900.0) continue;
     vec2 bRel=p-bp.xy;
-    if(dot(bRel,bRel)>6.0) continue;
+    if(dot(bRel,bRel)>3.2) continue;
     float ch=cos(bp.w), sh=sin(bp.w);
     vec2 bLoc=vec2(bRel.x*ch+bRel.y*sh,-bRel.x*sh+bRel.y*ch);
-    if(bLoc.y>-2.20 && bLoc.y<2.20){
-      float uH=clamp((bLoc.y+2.36)/4.72,0.0,1.0);
-      float hb=uH<0.48 ? 0.74*pow(sin(uH/0.48*1.570796),0.62) : 0.74-0.15*pow((uH-0.48)/0.52,1.65);
-      if(abs(bLoc.x)<hb) discard;
-    }
+    if(bLoc.y>-0.52 && bLoc.y<1.58 && abs(bLoc.x)<0.43) discard;
   }
   vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
   // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd)へ流れるブローとシフトを先に算出する
@@ -1185,15 +1181,18 @@ export function createWorld(scene) {
           const fx = Math.sin(b.h), fz = -Math.cos(b.h);
           const sternX = b.x - fx * 2.36, sternZ = b.z - fz * 2.36;
           const bowX = b.x + fx * 1.92, bowZ = b.z + fz * 1.92;
-          // バウ(船首)が波の斜面・波頭にぶつかって水を切る強さを算出
+          // バウ(船首)が波頭・波の斜面にぶつかった瞬間のみしぶきを発生させる(常時白くならないよう閾値を設ける)
           const wsBow = waveSample(bowX, bowZ, SEA.clock, fx, fz);
-          const waveCut = Math.max(0, wsBow.h * 3.2) + Math.max(0, wsBow.slope * 4.6) + (b.waveSlam || 0) * 1.15;
-          const spdCut = clampN((b.v - 0.35) / 1.75, 0, 1.25);
-          const bowImpact = clampN((0.12 + waveCut) * spdCut, 0, 1);
+          const hitCrest = (wsBow.h > 0.042 && wsBow.slope > 0.052)
+            ? (wsBow.h - 0.042) * 3.4 + (wsBow.slope - 0.052) * 4.8
+            : 0;
+          const waveCut = hitCrest + (b.waveSlam || 0) * 1.25;
+          const spdCut = clampN((b.v - 0.75) / 1.65, 0, 1.15);
+          const bowImpact = waveCut > 0.16 ? clampN((waveCut - 0.12) * spdCut, 0, 1) : 0;
           h.pts.unshift({
             x: sternX, z: sternZ,
             bowX, bowZ,
-            midX: b.x - fx * 0.45, midZ: b.z - fz * 0.45,
+            midX: b.x - fx * 1.35, midZ: b.z - fz * 1.35,
             h: b.h, age: 0,
             s: clampN(b.v / 5.6, 0.12, 0.95),
             rudder: rDrag,
@@ -1209,20 +1208,20 @@ export function createWorld(scene) {
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           const rFoam = (p.rudder || 0) * Math.pow(life, 0.78);
 
-          // 1, 2) バウ(船首)で波にぶつかった時に水を切って左右へ上がる白いしぶき(Bow Spray)
-          if (p.bowImpact > 0.08 && p.age < 0.82) {
-            const bLife = 1 - p.age / 0.82;
-            const bFade = Math.pow(bLife, 1.45);
+          // 1, 2) バウ(船首)で波にぶつかった瞬間だけ外側へ飛ぶ白いしぶき(船体と海面の接地部分が常時白くならないよう制御)
+          if (p.bowImpact > 0.14 && p.age < 0.52) {
+            const bLife = 1 - p.age / 0.52;
+            const bFade = Math.pow(bLife, 1.55);
             const wsB = waveSample(p.bowX, p.bowZ, SEA.clock);
-            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.65 + 0.05 + 0.16 * Math.sin((p.age / 0.82) * Math.PI) * p.bowImpact;
-            const sprayOff = 0.22 + p.age * (1.28 + p.s * 0.92);
+            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.65 + 0.06 + 0.18 * Math.sin((p.age / 0.52) * Math.PI) * p.bowImpact;
+            const sprayOff = 0.44 + p.age * (1.45 + p.s * 0.95);
             for (const s of [-1, 1]) {
-              const sa = p.h - s * 0.44;
+              const sa = p.h - s * 0.48;
               tq.setFromAxisAngle(yAx, -sa);
-              ts.set(0.15 + p.age * 0.22 * p.bowImpact, 1, 0.48 + p.age * 0.36);
+              ts.set(0.13 + p.age * 0.18 * p.bowImpact, 1, 0.36 + p.age * 0.28);
               m4.compose(tv.set(p.bowX + rx * s * sprayOff, bowY, p.bowZ + rz * s * sprayOff), tq, ts);
               trail.setMatrixAt(k, m4);
-              const sprayBright = (0.14 + 0.26 * p.bowImpact) * bFade;
+              const sprayBright = (0.20 * p.bowImpact) * bFade;
               col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
               trail.setColorAt(k++, col);
             }
@@ -1231,21 +1230,21 @@ export function createWorld(scene) {
             hide(k++);
           }
 
-          // 3) わずかに立つ引き波(ケルビンV字波紋): 白く飛びすぎず、黒くもならない繊細な水面の光沢筋として左右交互に配置
-          if (p.s > 0.16) {
+          // 3) わずかに立つ引き波(ケルビンV字波紋): 船体後方の離れた位置からごく控えめな水面光沢筋として左右交互に配置
+          if (p.s > 0.18 && p.age > 0.12) {
             const sideS = i % 2 === 0 ? 1 : -1;
-            const wakeOff = 0.36 + p.age * (0.64 + p.s * 0.86);
+            const wakeOff = 0.58 + p.age * (0.66 + p.s * 0.85);
             const wx = p.midX + rx * sideS * wakeOff;
             const wz = p.midZ + rz * sideS * wakeOff;
             const wsW = waveSample(wx, wz, SEA.clock);
             const wy = wsW.hLong * 0.95 + (wsW.h - wsW.hLong) * 0.55 + 0.02;
             const wa = p.h - sideS * 0.38;
             tq.setFromAxisAngle(yAx, -wa);
-            ts.set(0.055 + p.age * 0.038, 1, 0.90 + p.age * 0.48);
+            ts.set(0.050 + p.age * 0.035, 1, 0.85 + p.age * 0.45);
             m4.compose(tv.set(wx, wy, wz), tq, ts);
             trail.setMatrixAt(k, m4);
-            const wakeGlint = 0.036 * p.s * fade;
-            col.setRGB(0.62, 0.80, 0.92).multiplyScalar(wakeGlint);
+            const wakeGlint = 0.028 * p.s * fade;
+            col.setRGB(0.58, 0.78, 0.90).multiplyScalar(wakeGlint);
             trail.setColorAt(k++, col);
           } else {
             hide(k++);
