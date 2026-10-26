@@ -97,10 +97,10 @@ function clearFleet() {
 function makeFleet(onlyPlayer = false) {
   clearFleet();
   hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
-  // 強いCP艇(k=1..4)が特に上側の端っこ(本部船すぐ内側 c=+55..+71)からも確実に出るよう、上端ターゲットを平行レーンで配置
+  // スタートライン半幅 LINE_HALF = 50 (従来の2/3長 = 全幅100m) に合わせ、強いCP艇(k=1..5)は上端・下端からも確実に出るよう配置
   const endTargets = FAVORED === 'pin'
-    ? [70.5, 63.5, 56.5, -69.0, -61.5]
-    : [70.5, 64.0, 57.5, 51.0, -68.5];
+    ? [45.5, 40.5, 35.5, -45.5, -40.0]
+    : [45.5, 41.0, 36.5, 32.0, -45.0];
   for (let i = endTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
     [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
@@ -108,7 +108,7 @@ function makeFleet(onlyPlayer = false) {
   const midTargets = [];
   const nMid = N_BOATS - 1 - endTargets.length;
   for (let i = 0; i < nMid; i++) {
-    midTargets.push(-52 + i * (96 / Math.max(1, nMid - 1)) + (rng() - 0.5) * 3.0);
+    midTargets.push(-33 + i * (59 / Math.max(1, nMid - 1)) + (rng() - 0.5) * 2.4);
   }
   for (let i = midTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
@@ -116,15 +116,28 @@ function makeFleet(onlyPlayer = false) {
   }
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
-    const isUpperEnd = targetC >= 50;
-    const a0 = isUpperEnd ? -17 - (i % 2) * 2.0 : -18 - (i % 3) * 2.2;
+    const kIdx = i + 1;
+    // スタートに失敗して第二線からスタートするCP艇(secondRow: 2艇)と、
+    // 本部船の上で待って結局スタートに失敗し第二線から出るCP艇(highComFail: 2艇)を設定
+    const startRole =
+      (kIdx === 14 || kIdx === 15) ? 'highComFail' :
+      (kIdx === 11 || kIdx === 13) ? 'secondRow' :
+      'firstRow';
+    if (startRole === 'highComFail') {
+      const a0 = -10 - (i % 2) * 2.5;
+      const c0 = LINE_HALF + 20 + (i % 2) * 5.5;
+      return { a: a0, c: c0, targetC: LINE_HALF - 5.5, startRole };
+    }
+    const isUpperEnd = targetC >= 30;
+    const baseA0 = isUpperEnd ? -20 - (i % 2) * 2.2 : -21 - (i % 3) * 2.4;
+    const a0 = startRole === 'secondRow' ? baseA0 - 8.5 : baseA0;
     // 1分間のスターボードタック前進と1.5倍の下流れによる左(-c)への移動量を見越し、
-    // 上端狙い(targetC=+51〜+70.5)のCP艇は本部船(c=+75)より右側(c=+84〜+106)に平行レーンで初期配置する
-    const c0 = targetC + Math.abs(a0) * 0.90 + 18;
-    return { a: a0, c: c0, targetC };
+    // 上端狙い(targetC>=30)のCP艇は本部船(c=+50)より右側に平行レーンで初期配置する
+    const c0 = targetC + Math.abs(a0) * 0.86 + 15;
+    return { a: a0, c: c0, targetC, startRole };
   });
-  // 自艇は低速時の1.5倍の下流れを考慮し、本部船(c=LINE_HALF)の右側(c=LINE_HALF+36)に配置
-  const pslot = { a: -35, c: LINE_HALF + 36, targetC: LINE_HALF - 5 };
+  // 自艇は低速時の1.5倍の下流れを考慮し、本部船(c=LINE_HALF)の右側(c=LINE_HALF+30)に配置
+  const pslot = { a: -35, c: LINE_HALF + 30, targetC: LINE_HALF - 5, startRole: 'firstRow' };
   const used = new Set([cfg.sailNo]);
   const count = onlyPlayer ? 1 : N_BOATS;
   for (let k = 0; k < count; k++) {
@@ -139,7 +152,7 @@ function makeFleet(onlyPlayer = false) {
       k <= 8 ? 1.00 + rng() * 0.045 :
       k <= 12 ? 0.94 + rng() * 0.045 :
       0.87 + rng() * 0.055;
-    const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : cpSkill, startTargetC: s.targetC });
+    const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : cpSkill, startTargetC: s.targetC, startRole: s.startRole });
     const p = toWorld(s.a + lineA(s.targetC), s.c);
     b.place(p.x, p.z, W0 - 0.75 + (rng() - 0.5) * 0.05);
     b.v = 0.4; b.sheet = sheetOpt(b.twa);
@@ -1268,7 +1281,37 @@ function loop() {
   
   if (player) {
     cam.update(dt, time, player, boats);
-    world.update(time, camera, dt, (state.phase === 'race' || state.phase === 'orientation') ? state.t : time, player);
+    // ドローンカメラ時に他艇(CP艇)がカメラと自艇の間に入って自艇が見えなくなる場合、そのCP艇を半透明化する
+    if (models.length > 1) {
+      const isDrone = cam.mode !== COCKPIT;
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      const px = player.x, py = 1.85, pz = player.z;
+      const rdx = px - cx, rdy = py - cy, rdz = pz - cz;
+      const rLen = Math.hypot(rdx, rdy, rdz) || 1;
+      const ux = rdx / rLen, uy = rdy / rLen, uz = rdz / rLen;
+      for (let i = 1; i < models.length; i++) {
+        const m = models[i], b = boats[i];
+        if (!m || !b || !m.setOccludingAlpha) continue;
+        let tgtAlpha = 1.0;
+        if (isDrone) {
+          // 艇体およびセール中心付近(高さy=2.2m)とカメラ→自艇の視線ベクトルとの距離を判定
+          const bx = b.x - cx, by = 2.2 - cy, bz = b.z - cz;
+          const along = bx * ux + by * uy + bz * uz;
+          if (along > 1.2 && along < rLen + 2.2) {
+            const ox = bx - ux * along, oy = (by - uy * along) * 0.55, oz = bz - uz * along;
+            const perp = Math.hypot(ox, oy, oz);
+            if (perp < 4.6) {
+              tgtAlpha = clamp((perp - 1.5) / 3.1, 0.22, 1.0);
+            }
+          }
+        }
+        const curA = m._curOccAlpha ?? 1.0;
+        const nextA = curA + (tgtAlpha - curA) * (1 - Math.exp(-dt * 12));
+        m._curOccAlpha = nextA;
+        m.setOccludingAlpha(nextA);
+      }
+    }
+    world.update(time, camera, dt, (state.phase === 'race' || state.phase === 'orientation') ? state.t : time, player, boats);
     setWind(clamp(Math.abs(player.v) / 6, 0, 1));
     const active = (state.phase === 'race' || state.phase === 'menu' || state.phase === 'orientation') && !state.paused;
     if (active) updateSailingAudio(dt, player, active);
