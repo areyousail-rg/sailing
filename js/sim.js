@@ -693,19 +693,19 @@ export class Boat {
       this.waveF = wf;
       this.waveLoss = Math.max(0, 1 - wf);
       target *= wf;
-      // 波にはたかれた際の水面叩きつけイベント(海に船がたたきつけられる控えめな音 & しぶき演出用)
+      // 波にはたかれた際の水面叩きつけイベント(海に船がたたきつけられる控えめな音 & うっすら上がるしぶき演出用)
       this.waveSlamCD = Math.max(0, (this.waveSlamCD || 0) - dt);
       const prevClimb = this._prevClimb || 0;
       this._prevClimb = climb;
-      if (this.waveSlamCD <= 0 && Math.abs(this.v) > 0.25) {
+      if (this.waveSlamCD <= 0 && Math.abs(this.v) > 0.45) {
         const drop = prevClimb - climb;
-        if ((prevClimb > 0.18 && drop > 0.13) || (climb > 0.46 && prevClimb <= 0.46)) {
+        if ((prevClimb > 0.28 && drop > 0.22) || (climb > 0.56 && prevClimb <= 0.56)) {
           const steepScale = clamp(SEA.steep / 0.85, 0.55, 1.15);
           const slam = clamp((drop * 0.90 + Math.max(0, climb) * 0.52) * steepScale * (0.45 + 0.75 * slowFactor) * (1 - 0.68 * downFactor * speedNorm), 0, 1);
-          if (slam > 0.16) {
+          if (slam > 0.24) {
             this.visualSlam = Math.max(this.visualSlam || 0, slam);
-            if (slam > 0.20) this.waveSlam = slam;
-            this.waveSlamCD = 0.95 + Math.random() * 0.85;
+            this.waveSlam = slam;
+            this.waveSlamCD = 2.8 + Math.random() * 2.2;
           }
         }
       }
