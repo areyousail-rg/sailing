@@ -193,6 +193,13 @@ void main(){
 }`;
 const waterMat = new THREE.ShaderMaterial({
   defines: { NWAVE: MOBILE ? 3 : 4 },
+  stencilWrite: true,
+  stencilWriteMask: 0,
+  stencilFunc: THREE.NotEqualStencilFunc,
+  stencilRef: 1,
+  stencilFail: THREE.KeepStencilOp,
+  stencilZFail: THREE.KeepStencilOp,
+  stencilZPass: THREE.KeepStencilOp,
   uniforms: {
     uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uWindKt: { value: 9.0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR }, uShift: { value: 0 }, uGen: { value: 0.55 },
     uSeaA: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
@@ -210,17 +217,6 @@ float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*437
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
 void main(){
   vec2 p=vW.xz;
-  // 船体外側の喫水線(船と海面が触れる部分)で海面が欠けて海中の白い船底が見えてしまわないよう、
-  // 垂直なコクピット側壁(|x|=0.50m)より内側のコクピット床領域(z=-0.52..+1.58m, |x|<0.43m)のみをマスクする
-  for(int bi=0;bi<8;bi++){
-    vec4 bp=uNearBoats[bi];
-    if(bp.z<-900.0) continue;
-    vec2 bRel=p-bp.xy;
-    if(dot(bRel,bRel)>3.2) continue;
-    float ch=cos(bp.w), sh=sin(bp.w);
-    vec2 bLoc=vec2(bRel.x*ch+bRel.y*sh,-bRel.x*sh+bRel.y*ch);
-    if(bLoc.y>-0.52 && bLoc.y<1.58 && abs(bLoc.x)<0.43) discard;
-  }
   vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
   // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd0)へ流れるブローを算出する
   // 海面テクスチャの座標軸(wd0, wp0)は時間変化しない基準風向(uW0)に完全固定することで、シフト変化時に海面の流れが横滑りしたり風向とずれる現象を根絶する
@@ -328,7 +324,7 @@ void main(){
     float foamN2=vn(vec2(wu*1.35+3.7,wv*2.10-uWT*3.1));
     float foamDetail=0.58*foamN1+0.42*foamN2;
     float waveMetric=length(g)*2.35+max(0.0,elev)*0.52+foamDetail*0.44;
-    float baseFoam=smoothstep(0.88,1.12,waveMetric)*0.22*(0.55+0.45*nearBlue);
+    float baseFoam=smoothstep(0.94,1.18,waveMetric)*0.08*(0.55+0.45*nearBlue);
     // 15kt超の白波: 風が強くなるほど閾値が下がり、波頭が崩れる白い泡と風下方向の白波ストリークが海面全体に広がる
     float wcThresh=mix(0.92,0.50,clamp(whitecapIntensity,0.0,1.0));
     float wcCrest=smoothstep(wcThresh,wcThresh+0.22,waveMetric+whitecapIntensity*0.18);
@@ -490,7 +486,20 @@ export function createWorld(scene) {
   sea.geometry.rotateX(-Math.PI / 2); sea.scale.set(120000, 1, 120000); sea.frustumCulled = false; scene.add(sea);
   // カメラ周辺の立体波浪変位パッチ(うねり・三角波・風浪すべてで常時表示し、波の立体感を表現)
   const PATCH_R = 192, PATCH_SEG = MOBILE ? 96 : 144;
-  const seaPatchMat = new THREE.ShaderMaterial({ defines: { ...waterMat.defines, PATCH: 1 }, uniforms: waterMat.uniforms, vertexShader: waterMat.vertexShader, fragmentShader: waterMat.fragmentShader, fog: false });
+  const seaPatchMat = new THREE.ShaderMaterial({
+    defines: { ...waterMat.defines, PATCH: 1 },
+    uniforms: waterMat.uniforms,
+    vertexShader: waterMat.vertexShader,
+    fragmentShader: waterMat.fragmentShader,
+    fog: false,
+    stencilWrite: true,
+    stencilWriteMask: 0,
+    stencilFunc: THREE.NotEqualStencilFunc,
+    stencilRef: 1,
+    stencilFail: THREE.KeepStencilOp,
+    stencilZFail: THREE.KeepStencilOp,
+    stencilZPass: THREE.KeepStencilOp,
+  });
   const patchGeo = new THREE.PlaneGeometry(PATCH_R * 2, PATCH_R * 2, PATCH_SEG, PATCH_SEG); patchGeo.rotateX(-Math.PI / 2);
   const seaPatch = new THREE.Mesh(patchGeo, seaPatchMat); seaPatch.frustumCulled = false; seaPatch.renderOrder = -5; seaPatch.visible = true; scene.add(seaPatch);
   sea.renderOrder = -4;
@@ -999,8 +1008,8 @@ export function createWorld(scene) {
   startCanvas.width = 768; startCanvas.height = 280;
   const startTex = new THREE.CanvasTexture(startCanvas);
   const startLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: startTex, transparent: true, depthWrite: false }));
-  startLabel.scale.set(34.0, 12.4, 1);
-  startLabel.position.set(0, 8.8, 0);
+  startLabel.scale.set(16.0, 5.8, 1);
+  startLabel.position.set(0, 4.8, 0);
   startLabel.renderOrder = 5;
   scene.add(startLabel);
   let showPreStartFav = true;
@@ -1087,7 +1096,7 @@ export function createWorld(scene) {
     const lcx = (pa.x + pb.x) / 2, lcz = (pa.z + pb.z) / 2, lrot = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
     lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.06, lcz);
     lineMesh.visible = courseVisible;
-    startLabel.position.set(lcx, 8.8, lcz);
+    startLabel.position.set(lcx, 4.8, lcz);
     startLabel.visible = courseVisible;
     updateStartLabel();
 
@@ -1203,29 +1212,31 @@ export function createWorld(scene) {
         if (h.acc > (rDrag > 0.22 ? 0.048 : 0.068) && (b.v > 0.38 || rDrag > 0.16)) {
           h.acc = 0;
           const fx = Math.sin(b.h), fz = -Math.cos(b.h);
-          const sternX = b.x - fx * 2.36, sternZ = b.z - fz * 2.36;
-          const bowX = b.x + fx * 1.92, bowZ = b.z + fz * 1.92;
-          // そこそこの低速(v > 0.72)で走行中はバウからしぶきが上がり、波にはたかれた瞬間(visualSlam / waveSlam / 波頭衝突)はさらに大きなしぶきが飛ぶ
+          const sternX = b.x - fx * 2.68, sternZ = b.z - fz * 2.68;
+          const bowX = b.x + fx * 1.65, bowZ = b.z + fz * 1.65;
+          // 通常走行時(v > 0.72)は上に噴き上げず海面がほんのわずかに白くなる程度(cruiseFoam)とし、波にはたかれた時だけslamSprayを加える
           const wsBow = waveSample(bowX, bowZ, SEA.clock, fx, fz);
-          const hitCrest = (wsBow.h > 0.030 && wsBow.slope > 0.038)
-            ? (wsBow.h - 0.030) * 3.8 + (wsBow.slope - 0.038) * 5.2
+          const hitCrest = (wsBow.h > 0.045 && wsBow.slope > 0.052)
+            ? (wsBow.h - 0.045) * 3.2 + (wsBow.slope - 0.052) * 4.5
             : 0;
           const slamCut = Math.max(b.waveSlam || 0, b.visualSlam || 0);
           const spdBase = clampN((b.v - 0.72) / 2.2, 0, 1.0);
-          const cruiseSpray = spdBase * (0.28 + 0.16 * Math.max(0, Math.sin(SEA.clock * 7.5 + b.id * 1.9)));
-          const waveCut = hitCrest + slamCut * 1.45;
-          const bowImpact = b.v > 0.72 ? clampN(cruiseSpray + waveCut * clampN((b.v - 0.65) / 1.4, 0.25, 1.2), 0, 1) : 0;
+          const cruiseFoam = b.v > 0.72 ? spdBase * (0.55 + 0.25 * Math.max(0, Math.sin(SEA.clock * 6.5 + b.id * 1.9))) : 0;
+          const slamSpray = b.v > 0.72 ? clampN((hitCrest + slamCut * 1.45) * clampN((b.v - 0.65) / 1.4, 0.25, 1.2), 0, 1) : 0;
           h.pts.unshift({
             x: sternX, z: sternZ,
             bowX, bowZ,
-            midX: b.x - fx * 1.35, midZ: b.z - fz * 1.35,
+            midX: b.x - fx * 1.65, midZ: b.z - fz * 1.65,
             h: b.h, age: 0,
             s: clampN(b.v / 5.6, 0.12, 0.95),
             rudder: rDrag,
-            bowImpact,
+            cruiseFoam,
+            slamSpray,
           });
           if (h.pts.length > TRAIL_N) h.pts.pop();
         }
+        const curFx = Math.sin(b.h), curFz = -Math.cos(b.h);
+        const curRx = Math.cos(b.h), curRz = Math.sin(b.h);
         for (const p of h.pts) p.age += dt;
         for (let i = 0; i < TRAIL_N; i++) {
           const p = h.pts[i];
@@ -1234,21 +1245,29 @@ export function createWorld(scene) {
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           const rFoam = (p.rudder || 0) * Math.pow(life, 0.78);
 
-          // 1, 2) バウ(船首)から外側へ飛ぶ白いしぶき(船体と海面の接地部分が常時白くならないよう外側へオフセットして飛散)
-          if (p.bowImpact > 0.12 && p.age < 0.56) {
-            const bLife = 1 - p.age / 0.56;
-            const bFade = Math.pow(bLife, 1.45);
+          // 1, 2) 通常走行時はバウ外側の海面がほんのわずかに白くなるフラットな泡、波にはたかれた時だけ少し強い白泡(船体との接地点は絶対に白くしないよう船体周囲1.15m以内はマスク)
+          if ((p.cruiseFoam > 0.08 || p.slamSpray > 0.08) && p.age > 0.10 && p.age < 0.62) {
+            const bLife = 1 - (p.age - 0.10) / 0.52;
+            const bFade = Math.pow(clampN(bLife, 0, 1), 1.45);
             const wsB = waveSample(p.bowX, p.bowZ, SEA.clock);
-            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.65 + 0.08 + 0.24 * Math.sin((p.age / 0.56) * Math.PI) * p.bowImpact;
-            const sprayOff = 0.48 + p.age * (1.55 + p.s * 1.05);
+            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.55 + 0.015;
+            const sprayOff = 0.96 + p.age * (1.20 + p.s * 0.85);
             for (const s of [-1, 1]) {
-              const sa = p.h - s * 0.48;
+              const px = p.bowX + rx * s * sprayOff;
+              const pz = p.bowZ + rz * s * sprayOff;
+              const relF = (px - b.x) * curFx + (pz - b.z) * curFz;
+              const relR = Math.abs((px - b.x) * curRx + (pz - b.z) * curRz);
+              if (relF > -2.65 && relF < 2.55 && relR < 1.15) {
+                hide(k++);
+                continue;
+              }
+              const sa = p.h - s * 0.42;
               tq.setFromAxisAngle(yAx, -sa);
-              ts.set(0.15 + p.age * 0.22 * p.bowImpact, 1, 0.40 + p.age * 0.32);
-              m4.compose(tv.set(p.bowX + rx * s * sprayOff, bowY, p.bowZ + rz * s * sprayOff), tq, ts);
+              ts.set(0.14 + p.age * 0.18, 1, 0.42 + p.age * 0.30);
+              m4.compose(tv.set(px, bowY, pz), tq, ts);
               trail.setMatrixAt(k, m4);
-              const sprayBright = (0.24 * p.bowImpact) * bFade;
-              col.setRGB(0.92, 0.97, 1.0).multiplyScalar(sprayBright);
+              const sprayBright = (0.052 * (p.cruiseFoam || 0) + 0.16 * (p.slamSpray || 0)) * bFade;
+              col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
               trail.setColorAt(k++, col);
             }
           } else {
@@ -1257,35 +1276,41 @@ export function createWorld(scene) {
           }
 
           // 3) わずかに立つ引き波(ケルビンV字波紋): 船体後方の離れた位置からごく控えめな水面光沢筋として左右交互に配置
-          if (p.s > 0.18 && p.age > 0.12) {
+          if (p.s > 0.18 && p.age > 0.16) {
             const sideS = i % 2 === 0 ? 1 : -1;
-            const wakeOff = 0.58 + p.age * (0.66 + p.s * 0.85);
+            const wakeOff = 0.92 + p.age * (0.68 + p.s * 0.85);
             const wx = p.midX + rx * sideS * wakeOff;
             const wz = p.midZ + rz * sideS * wakeOff;
-            const wsW = waveSample(wx, wz, SEA.clock);
-            const wy = wsW.hLong * 0.95 + (wsW.h - wsW.hLong) * 0.55 + 0.02;
-            const wa = p.h - sideS * 0.38;
-            tq.setFromAxisAngle(yAx, -wa);
-            ts.set(0.050 + p.age * 0.035, 1, 0.85 + p.age * 0.45);
-            m4.compose(tv.set(wx, wy, wz), tq, ts);
-            trail.setMatrixAt(k, m4);
-            const wakeGlint = 0.028 * p.s * fade;
-            col.setRGB(0.58, 0.78, 0.90).multiplyScalar(wakeGlint);
-            trail.setColorAt(k++, col);
+            const relF = (wx - b.x) * curFx + (wz - b.z) * curFz;
+            const relR = Math.abs((wx - b.x) * curRx + (wz - b.z) * curRz);
+            if (relF > -2.65 && relF < 2.55 && relR < 1.15) {
+              hide(k++);
+            } else {
+              const wsW = waveSample(wx, wz, SEA.clock);
+              const wy = wsW.hLong * 0.95 + (wsW.h - wsW.hLong) * 0.55 + 0.015;
+              const wa = p.h - sideS * 0.38;
+              tq.setFromAxisAngle(yAx, -wa);
+              ts.set(0.050 + p.age * 0.035, 1, 0.85 + p.age * 0.45);
+              m4.compose(tv.set(wx, wy, wz), tq, ts);
+              trail.setMatrixAt(k, m4);
+              const wakeGlint = 0.026 * p.s * fade;
+              col.setRGB(0.58, 0.78, 0.90).multiplyScalar(wakeGlint);
+              trail.setColorAt(k++, col);
+            }
           } else {
             hide(k++);
           }
 
-          // 4) ラダー周辺の白泡: ラダーに抵抗があった時(rFoam > 0.14)だけラダー周辺がわずかに白くなる(直進時は完全に非表示)
-          if (rFoam > 0.14 && p.age < 1.05) {
-            const rFade = Math.pow(1 - p.age / 1.05, 1.55);
+          // 4) ラダー周辺の白泡: ラダーに抵抗があった時(rFoam > 0.20)だけ船尾後方がわずかに白くなる(船体と海面の接地点は白くしない)
+          if (rFoam > 0.20 && p.age > 0.06 && p.age < 1.00) {
+            const rFade = Math.pow(1 - p.age / 1.00, 1.55);
             const wsR = waveSample(p.x, p.z, SEA.clock);
-            const ry = wsR.hLong * 0.95 + (wsR.h - wsR.hLong) * 0.55 + 0.03;
+            const ry = wsR.hLong * 0.95 + (wsR.h - wsR.hLong) * 0.55 + 0.02;
             tq.setFromAxisAngle(yAx, -p.h + (i % 2 === 0 ? 0.14 : -0.14));
-            ts.set(0.16 + p.age * 0.15, 1, 0.42 + p.age * 0.24);
+            ts.set(0.15 + p.age * 0.14, 1, 0.36 + p.age * 0.22);
             m4.compose(tv.set(p.x, ry, p.z), tq, ts);
             trail.setMatrixAt(k, m4);
-            col.setRGB(0.86, 0.94, 0.99).multiplyScalar(0.18 * rFoam * rFade);
+            col.setRGB(0.86, 0.94, 0.99).multiplyScalar(0.14 * rFoam * rFade);
             trail.setColorAt(k++, col);
           } else {
             hide(k++);
@@ -1492,47 +1517,61 @@ export function createWorld(scene) {
         return distFade;
       };
 
-      // 1) マーク番号ラベル: 遠くにあるマークほど大きく拡大して遠くからでも番号がはっきり判読できるようにし、カメラ接近時は完全に消す
+      // 1) マーク番号ラベル: カメラからの距離(dCam)に応じてスケールを調整し、近づいても大きくなりすぎないようにする
       for (const [k, sp] of Object.entries(markSprites)) {
         const mo = markObjs[k];
         if (!mo.visible) { sp.visible = false; continue; }
         const isAct = activeMarkKeys.includes(k);
         const dCam = Math.hypot(mo.position.x - cx, mo.position.z - cz);
-        const baseS = isAct ? 4.8 : 4.0;
-        const distBoost = Math.max(0, dCam - 50) * (isAct ? 0.048 : 0.040);
-        const s = clampN(baseS + distBoost, baseS, isAct ? 22.0 : 18.0);
+        const s = clampN(dCam * (isAct ? 0.042 : 0.034), 1.15, isAct ? 20.0 : 16.0);
         sp.scale.set(s, s, 1);
-        sp.position.y = 4.2 + (s - baseS) * 0.38;
-        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 26 : 55, 22, true);
+        sp.position.y = 2.5 + s * 0.56;
+        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 22 : 45, 20, true);
         sp.material.opacity = 0.94 * v;
         sp.visible = v > 0.02;
       }
 
-      // 2) マークの数字ラベルの「さらに上」に赤矢印＋Next表記を配置 (数字と重ならないよう番号サークルの最上部より上にオフセット)
+      // 2) START LINE / FINISH ラベルもカメラ距離(dCam)に応じてスケール・高さを調整し、近づいた際に巨大化しないようにする
+      if (startLabel) {
+        const dStart = Math.hypot(startLabel.position.x - cx, startLabel.position.z - cz);
+        const sw = clampN(dStart * 0.185, 4.2, 26.0);
+        const sh = sw / 2.743;
+        startLabel.scale.set(sw, sh, 1);
+        startLabel.position.y = 2.2 + sh * 0.60;
+        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 10, 10, false);
+        startLabel.material.opacity = 0.94 * v;
+        startLabel.visible = courseVisible && v > 0.02;
+      }
+      if (finLabel) {
+        const dFin = Math.hypot(finLabel.position.x - cx, finLabel.position.z - cz);
+        const fw = clampN(dFin * 0.145, 3.2, 21.0);
+        const fh = fw * 0.25;
+        finLabel.scale.set(fw, fh, 1);
+        finLabel.position.y = 2.0 + fh * 0.62;
+        const v = calcVis(finLabel.position.x, finLabel.position.y, finLabel.position.z, 10, 10, false);
+        finLabel.material.opacity = 0.94 * v;
+        finLabel.visible = courseVisible && v > 0.02;
+      }
+
+      // 3) マークの数字ラベル(またはFINISH)の「さらに上」に赤矢印＋Next表記を配置 (距離dCamに比例してスケール調整し近づいても大きくなりすぎない)
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
         const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
-        const arScale = clampN(1.0 + Math.max(0, dCam - 55) * 0.0065, 1.0, 2.8);
+        const arScale = clampN(dCam * 0.0072, 0.28, 2.6);
         ar.scale.setScalar(arScale);
         if (ar.userData.isFinish) {
-          ar.position.y = 18.8 + 0.65 * Math.sin(t * 3.2) + (arScale - 1.0) * 3.2;
+          const finTopY = finLabel ? (finLabel.position.y + finLabel.scale.y * 0.56) : 5.0;
+          ar.position.y = finTopY + 3.8 * arScale + 0.35 * arScale * Math.sin(t * 3.2);
         } else {
           const mk = ar.userData.markKey;
           const sp = mk && markSprites[mk];
-          // マーク番号サークルの上端(sp.position.y + sp.scale.y * 0.56)のさらに上に矢印先端(local y=-3.45*arScale)が来るように配置
-          const spTopY = sp ? (sp.position.y + sp.scale.y * 0.56) : 7.5;
-          ar.position.y = spTopY + 3.85 * arScale + 0.55 * Math.sin(t * 3.2);
+          const spTopY = sp ? (sp.position.y + sp.scale.y * 0.56) : 3.5;
+          ar.position.y = spTopY + 3.85 * arScale + 0.35 * arScale * Math.sin(t * 3.2);
         }
         ar.rotation.y = t * 1.6;
-        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18, !ar.userData.isFinish);
+        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 22, 16, !ar.userData.isFinish);
         ar.userData.mat.opacity = 0.96 * v;
         if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
-      }
-      for (const lb of [startLabel, finLabel]) {
-        if (!lb) continue;
-        const v = calcVis(lb.position.x, lb.position.y, lb.position.z, 10, 10, false);
-        lb.material.opacity = 0.94 * v;
-        lb.visible = v > 0.02;
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
