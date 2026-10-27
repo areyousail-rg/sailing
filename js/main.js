@@ -733,8 +733,8 @@ function updateOrientVisualPointer(targets) {
         const pxPerUnit = (H * 0.5) / (dist * Math.tan((camera.fov * Math.PI) / 360));
         const wRatio = t.wRatio || 0.84;
         const hRatio = t.hRatio || 0.76;
-        const pw = clamp((obj.scale ? obj.scale.x : 12) * pxPerUnit * wRatio + 14, 76, 260);
-        const ph = clamp((obj.scale ? obj.scale.y : 4.5) * pxPerUnit * hRatio + 10, 34, 110);
+        const pw = clamp((obj.scale ? obj.scale.x : 12) * pxPerUnit * wRatio + 12, 54, 240);
+        const ph = clamp((obj.scale ? obj.scale.y : 4.5) * pxPerUnit * hRatio + 8, 26, 100);
         rects.push({
           left: clamp(sx - pw * 0.5, 12, W - pw - 12),
           top: clamp(sy - ph * 0.5, 12, H - ph - 12),
