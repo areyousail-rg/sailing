@@ -9,6 +9,7 @@ let chineGain = null, chineFilter = null;
 let shiverGain = null, shiverLfo = null;
 let nearGain = null, nearFilter = null, nearPan = null;
 let camMul = 1, tBubble = 0, tSlap = 0, tSlice = 0, tGurgle = 0, tShiver = 0, wPhase = 0;
+let bgmMode = null, bgmTimer = null, bgmBus = null;
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -277,15 +278,26 @@ function shiverFlap(lv) {
   o.start(t); o.stop(t + dur + 0.02);
 }
 
-// active=false(一時停止/メニュー)で無音。b は自艇。
+// active=false(一時停止/メニュー/リザルト/振り返り)で無音。b は自艇。
 export function updateSailingAudio(dt, b, active = true) {
   if (!ctx || !hissGain) return;
   const now = ctx.currentTime;
-  boatBus.gain.setTargetAtTime(active ? camMul : 0, now, 0.25);
-  const v = active && b ? Math.abs(b.v) : 0;
+  if (!active || bgmMode) {
+    boatBus.gain.setTargetAtTime(0, now, 0.05);
+    hissGain.gain.setTargetAtTime(0, now, 0.04);
+    rushGain.gain.setTargetAtTime(0, now, 0.04);
+    if (chineGain) chineGain.gain.setTargetAtTime(0, now, 0.04);
+    shiverGain.gain.setTargetAtTime(0, now, 0.02);
+    shiverGain._amp.gain.setTargetAtTime(0, now, 0.02);
+    if (nearGain) nearGain.gain.setTargetAtTime(0, now, 0.05);
+    if (windGain && bgmMode) windGain.gain.setTargetAtTime(0.015, now, 0.12);
+    return;
+  }
+  boatBus.gain.setTargetAtTime(camMul, now, 0.20);
+  const v = b ? Math.abs(b.v) : 0;
   const sp = clamp01(v / 8);
-  const heel = active && b ? Math.min(0.4, Math.abs(b.heel)) : 0;
-  const twa = active && b ? b.twa || 1.0 : 1.0;
+  const heel = b ? Math.min(0.4, Math.abs(b.heel)) : 0;
+  const twa = b ? b.twa || 1.0 : 1.0;
   const upwind = twa < 1.35;
 
   // 波との出会い周期(クローズでは波に突っ込むため周期が速く、ランニングでは波に乗ってゆったりうねる)
@@ -666,3 +678,162 @@ export function orientStepSfx(accent = false) {
     o.start(t + i * 0.008); o.stop(t + 0.36);
   });
 }
+
+// ---- リザルト画面BGM ('result') ＆ 振り返り画面BGM ('review') ----
+function silenceSailingNow() {
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  if (boatBus) boatBus.gain.setTargetAtTime(0, now, 0.03);
+  if (hissGain) hissGain.gain.setTargetAtTime(0, now, 0.03);
+  if (rushGain) rushGain.gain.setTargetAtTime(0, now, 0.03);
+  if (chineGain) chineGain.gain.setTargetAtTime(0, now, 0.03);
+  if (shiverGain) {
+    shiverGain.gain.setTargetAtTime(0, now, 0.015);
+    if (shiverGain._amp) shiverGain._amp.gain.setTargetAtTime(0, now, 0.015);
+  }
+  if (nearGain) nearGain.gain.setTargetAtTime(0, now, 0.03);
+  if (windGain) windGain.gain.setTargetAtTime(0.015, now, 0.10);
+}
+
+export function stopBgm() {
+  bgmMode = null;
+  if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
+  if (bgmBus && ctx) {
+    const oldBus = bgmBus;
+    bgmBus = null;
+    try {
+      oldBus.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.08);
+      setTimeout(() => { try { oldBus.disconnect(); } catch (e) {} }, 350);
+    } catch (e) {}
+  }
+}
+
+export function playBgm(mode = 'result') {
+  initAudio();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  silenceSailingNow();
+  if (bgmMode === mode && bgmTimer) return;
+  stopBgm();
+  bgmMode = mode;
+
+  const bus = ctx.createGain();
+  bus.gain.setValueAtTime(0.001, ctx.currentTime);
+  bus.gain.linearRampToValueAtTime(mode === 'result' ? 0.42 : 0.38, ctx.currentTime + 0.25);
+  bus.connect(master);
+  const revSend = ctx.createGain();
+  revSend.gain.value = mode === 'result' ? 0.28 : 0.36;
+  bus.connect(revSend);
+  if (fx) revSend.connect(fx);
+  bgmBus = bus;
+
+  const playNote = (freq, t0, dur, type, vol, lpFreq = 2400) => {
+    if (!ctx || !bgmBus || bgmBus !== bus) return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(lpFreq, t0);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(260, lpFreq * 0.42), t0 + dur);
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.018);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(lp); lp.connect(g); g.connect(bus);
+    o.start(t0); o.stop(t0 + dur + 0.03);
+  };
+
+  const playHat = (t0, vol = 0.035, open = false) => {
+    if (!ctx || !noiseBuf || !bgmBus || bgmBus !== bus) return;
+    const dur = open ? 0.14 : 0.045;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    s.connect(hp); hp.connect(g); g.connect(bus);
+    s.start(t0, Math.random() * 1.2); s.stop(t0 + dur + 0.02);
+  };
+
+  let step = 0;
+  if (mode === 'result') {
+    // リザルト画面BGM: 爽やかで華やかなヨットレガッタ・フィニッシュBGM (120 BPM, 8分音符ステップ=0.25s)
+    // コード進行: Fmaj7 -> G7 -> Em7 -> Am7 -> Dm7 -> G7 -> Cmaj7 -> C7 (32ステップ1周)
+    const chords = [
+      { bass: 87.31, notes: [349.23, 440.00, 523.25, 659.25] }, // Fmaj7
+      { bass: 98.00, notes: [392.00, 493.88, 587.33, 698.46] }, // G7
+      { bass: 82.41, notes: [329.63, 392.00, 493.88, 587.33] }, // Em7
+      { bass: 110.00, notes: [440.00, 523.25, 659.25, 783.99] }, // Am7
+      { bass: 73.42, notes: [293.66, 349.23, 440.00, 523.25] }, // Dm7
+      { bass: 98.00, notes: [392.00, 493.88, 587.33, 698.46] }, // G7
+      { bass: 65.41, notes: [261.63, 329.63, 392.00, 493.88] }, // Cmaj7
+      { bass: 65.41, notes: [261.63, 329.63, 392.00, 466.16] }, // C7
+    ];
+    const melody = [
+      659.25, 0, 783.99, 880.00,  783.99, 0, 698.46, 587.33,
+      659.25, 0, 783.99, 987.77,  1046.50, 0, 987.77, 783.99,
+      880.00, 0, 698.46, 587.33,  659.25, 783.99, 880.00, 987.77,
+      1046.50, 0, 783.99, 659.25, 783.99, 0, 0, 0,
+    ];
+    const tick = () => {
+      if (bgmMode !== 'result' || bgmBus !== bus || !ctx) return;
+      const t0 = ctx.currentTime + 0.03;
+      const s = step % 32;
+      const ch = chords[Math.floor(s / 4)];
+      const sub = s % 4;
+      // エレピ風コードバッキング
+      if (sub === 0 || sub === 3) {
+        ch.notes.forEach((f, i) => playNote(f, t0 + i * 0.012, sub === 0 ? 0.65 : 0.35, 'triangle', 0.055, 2200));
+      }
+      // ベースライン
+      if (sub === 0) playNote(ch.bass, t0, 0.42, 'sine', 0.14, 650);
+      else if (sub === 2) playNote(ch.bass * 1.5, t0, 0.28, 'sine', 0.10, 650);
+      // 爽やかなシンセベル・リードメロディ
+      const mf = melody[s];
+      if (mf > 0) {
+        playNote(mf, t0, 0.38, 'sine', 0.085, 3400);
+        playNote(mf * 2, t0, 0.22, 'triangle', 0.025, 4200);
+      }
+      // 軽快なシェイカー/ハイハット
+      playHat(t0, sub % 2 === 0 ? 0.028 : 0.018, sub === 2);
+      step++;
+    };
+    tick();
+    bgmTimer = setInterval(tick, 250);
+  } else if (mode === 'review') {
+    // 振り返り画面BGM: 落ち着いた戦術分析・スポーツハイライト風のチル/ローファイ・ジャズフュージョンBGM (96 BPM, 8分音符=0.312s)
+    // コード進行: Am9 -> Fmaj7 -> Dm9 -> E7sus4/E7 (32ステップ1周)
+    const chords = [
+      { bass: 55.00, notes: [220.00, 261.63, 329.63, 392.00, 493.88] }, // Am9
+      { bass: 43.65, notes: [174.61, 220.00, 261.63, 329.63, 392.00] }, // Fmaj7
+      { bass: 73.42, notes: [293.66, 349.23, 440.00, 523.25, 659.25] }, // Dm9
+      { bass: 82.41, notes: [329.63, 440.00, 493.88, 587.33, 659.25] }, // E7sus4
+    ];
+    const arpOrder = [0, 2, 3, 4, 3, 2, 1, 3];
+    const tick = () => {
+      if (bgmMode !== 'review' || bgmBus !== bus || !ctx) return;
+      const t0 = ctx.currentTime + 0.03;
+      const s = step % 32;
+      const ch = chords[Math.floor(s / 8)];
+      const sub = s % 8;
+      // 温かいローズピアノ風パッドコード
+      if (sub === 0) {
+        ch.notes.forEach((f, i) => playNote(f, t0 + i * 0.025, 1.95, 'sine', 0.048, 1200));
+      }
+      // 落ち着いたディープベース
+      if (sub === 0) playNote(ch.bass * 2, t0, 0.90, 'triangle', 0.11, 480);
+      else if (sub === 5) playNote(ch.bass * 3, t0, 0.45, 'sine', 0.075, 480);
+      // 思考を邪魔しないクリアなプラック・アルペジオ
+      const af = ch.notes[arpOrder[sub] % ch.notes.length] * 2;
+      playNote(af, t0, 0.36, 'sine', 0.042, 1800);
+      // 控えめなブラシハイハット
+      if (sub % 2 === 0) playHat(t0, sub === 4 ? 0.022 : 0.012, sub === 4);
+      step++;
+    };
+    tick();
+    bgmTimer = setInterval(tick, 312);
+  }
+}
+
