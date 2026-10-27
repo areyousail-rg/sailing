@@ -1027,15 +1027,19 @@ export class BoatModel {
       this.bowSprayMesh.setColorAt(i, _spCol);
     }
 
-    // 2) 波にはたかれた瞬間(visualSlam)のみ、うっすらと白く上へ上がるしぶき演出 (16..27)
-    // 通常走行時は絶対に上へ噴き上げないよう自動タイマー(slamAutoCD)は使わず、明確な波叩きイベント時のみ発生させる
-    if (b.visualSlam > 0.24) {
+    // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)のみ、適度な濃さ・高さで白く上へ上がるしぶき演出 (16..27)
+    this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
+    if (b.visualSlam > 0.17) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.42 + b.visualSlam * 0.55, 0.42, 0.92);
+      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75, 0.48, 1.08);
       b.visualSlam = 0;
+    } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.78 && ws.h > 0.048 && ws.slope > 0.055) {
+      this.slamBurstT = 0.001;
+      this.slamBurstPow = clamp(0.45 + (ws.h * 1.4 + ws.slope * 2.4), 0.45, 0.96);
+      this.slamAutoCD = 2.3 + Math.random() * 1.5;
     }
 
-    const SLAM_DUR = 0.52;
+    const SLAM_DUR = 0.56;
     if (this.slamBurstT > 0) {
       this.slamBurstT += dt;
       if (this.slamBurstT >= SLAM_DUR) this.slamBurstT = 0;
@@ -1052,7 +1056,7 @@ export class BoatModel {
       }
       const side = j % 2 === 0 ? 1 : -1;
       const tier = (j >> 1) / 5; // 0..1
-      const delay = tier * 0.09;
+      const delay = tier * 0.095;
       const u = clamp((this.slamBurstT - delay) / (SLAM_DUR - delay), 0, 1);
       if (u <= 0 || u >= 1) {
         _spM4.makeScale(0, 0, 0);
@@ -1063,19 +1067,19 @@ export class BoatModel {
       }
       const pow = this.slamBurstPow;
       const arc = Math.sin(u * Math.PI);
-      // 波にはたかれた瞬間だけ、バウ外側へうっすらと控えめに上がって消える
-      const x = side * (0.44 + tier * 0.14 + u * (0.55 + tier * 0.32) * pow);
-      const y = 0.16 + arc * (0.32 + (1 - tier * 0.35) * 0.26) * pow - u * u * 0.14;
-      const z = -2.12 + tier * 0.42 + u * (1.05 + spdF * 0.40);
-      const sz = (0.12 + u * 0.18) * pow;
+      // 波にはたかれた瞬間だけ、バウ外側へ適度な濃さ・高さ(中間バランス)で白く上がって散る
+      const x = side * (0.43 + tier * 0.15 + u * (0.68 + tier * 0.42) * pow);
+      const y = 0.22 + arc * (0.48 + (1 - tier * 0.35) * 0.42) * pow - u * u * 0.18;
+      const z = -2.15 + tier * 0.45 + u * (1.16 + spdF * 0.48);
+      const sz = (0.16 + u * 0.27) * pow;
       _spPos.set(x, y, z);
-      _spEul.set(u * 2.0 + j, side * (0.4 + u), u * 1.5);
+      _spEul.set(u * 2.1 + j, side * (0.45 + u), u * 1.65);
       _spQuat.setFromEuler(_spEul);
-      _spScale.set(sz * 0.95, sz * 0.85, sz * 1.25);
+      _spScale.set(sz * 1.0, sz * 0.92, sz * 1.30);
       _spM4.compose(_spPos, _spQuat, _spScale);
       this.bowSprayMesh.setMatrixAt(idx, _spM4);
-      const fade = Math.pow(1 - u, 1.65) * Math.min(1, u * 6.5) * clamp(0.14 * pow, 0.05, 0.17);
-      _spCol.setRGB(0.90 * fade, 0.96 * fade, 1.0 * fade);
+      const fade = Math.pow(1 - u, 1.50) * Math.min(1, u * 7.0) * clamp(0.28 * pow, 0.14, 0.36);
+      _spCol.setRGB(0.91 * fade, 0.97 * fade, 1.0 * fade);
       this.bowSprayMesh.setColorAt(idx, _spCol);
     }
 
