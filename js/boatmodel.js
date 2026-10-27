@@ -650,7 +650,7 @@ export class BoatModel {
           if (matMap.has(m)) return matMap.get(m);
           const cm = (m === this.sailMat || m === this.jibMat) ? m : m.clone();
           matMap.set(m, cm);
-          this._occMats.push({ mat: cm, baseOp: cm.opacity !== undefined ? cm.opacity : 1.0, baseTrans: !!cm.transparent });
+          this._occMats.push({ mat: cm, baseOp: cm.opacity !== undefined ? cm.opacity : 1.0, baseTrans: !!cm.transparent, baseStencil: !!cm.stencilWrite });
           return cm;
         };
         if (Array.isArray(obj.material)) obj.material = obj.material.map(cloneMat);
@@ -662,6 +662,7 @@ export class BoatModel {
       item.mat.transparent = isTrans ? true : item.baseTrans;
       item.mat.opacity = item.baseOp * a;
       item.mat.depthWrite = !isTrans;
+      item.mat.stencilWrite = !isTrans && item.baseStencil;
     }
   }
 
@@ -1011,61 +1012,34 @@ export class BoatModel {
     this.syncBowSpray(dt, t, ws, sgn);
   }
 
-  // バウしぶき（そこそこの低速〜高速走行中に常時バウ左右から舞い上がり艇内カメラでも見える飛沫）＋ 波にはたかれた際の大しぶき演出
+  // バウしぶき: 通常走行時は上に噴き上げず海面側(wake)でほんのわずかに白くなる表現にとどめ、波にはたかれた時だけ白く上に噴き上げる
   syncBowSpray(dt, t, ws, sgn) {
     if (!this.bowSprayMesh) return;
     const b = this.boat;
     const vAbs = Math.abs(b.v);
-    // そこそこの低速(v > 0.72 ≒ 実艇約0.7kt)からバウしぶきが発生し、速度に応じて勢いを増す
     const spdF = clamp((vAbs - 0.72) / 1.75, 0, 1.30);
-    const bowWaveBoost = clamp(Math.max(0, ws.h * 1.8 + ws.slope * 2.8), 0, 0.95);
-    const contPow = spdF > 0.02 ? clamp(spdF * (0.68 + 0.55 * bowWaveBoost), 0, 1.35) : 0;
 
-    // 1) 常時バウしぶき (0..15): 船首(z=-2.15..-1.25)から左右外側かつデッキ高さ(y=0.42m)より上(y=0.45..1.02m)へ放物線を描いて飛ぶため艇内カメラからもはっきり見える
+    // 1) 通常走行時は常時上へ噴き上げる3Dパーティクル(0..15)は出さず非表示にする(船と海面の接地点が白くなるのも防ぐ)
+    _spM4.makeScale(0, 0, 0);
+    _spCol.setScalar(0);
     for (let i = 0; i < 16; i++) {
-      if (contPow <= 0.03) {
-        _spM4.makeScale(0, 0, 0);
-        this.bowSprayMesh.setMatrixAt(i, _spM4);
-        _spCol.setScalar(0);
-        this.bowSprayMesh.setColorAt(i, _spCol);
-        continue;
-      }
-      const side = i % 2 === 0 ? 1 : -1;
-      const lane = (i >> 1) / 8; // 0..0.875
-      const rate = 2.0 + spdF * 1.35 + (i % 3) * 0.22;
-      const u = (t * rate + lane + this.phase * 0.17) % 1.0;
-      const arc = Math.sin(u * Math.PI);
-      const isLeeward = side === -sgn;
-      const sideBias = isLeeward ? 1.18 : 0.90;
-      // 船体喫水線に白い線が張り付かないよう、バウ外側へ飛び出しながらフォアデッキ上方の空間(y=0.36..0.98m)へ舞い上がる軌道
-      const x = side * (0.24 + u * (0.58 + 0.48 * contPow) * sideBias);
-      const y = 0.24 + arc * (0.38 + 0.44 * contPow) * sideBias - u * u * 0.14;
-      const z = -2.14 + (i % 4) * 0.14 + u * (1.05 + 0.75 * spdF);
-      const sz = (0.14 + u * 0.26) * (0.65 + 0.45 * contPow);
-      _spPos.set(x, y, z);
-      _spEul.set(u * 1.6, side * (0.4 + u * 0.8), u * 2.1 + i);
-      _spQuat.setFromEuler(_spEul);
-      _spScale.set(sz * 0.95, sz * 0.85, sz * 1.35);
-      _spM4.compose(_spPos, _spQuat, _spScale);
       this.bowSprayMesh.setMatrixAt(i, _spM4);
-      const alpha = Math.pow(1 - u, 1.25) * Math.min(1, u * 5.5) * clamp(0.24 + 0.34 * contPow, 0, 0.58);
-      _spCol.setRGB(0.90 * alpha, 0.96 * alpha, 1.0 * alpha);
       this.bowSprayMesh.setColorAt(i, _spCol);
     }
 
-    // 2) 波にはたかれた際の大しぶき演出 (16..27)
+    // 2) 波にはたかれた瞬間(visualSlam)のみ白く上へ噴き上げる大しぶき演出 (16..27)
     this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
-    if (b.visualSlam > 0.12) {
+    if (b.visualSlam > 0.14) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.55 + b.visualSlam * 0.95, 0.55, 1.35);
+      this.slamBurstPow = clamp(0.52 + b.visualSlam * 0.90, 0.52, 1.28);
       b.visualSlam = 0;
-    } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.65 && ws.h > 0.045 && ws.slope > 0.055) {
+    } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.75 && ws.h > 0.058 && ws.slope > 0.068) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.48 + (ws.h * 1.8 + ws.slope * 3.2), 0.48, 1.15);
-      this.slamAutoCD = 1.1 + Math.random() * 0.8;
+      this.slamBurstPow = clamp(0.46 + (ws.h * 1.6 + ws.slope * 2.8), 0.46, 1.08);
+      this.slamAutoCD = 2.4 + Math.random() * 1.6;
     }
 
-    const SLAM_DUR = 0.68;
+    const SLAM_DUR = 0.62;
     if (this.slamBurstT > 0) {
       this.slamBurstT += dt;
       if (this.slamBurstT >= SLAM_DUR) this.slamBurstT = 0;
@@ -1082,7 +1056,7 @@ export class BoatModel {
       }
       const side = j % 2 === 0 ? 1 : -1;
       const tier = (j >> 1) / 5; // 0..1
-      const delay = tier * 0.12;
+      const delay = tier * 0.10;
       const u = clamp((this.slamBurstT - delay) / (SLAM_DUR - delay), 0, 1);
       if (u <= 0 || u >= 1) {
         _spM4.makeScale(0, 0, 0);
@@ -1093,18 +1067,18 @@ export class BoatModel {
       }
       const pow = this.slamBurstPow;
       const arc = Math.sin(u * Math.PI);
-      // 波にはたかれた瞬間、バウ〜前方チャインから高さ 0.75〜1.55m まで大きく白い水しぶきがパッと舞い上がり後方へ流れる
-      const x = side * (0.28 + tier * 0.16 + u * (0.85 + tier * 0.55) * pow);
-      const y = 0.30 + arc * (0.72 + (1 - tier * 0.35) * 0.68) * pow - u * u * 0.22;
-      const z = -2.20 + tier * 0.55 + u * (1.35 + spdF * 0.65);
-      const sz = (0.24 + u * 0.42) * pow;
+      // 波にはたかれた瞬間だけ、バウ外側へ白く上へ噴き上がり後方へ散る
+      const x = side * (0.42 + tier * 0.16 + u * (0.82 + tier * 0.50) * pow);
+      const y = 0.28 + arc * (0.68 + (1 - tier * 0.35) * 0.62) * pow - u * u * 0.22;
+      const z = -2.18 + tier * 0.48 + u * (1.28 + spdF * 0.55);
+      const sz = (0.20 + u * 0.36) * pow;
       _spPos.set(x, y, z);
-      _spEul.set(u * 2.4 + j, side * (0.5 + u), u * 1.8);
+      _spEul.set(u * 2.2 + j, side * (0.5 + u), u * 1.8);
       _spQuat.setFromEuler(_spEul);
-      _spScale.set(sz * 1.1, sz * 1.05, sz * 1.45);
+      _spScale.set(sz * 1.05, sz * 1.0, sz * 1.35);
       _spM4.compose(_spPos, _spQuat, _spScale);
       this.bowSprayMesh.setMatrixAt(idx, _spM4);
-      const fade = Math.pow(1 - u, 1.35) * Math.min(1, u * 7.0) * clamp(0.48 * pow, 0.25, 0.72);
+      const fade = Math.pow(1 - u, 1.45) * Math.min(1, u * 7.5) * clamp(0.42 * pow, 0.22, 0.64);
       _spCol.setRGB(0.92 * fade, 0.97 * fade, 1.0 * fade);
       this.bowSprayMesh.setColorAt(idx, _spCol);
     }
