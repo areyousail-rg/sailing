@@ -1,4 +1,5 @@
 // レース振り返り: 全艇の航跡・艇速(上り/下り/リーチング)・対風角(上り/下り)・走行距離・スタート順位・タック/ジャイブ数・海面風況を記録し分析表示する
+import { playBgm } from './audio.js';
 const CAUSES = ['タック/ジャイブ', 'ブランケット', 'バックウインド', '波', '接触', 'ペナルティ', 'マーク回航', '風の弱まり・振れ'];
 
 function causeOf(b) {
@@ -310,6 +311,7 @@ const sec = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}秒`;
 
 export function openReview(rec, o) {
   addCss();
+  playBgm('review');
   let root = document.getElementById('review');
   if (root) root.remove();
   root = document.createElement('div');
@@ -364,7 +366,7 @@ export function openReview(rec, o) {
   </div>`;
 
   const $ = (id) => root.querySelector('#' + id);
-  $('rvClose').onclick = () => { cancelAnimationFrame(raf); root.remove(); };
+  $('rvClose').onclick = () => { cancelAnimationFrame(raf); root.remove(); playBgm('result'); };
 
   // 表
   const rows = $('rvRows');
