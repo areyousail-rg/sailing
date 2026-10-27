@@ -218,59 +218,9 @@ h1{margin:0;font-size:1.4rem;line-height:1.2;font-weight:700;letter-spacing:.02e
 .cta{margin-top:12px;width:100%;padding:10px 14px;font-size:.95rem;font-weight:700;letter-spacing:.08em;color:var(--accent-ink);border:none;border-radius:var(--r);cursor:pointer;background:var(--accent)}
 .cta:hover{background:#ffd21a}
 .cta:active{background:#d9ad00}
-.startActions{display:flex;gap:10px;margin-top:4px;align-items:stretch}
-.startActions .cta{margin-top:0;flex:2.4}
-.startRaceBtn{
-  position:relative;overflow:hidden;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-  padding:11px 18px 12px;
-  background:linear-gradient(135deg,#ffe600 0%,#ffb700 45%,#ff5100 100%);
-  color:#090d12;
-  border:2px solid #fffef2;
-  border-radius:3px;
-  transform:skewX(-8deg);
-  box-shadow:0 5px 0 #b81d00,0 8px 20px rgba(255,94,0,.48),inset 0 1px 0 rgba(255,255,255,.85);
-  transition:transform .14s cubic-bezier(.2,.9,.3,1.2),box-shadow .14s ease,filter .14s ease;
-  animation:smashPulse 2.1s ease-in-out infinite;
-}
-.startRaceBtn::before{
-  content:"";position:absolute;top:-20%;left:-45%;width:36%;height:140%;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.78),transparent);
-  transform:skewX(-25deg);pointer-events:none;
-  animation:smashSheen 2.8s ease-in-out infinite;
-}
-.startRaceBtn::after{
-  content:"▶";position:absolute;right:12px;top:50%;transform:translateY(-50%) skewX(8deg);
-  font-size:1.05rem;font-weight:900;color:#111;opacity:.85;text-shadow:0 1px 0 rgba(255,255,255,.65);
-}
-.startRaceBtn .smashSub{
-  display:block;font-family:var(--f-num);font-size:.58rem;font-weight:900;letter-spacing:.22em;
-  color:#7a1200;background:rgba(255,255,255,.78);padding:1px 7px;border-radius:1px;
-  transform:skewX(8deg);line-height:1.15;
-}
-.startRaceBtn .smashMain{
-  display:block;font-size:1.22rem;font-weight:900;letter-spacing:.12em;
-  color:#0b0f14;text-shadow:0 1px 0 rgba(255,255,255,.85),2px 2px 0 rgba(255,196,0,.55);
-  transform:skewX(8deg);line-height:1.15;
-}
-.startRaceBtn:hover{
-  background:linear-gradient(135deg,#fff033 0%,#ffc800 45%,#ff6a00 100%);
-  transform:skewX(-8deg) translateY(-2px) scale(1.025);
-  box-shadow:0 7px 0 #c92200,0 12px 26px rgba(255,115,0,.68),inset 0 1px 0 #fff;
-  filter:brightness(1.04);
-}
-.startRaceBtn:active{
-  transform:skewX(-8deg) translateY(3px);
-  box-shadow:0 2px 0 #9e1800,0 4px 10px rgba(255,94,0,.4);
-}
-@keyframes smashPulse{
-  0%,100%{box-shadow:0 5px 0 #b81d00,0 8px 18px rgba(255,94,0,.44),inset 0 1px 0 rgba(255,255,255,.85)}
-  50%{box-shadow:0 5px 0 #d42400,0 10px 26px rgba(255,166,0,.72),0 0 12px rgba(255,230,0,.55),inset 0 1px 0 #fff}
-}
-@keyframes smashSheen{
-  0%,18%{left:-45%}
-  48%,100%{left:125%}
-}
+.startActions{display:flex;gap:8px;margin-top:2px;align-items:stretch}
+.startActions .cta{margin-top:0;flex:2.2}
+.startRaceBtn{padding:13px 16px;font-size:1.1rem;letter-spacing:.14em}
 .btnPractice{flex:1;padding:9px 10px;font-size:.84rem;font-weight:700;letter-spacing:.06em;color:var(--txt);background:transparent;border:1px solid var(--line-2);border-radius:var(--r);cursor:pointer;white-space:nowrap}
 .btnPractice:hover{background:var(--bg-3);border-color:var(--mute)}
 .weatherInfoBottom{font-size:.62rem;color:var(--mute);font-variant-numeric:tabular-nums;padding:6px 0 0;border-top:1px solid var(--line);line-height:1.45;white-space:normal;overflow:visible;word-break:break-word}
