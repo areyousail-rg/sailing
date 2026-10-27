@@ -113,36 +113,36 @@ export function setSeaState(venue, windDeg, kt) {
   let type, label, H;
   if (venue === 'hakkeijima' && north) {
     type = 'chop'; label = '三角波(北風・護岸反射の交差波)';
-    H = clamp(0.20 + 0.032 * kt, 0.27, 0.78);
-    add(H * 0.31, 6.8, from, 0.0);
-    add(H * 0.25, 5.8, from + 52 * R, 1.9); // 岸壁からの反射波が斜めに交差
-    add(H * 0.21, 5.0, from - 47 * R, 4.1);
-    add(H * 0.11, 10.5, from + 8 * R, 2.6);
+    H = clamp(0.22 + 0.034 * kt, 0.28, 0.84);
+    add(H * 0.42, 7.2, from, 0.0);
+    add(H * 0.22, 6.2, from + 26 * R, 1.9); // 岸壁からの反射波が斜めに交差(主風向の流れを損なわない角度)
+    add(H * 0.19, 5.6, from - 24 * R, 4.1);
+    add(H * 0.13, 11.0, from + 5 * R, 2.6);
     Object.assign(SEA, { steep: 1.08, surf: 0.08 });
   } else if (venue === 'enoshima' && south) {
     type = 'swell'; label = '長周期のうねり(南風・相模湾)';
-    H = clamp(0.66 + 0.042 * kt, 0.72, 1.65);
-    add(H * 0.37, 92, 205 * R, 0.0, true); // 南南西からの外洋うねり(周期約8秒)
-    add(H * 0.15, 62, 190 * R, 2.2, true);
-    add(0.065 + 0.010 * kt, 8.8, from, 1.1);  // うねりに乗る風浪
-    add(0.045 + 0.008 * kt, 6.2, from + 25 * R, 3.7);
-    Object.assign(SEA, { steep: 0.38, surf: 0.36 });
+    H = clamp(0.98 + 0.058 * kt, 1.10, 2.35);
+    add(H * 0.46, 64, from, 0.0, true);         // 風向に沿った相模湾の大きなうねり
+    add(H * 0.24, 44, from - 7 * R, 2.2, true); // 副次うねり
+    add(0.095 + 0.013 * kt, 9.2, from + 5 * R, 1.1);  // うねりに乗る風浪
+    add(0.065 + 0.010 * kt, 6.6, from - 10 * R, 3.7);
+    Object.assign(SEA, { steep: 0.46, surf: 0.40 });
   } else if (venue === 'enoshima' && north) {
     type = 'short'; label = '周期の短い風浪(北風・陸からの吹き出し)';
-    H = clamp(0.18 + 0.034 * kt, 0.25, 0.82);
-    add(H * 0.35, 9.6, from, 0.0);
-    add(H * 0.25, 7.8, from + 18 * R, 2.3);
-    add(H * 0.17, 12.5, from - 14 * R, 4.4);
-    add(H * 0.09, 5.2, from + 40 * R, 1.2);
-    Object.assign(SEA, { steep: 0.84, surf: 0.17 });
+    H = clamp(0.24 + 0.036 * kt, 0.30, 0.90);
+    add(H * 0.38, 9.6, from, 0.0);
+    add(H * 0.22, 7.8, from + 14 * R, 2.3);
+    add(H * 0.22, 48, from - 6 * R, 4.4, true); // 江の島沖に残る相模湾のベースうねり
+    add(H * 0.10, 5.6, from - 18 * R, 1.2);
+    Object.assign(SEA, { steep: 0.84, surf: 0.18 });
   } else {
-    type = 'mixed'; label = '風浪';
-    H = clamp(0.19 + 0.030 * kt, 0.25, 0.74);
-    add(H * 0.33, 10.5, from, 0.0);
-    add(H * 0.23, 8.2, from + 22 * R, 2.0);
-    add(H * 0.17, 28, from - 12 * R, 4.0, true);
-    add(H * 0.09, 5.8, from - 35 * R, 1.3);
-    Object.assign(SEA, { steep: 0.64, surf: 0.17 });
+    type = 'mixed'; label = venue === 'enoshima' ? 'うねりを伴う風浪' : '風浪';
+    H = venue === 'enoshima' ? clamp(0.68 + 0.045 * kt, 0.78, 1.75) : clamp(0.21 + 0.032 * kt, 0.27, 0.80);
+    add(H * 0.38, venue === 'enoshima' ? 54 : 10.5, from, 0.0, venue === 'enoshima');
+    add(H * 0.24, 8.6, from + 14 * R, 2.0);
+    add(H * 0.20, 32, from - 8 * R, 4.0, true);
+    add(H * 0.10, 6.2, from - 18 * R, 1.3);
+    Object.assign(SEA, { steep: 0.64, surf: 0.20 });
   }
   let ms = 0, la = 0;
   for (const c of comps) { ms += c.A * c.k; if (c.long) la += c.A; }
@@ -382,7 +382,7 @@ export class Boat {
     this.sOpt = 1; this.luff = 0; this.stall = 0;
     this.cover = 0; this.coverT = 0; this.back = 0; this.backT = 0;
     this.waveF = 1; this.waveH = 0; this.waveSlope = 0; this.waveLoss = 0;
-    this.waveSlam = 0; this.waveSlamCD = 0; this._prevClimb = 0;
+    this.waveSlam = 0; this.visualSlam = 0; this.waveSlamCD = 0; this._prevClimb = 0;
     this.windBend = 0; this.windBendT = 0;
     this.flowBoost = 0; this.flowBoostT = 0;
     this.aeroTag = ''; this.aeroClimb = 0;
@@ -693,17 +693,19 @@ export class Boat {
       this.waveF = wf;
       this.waveLoss = Math.max(0, 1 - wf);
       target *= wf;
-      // 波にはたかれた際の水面叩きつけイベント(海に船がたたきつけられる控えめな音用)
+      // 波にはたかれた際の水面叩きつけイベント(海に船がたたきつけられる控えめな音 & しぶき演出用)
       this.waveSlamCD = Math.max(0, (this.waveSlamCD || 0) - dt);
       const prevClimb = this._prevClimb || 0;
       this._prevClimb = climb;
-      if (this.waveSlamCD <= 0 && SEA.steep >= 0.65 && Math.abs(this.v) > 0.25) {
+      if (this.waveSlamCD <= 0 && Math.abs(this.v) > 0.25) {
         const drop = prevClimb - climb;
-        if ((prevClimb > 0.22 && drop > 0.16) || (climb > 0.54 && prevClimb <= 0.54)) {
-          const slam = clamp((drop * 0.85 + Math.max(0, climb) * 0.48) * (SEA.steep / 1.05) * (0.45 + 0.75 * slowFactor) * (1 - 0.78 * downFactor * speedNorm), 0, 1);
-          if (slam > 0.20) {
-            this.waveSlam = slam;
-            this.waveSlamCD = 1.15 + Math.random() * 1.0;
+        if ((prevClimb > 0.18 && drop > 0.13) || (climb > 0.46 && prevClimb <= 0.46)) {
+          const steepScale = clamp(SEA.steep / 0.85, 0.55, 1.15);
+          const slam = clamp((drop * 0.90 + Math.max(0, climb) * 0.52) * steepScale * (0.45 + 0.75 * slowFactor) * (1 - 0.68 * downFactor * speedNorm), 0, 1);
+          if (slam > 0.16) {
+            this.visualSlam = Math.max(this.visualSlam || 0, slam);
+            if (slam > 0.20) this.waveSlam = slam;
+            this.waveSlamCD = 0.95 + Math.random() * 0.85;
           }
         }
       }
