@@ -383,6 +383,59 @@ const jibSheetMatW = ropeMat(0x3b82f6);
 const JIB_WING = 1.22; // ランチャーで風上側に張り出したジブの角度
 const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3(), _root = new THREE.Vector3(), _segDir = new THREE.Vector3();
 const _p0 = new THREE.Vector3(), _p1 = new THREE.Vector3(), _p2 = new THREE.Vector3(), _p3 = new THREE.Vector3(), _p4 = new THREE.Vector3(), _p5 = new THREE.Vector3();
+const _spM4 = new THREE.Matrix4(), _spPos = new THREE.Vector3(), _spQuat = new THREE.Quaternion(), _spScale = new THREE.Vector3(), _spEul = new THREE.Euler(), _spCol = new THREE.Color();
+
+// 3方向直交クアッドによる立体しぶきジオメトリ（ドローン視点・艇内カメラ視点のどちらから見ても厚みのある水しぶき粒に見える）
+let _spray3DGeo = null, _sprayDropMat = null;
+function getSpray3DGeo() {
+  if (_spray3DGeo) return _spray3DGeo;
+  const pos = [
+    // XY plane (艇内カメラから正面に見える面)
+    -0.5, -0.5, 0,  0.5, -0.5, 0,  0.5, 0.5, 0,  -0.5, -0.5, 0,  0.5, 0.5, 0,  -0.5, 0.5, 0,
+    // YZ plane (横・斜めから見える面)
+    0, -0.5, -0.5,  0, 0.5, -0.5,  0, 0.5, 0.5,  0, -0.5, -0.5,  0, 0.5, 0.5,  0, -0.5, 0.5,
+    // XZ plane (上空ドローンから見える面)
+    -0.5, 0, -0.5,  0.5, 0, -0.5,  0.5, 0, 0.5,  -0.5, 0, -0.5,  0.5, 0, 0.5,  -0.5, 0, 0.5,
+  ];
+  const uv = [
+    0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1,
+    0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1,
+    0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1,
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  _spray3DGeo = g;
+  return _spray3DGeo;
+}
+function getSprayDropMat() {
+  if (_sprayDropMat) return _sprayDropMat;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 64);
+  for (let py = 0; py < 64; py++) {
+    for (let px = 0; px < 64; px++) {
+      const dx = (px - 31.5) / 31.5, dy = (py - 31.5) / 31.5;
+      const r2 = dx * dx + dy * dy;
+      if (r2 >= 1) continue;
+      const a = Math.pow(1 - r2, 1.85);
+      x.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+      x.fillRect(px, py, 1, 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  _sprayDropMat = new THREE.MeshBasicMaterial({
+    map: tex,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.92,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  return _sprayDropMat;
+}
 
 function placeSeg(mesh, a, b) {
   mesh.position.copy(a);
@@ -514,6 +567,23 @@ export class BoatModel {
     this.mount.position.set(0.42, 1.42, 0.98);
     this.body.add(this.mount);
 
+    // 3Dバウしぶき（中低速〜高速走行中にバウ左右から舞い上がり艇内カメラでも見える飛沫）＋ 波にはたかれた際の大しぶきバースト
+    this.SPRAY_N = 28; // 0..15: 常時走行バウしぶき, 16..27: 波にはたかれた際のスプラッシュ
+    this.bowSprayMesh = new THREE.InstancedMesh(getSpray3DGeo(), getSprayDropMat(), this.SPRAY_N);
+    this.bowSprayMesh.frustumCulled = false;
+    this.bowSprayMesh.renderOrder = 6;
+    this.bowSprayMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    _spM4.makeScale(0, 0, 0);
+    _spCol.setScalar(0);
+    for (let i = 0; i < this.SPRAY_N; i++) {
+      this.bowSprayMesh.setMatrixAt(i, _spM4);
+      this.bowSprayMesh.setColorAt(i, _spCol);
+    }
+    this.body.add(this.bowSprayMesh);
+    this.slamBurstT = 0;
+    this.slamBurstPow = 0;
+    this.slamAutoCD = 0;
+
     if (boat.isPlayer) {
       this.tells = [];
       const yGeo = yarnGeo(0.28, 0.0046); // 細い毛糸・紐状のテルテール
@@ -575,7 +645,7 @@ export class BoatModel {
       this._occMats = [];
       const matMap = new Map();
       this.body.traverse((obj) => {
-        if (!obj.isMesh || !obj.material) return;
+        if (!obj.isMesh || !obj.material || obj === this.bowSprayMesh) return;
         const cloneMat = (m) => {
           if (matMap.has(m)) return matMap.get(m);
           const cm = (m === this.sailMat || m === this.jibMat) ? m : m.clone();
@@ -738,9 +808,9 @@ export class BoatModel {
     const slowFactor = Math.pow(1 - speedNorm, 1.35);
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
     const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
-    const heave = ws.hLong * 0.68 + (ws.h - ws.hLong) * 0.28 * chopRespond + 0.042 * Math.sin(ph * 1.35);
+    const heave = ws.hLong * 0.84 + (ws.h - ws.hLong) * 0.30 * chopRespond + 0.042 * Math.sin(ph * 1.35);
     // 船尾(z=+2.36)のラダーが波で水面上に飛び出さないようピッチ角の前傾側(-0.045)を抑えつつ、波による上下・縦揺れを表現
-    const pitchW = clamp(Math.atan(ws.slopeLong * 0.65 + (ws.slope - ws.slopeLong) * 0.62 * chopRespond), -0.045, 0.095);
+    const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * chopRespond), -0.045, 0.105);
     // 横方向の傾き(三角波の交差波で左右にも揺さぶられる + 他艇の引き波通過時の揺れ)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
@@ -938,6 +1008,109 @@ export class BoatModel {
     this.mount.position.set(this.side * (0.50 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
     this.syncMainSheet(sgn, lean, sideAbs);
     if (this.rjLeeSegs) this.syncRopes(sgn, clewY, pk);
+    this.syncBowSpray(dt, t, ws, sgn);
+  }
+
+  // バウしぶき（そこそこの低速〜高速走行中に常時バウ左右から舞い上がり艇内カメラでも見える飛沫）＋ 波にはたかれた際の大しぶき演出
+  syncBowSpray(dt, t, ws, sgn) {
+    if (!this.bowSprayMesh) return;
+    const b = this.boat;
+    const vAbs = Math.abs(b.v);
+    // そこそこの低速(v > 0.72 ≒ 実艇約0.7kt)からバウしぶきが発生し、速度に応じて勢いを増す
+    const spdF = clamp((vAbs - 0.72) / 1.75, 0, 1.30);
+    const bowWaveBoost = clamp(Math.max(0, ws.h * 1.8 + ws.slope * 2.8), 0, 0.95);
+    const contPow = spdF > 0.02 ? clamp(spdF * (0.68 + 0.55 * bowWaveBoost), 0, 1.35) : 0;
+
+    // 1) 常時バウしぶき (0..15): 船首(z=-2.15..-1.25)から左右外側かつデッキ高さ(y=0.42m)より上(y=0.45..1.02m)へ放物線を描いて飛ぶため艇内カメラからもはっきり見える
+    for (let i = 0; i < 16; i++) {
+      if (contPow <= 0.03) {
+        _spM4.makeScale(0, 0, 0);
+        this.bowSprayMesh.setMatrixAt(i, _spM4);
+        _spCol.setScalar(0);
+        this.bowSprayMesh.setColorAt(i, _spCol);
+        continue;
+      }
+      const side = i % 2 === 0 ? 1 : -1;
+      const lane = (i >> 1) / 8; // 0..0.875
+      const rate = 2.0 + spdF * 1.35 + (i % 3) * 0.22;
+      const u = (t * rate + lane + this.phase * 0.17) % 1.0;
+      const arc = Math.sin(u * Math.PI);
+      const isLeeward = side === -sgn;
+      const sideBias = isLeeward ? 1.18 : 0.90;
+      // 船体喫水線に白い線が張り付かないよう、バウ外側へ飛び出しながらフォアデッキ上方の空間(y=0.36..0.98m)へ舞い上がる軌道
+      const x = side * (0.24 + u * (0.58 + 0.48 * contPow) * sideBias);
+      const y = 0.24 + arc * (0.38 + 0.44 * contPow) * sideBias - u * u * 0.14;
+      const z = -2.14 + (i % 4) * 0.14 + u * (1.05 + 0.75 * spdF);
+      const sz = (0.14 + u * 0.26) * (0.65 + 0.45 * contPow);
+      _spPos.set(x, y, z);
+      _spEul.set(u * 1.6, side * (0.4 + u * 0.8), u * 2.1 + i);
+      _spQuat.setFromEuler(_spEul);
+      _spScale.set(sz * 0.95, sz * 0.85, sz * 1.35);
+      _spM4.compose(_spPos, _spQuat, _spScale);
+      this.bowSprayMesh.setMatrixAt(i, _spM4);
+      const alpha = Math.pow(1 - u, 1.25) * Math.min(1, u * 5.5) * clamp(0.24 + 0.34 * contPow, 0, 0.58);
+      _spCol.setRGB(0.90 * alpha, 0.96 * alpha, 1.0 * alpha);
+      this.bowSprayMesh.setColorAt(i, _spCol);
+    }
+
+    // 2) 波にはたかれた際の大しぶき演出 (16..27)
+    this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
+    if (b.visualSlam > 0.12) {
+      this.slamBurstT = 0.001;
+      this.slamBurstPow = clamp(0.55 + b.visualSlam * 0.95, 0.55, 1.35);
+      b.visualSlam = 0;
+    } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.65 && ws.h > 0.045 && ws.slope > 0.055) {
+      this.slamBurstT = 0.001;
+      this.slamBurstPow = clamp(0.48 + (ws.h * 1.8 + ws.slope * 3.2), 0.48, 1.15);
+      this.slamAutoCD = 1.1 + Math.random() * 0.8;
+    }
+
+    const SLAM_DUR = 0.68;
+    if (this.slamBurstT > 0) {
+      this.slamBurstT += dt;
+      if (this.slamBurstT >= SLAM_DUR) this.slamBurstT = 0;
+    }
+
+    for (let j = 0; j < 12; j++) {
+      const idx = 16 + j;
+      if (this.slamBurstT <= 0) {
+        _spM4.makeScale(0, 0, 0);
+        this.bowSprayMesh.setMatrixAt(idx, _spM4);
+        _spCol.setScalar(0);
+        this.bowSprayMesh.setColorAt(idx, _spCol);
+        continue;
+      }
+      const side = j % 2 === 0 ? 1 : -1;
+      const tier = (j >> 1) / 5; // 0..1
+      const delay = tier * 0.12;
+      const u = clamp((this.slamBurstT - delay) / (SLAM_DUR - delay), 0, 1);
+      if (u <= 0 || u >= 1) {
+        _spM4.makeScale(0, 0, 0);
+        this.bowSprayMesh.setMatrixAt(idx, _spM4);
+        _spCol.setScalar(0);
+        this.bowSprayMesh.setColorAt(idx, _spCol);
+        continue;
+      }
+      const pow = this.slamBurstPow;
+      const arc = Math.sin(u * Math.PI);
+      // 波にはたかれた瞬間、バウ〜前方チャインから高さ 0.75〜1.55m まで大きく白い水しぶきがパッと舞い上がり後方へ流れる
+      const x = side * (0.28 + tier * 0.16 + u * (0.85 + tier * 0.55) * pow);
+      const y = 0.30 + arc * (0.72 + (1 - tier * 0.35) * 0.68) * pow - u * u * 0.22;
+      const z = -2.20 + tier * 0.55 + u * (1.35 + spdF * 0.65);
+      const sz = (0.24 + u * 0.42) * pow;
+      _spPos.set(x, y, z);
+      _spEul.set(u * 2.4 + j, side * (0.5 + u), u * 1.8);
+      _spQuat.setFromEuler(_spEul);
+      _spScale.set(sz * 1.1, sz * 1.05, sz * 1.45);
+      _spM4.compose(_spPos, _spQuat, _spScale);
+      this.bowSprayMesh.setMatrixAt(idx, _spM4);
+      const fade = Math.pow(1 - u, 1.35) * Math.min(1, u * 7.0) * clamp(0.48 * pow, 0.25, 0.72);
+      _spCol.setRGB(0.92 * fade, 0.97 * fade, 1.0 * fade);
+      this.bowSprayMesh.setColorAt(idx, _spCol);
+    }
+
+    this.bowSprayMesh.instanceMatrix.needsUpdate = true;
+    if (this.bowSprayMesh.instanceColor) this.bowSprayMesh.instanceColor.needsUpdate = true;
   }
 
   // メインシート(実艇写真2・3枚目準拠・共有Cylinderセグメント方式で毎フレームのアロケーション0):
