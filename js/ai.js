@@ -635,12 +635,12 @@ export class AI {
           const f = clamp((t - START_T) / span, 0, 1), p = this.creepExp;
           const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(f, p));
           const dDdt = (Math.max(0, this.gap0 - goL) * p * Math.pow(Math.max(f, 1e-3), p - 1)) / span;
-          // 低速時の下流れ(1.5倍リーウェイ＋風圧ドリフト)で後ろ(-a)に流されないようドリフト補償速度を加算
-          const driftComp = posGap > D - 1.2 ? 0.56 * SPEED_SCALE * (b.windF || 1) : 0;
-          const vDes = Math.max(0, dDdt + 0.45 * (posGap - D) + driftComp) / upf;
+          // 低速時の下流れ(2倍リーウェイ＋風圧ドリフト)で後ろ(-a)に流されないようドリフト補償速度を加算
+          const driftComp = posGap > D - 1.2 ? 0.92 * SPEED_SCALE * (b.windF || 1) : 0;
+          const vDes = Math.max(0, dDdt + 0.48 * (posGap - D) + driftComp) / upf;
           b.throttle = posGap < D - 1.0
-            ? clamp(vDes / Math.max(0.1, vT), 0.06, 0.30)
-            : clamp(vDes / Math.max(0.1, vT), 0.38, 0.94);
+            ? clamp(vDes / Math.max(0.1, vT), 0.10, 0.36)
+            : clamp(vDes / Math.max(0.1, vT), 0.44, 0.96);
           // セールは待機距離(D)よりラインに近いときだけ緩めて減速し、通常アプローチ中は最適トリムで下流れを抑える
           b.sheet = posGap < D - 1.0
             ? Math.max(0.14, sheetOpt(b.twa) - 0.36)
