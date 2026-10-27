@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MARKS, LEGS, COURSE_MODE, toWorld, LINE_HALF, LINE_SKEW, FAVORED, lineA, U, W0, setWindDir } from './course.js';
 import { makeMotorboat } from './powerboats.js';
-import { shiftAt, waveSample, SEA } from './sim.js';
+import { shiftAt, waveSample, SEA, BASE_WIND_KT } from './sim.js';
 
 export const FOG_COLOR = 0xbdd5e6;
 export const FOG_DENSITY = 3.0e-5;
@@ -177,12 +177,13 @@ void main(){
   // カメラ周辺の局所パッチでは waveSample と同じ波浪成分で頂点を上下させ、船体外側で波に沈んだり出たりする自然な海面高さを維持する
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float wgt=B.z>0.5?1.08:0.82;
+    float wgt=B.z>0.5?1.24:0.86;
     if(A.w>0.001) h+=A.w*wgt*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y);
   }
-  vec2 wdV=vec2(-sin(uW0+uShift),cos(uW0+uShift));
+  // 基底ベクトルは時間変化しない基準風向(uW0)に固定し、シフト変化時に遠方座標で波が横滑りする現象を完全に防止
+  vec2 wdV=vec2(-sin(uW0),cos(uW0));
   vec2 wpV=vec2(-wdV.y,wdV.x);
-  float vRip=0.075*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.22)+0.052*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.34);
+  float vRip=0.075*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.16)+0.052*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.20);
   h+=vRip;
   float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.70,1.0,r));
@@ -193,7 +194,7 @@ void main(){
 const waterMat = new THREE.ShaderMaterial({
   defines: { NWAVE: MOBILE ? 3 : 4 },
   uniforms: {
-    uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR }, uShift: { value: 0 }, uGen: { value: 0.55 },
+    uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uWindKt: { value: 9.0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR }, uShift: { value: 0 }, uGen: { value: 0.55 },
     uSeaA: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uSeaB: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uPatchC: { value: new THREE.Vector3() }, uPatchR: { value: 192 }, uBaseY: { value: 0 },
@@ -203,7 +204,7 @@ const waterMat = new THREE.ShaderMaterial({
   vertexShader: SEA_VS,
   fragmentShader: `
 precision highp float;
-varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
+varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uWindKt; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
 ${SKY_FN}
 float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
@@ -221,7 +222,8 @@ void main(){
     if(bLoc.y>-0.52 && bLoc.y<1.58 && abs(bLoc.x)<0.43) discard;
   }
   vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
-  // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd)へ流れるブローとシフトを先に算出する
+  // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd0)へ流れるブローを算出する
+  // 海面テクスチャの座標軸(wd0, wp0)は時間変化しない基準風向(uW0)に完全固定することで、シフト変化時に海面の流れが横滑りしたり風向とずれる現象を根絶する
   vec2 uDir=vec2(sin(uW0),-cos(uW0));
   vec2 rDir=vec2(cos(uW0),sin(uW0));
   float ca=dot(p,uDir), cc=dot(p,rDir);
@@ -232,24 +234,24 @@ void main(){
   float puff=smoothstep(-0.15,0.72,0.50*p1+0.32*p2+0.18*p3);
   float sideNorm=clamp(cc/160.0,-1.2,1.2);
   float wf=clamp(0.86+0.34*puff+uSideBias*sideNorm*0.065,0.72,1.32);
-  float wsh=uShift+0.06*sin(adv*0.028-cc*0.021)+uSideBias*sideNorm*0.075;
-  // wd = 風が吹いていく風下方向ベクトル、wp = 風に直交する横方向ベクトル
-  float wfr=uW0+wsh;
-  vec2 wd=vec2(-sin(wfr),cos(wfr));
+  // wd0 = 風が吹いていく風下方向単位ベクトル(-uDir)、wp0 = 風に直交する横方向単位ベクトル
+  vec2 wd=vec2(-sin(uW0),cos(uW0));
   vec2 wp=vec2(-wd.y,wd.x);
-  vec2 wdBase=vec2(-sin(uW0+uShift),cos(uW0+uShift));
-  vec2 wpBase=vec2(-wdBase.y,wdBase.x);
   float wu=dot(p,wp), wv=dot(p,wd);
   float gust=smoothstep(0.84,1.18,wf);
   float blow=smoothstep(0.98,1.16,wf);
+  // 局所風速[kt]: 15knotを超えると海面に白波(ホワイトキャップ)が発生し、風が強くなるほど度合いが強くなる
+  float localKt=uWindKt*wf;
+  float galeKt=max(uWindKt,localKt*0.97);
+  float whitecapIntensity=clamp((galeKt-15.0)/6.0,0.0,1.45);
 
   vec2 g=vec2(0.0);
   float wH=0.0;
-  // 1) 風下方向(wdBase)へ伝播する立体的なベース波浪(風と逆行しないよう常に風下中心±28°へ進行)
+  // 1) 風下方向(wd)へ伝播する立体的なベース波浪(風向きと完全に一致して風上から風下へ進行)
   for(int i=0;i<NWAVE;i++){
     float fi=float(i);
-    float spread=(fi-1.5)*0.32+sin(fi*2.1)*0.10;
-    vec2 d=normalize(wdBase*cos(spread)+wpBase*sin(spread));
+    float spread=(fi-1.5)*0.12;
+    vec2 d=normalize(wd*cos(spread)+wp*sin(spread));
     float k=0.14*pow(1.72,fi); float A=0.62*pow(0.54,fi);
     float w=sqrt(9.81*k)*0.95;
     float fade=exp(-dist*k*0.0032);
@@ -273,21 +275,21 @@ void main(){
       wH+=A.w*s*fd;
     }
   }
-  // 3) 風下方向(wd)へ正しく進む中〜近距離の風浪リップル(すべて -uWT で風下へ伝播させ逆流を完全に防止)
+  // 3) 風下方向(wd)へ真っ直ぐ進む中〜近距離の風浪リップル(すべて wv - uWT*speed で風上から風下へ厳密に伝播)
   if(dist<2200.0){
-    vec2 pRip1=vec2(wu*0.75,wv*1.45-uWT*2.4);
-    vec2 pRip2=vec2(wu*1.35+4.1,wv*2.65-uWT*3.3);
+    vec2 pRip1=vec2(wu*0.58,wv*1.55-uWT*2.8);
+    vec2 pRip2=vec2(wu*1.05+4.1,wv*2.85-uWT*3.9);
     float r1=vn(pRip1)-0.5;
     float r2=vn(pRip2)-0.5;
-    float ripFade=exp(-dist*0.0022)*(0.20+0.62*gust);
-    g+=(wd*(r1*0.65+r2*0.45)+wp*(r1*0.22-r2*0.18))*ripFade;
+    float ripFade=exp(-dist*0.0022)*(0.22+0.64*gust+0.30*whitecapIntensity);
+    g+=(wd*(r1*0.72+r2*0.48)+wp*(r1*0.14-r2*0.12))*ripFade;
   }
-  // 4) ドローンカメラ近傍(dist<95m)の細かい水面ディテール: 船のすぐ下を風下へ流れる水面テクスチャでスピード感を強調
+  // 4) ドローン・艇内カメラ近傍(dist<95m)の細かい水面ディテール: 船のすぐ下を風下方向(wd)へ流れる水面テクスチャ
   if(dist<95.0){
     float nearF=(1.0-smoothstep(18.0,95.0,dist));
-    float micro1=vn(vec2(wu*2.8,wv*4.6-uWT*4.8))-0.5;
-    float micro2=vn(vec2(wu*5.2+7.3,wv*8.2-uWT*6.2))-0.5;
-    g+=(wd*(micro1*0.24+micro2*0.16)+wp*(micro1*0.09-micro2*0.07))*nearF;
+    float micro1=vn(vec2(wu*2.2,wv*5.0-uWT*5.2))-0.5;
+    float micro2=vn(vec2(wu*4.0+7.3,wv*8.8-uWT*6.8))-0.5;
+    g+=(wd*(micro1*0.26+micro2*0.18)+wp*(micro1*0.06-micro2*0.05))*nearF;
   }
 
   vec3 n=normalize(vec3(-g.x*1.12,1.0,-g.y*1.12));
@@ -319,11 +321,21 @@ void main(){
   float spec=pow(max(dot(R,uSun),0.0001),95.0)*0.48+pow(max(dot(R,uSun),0.0001),22.0)*0.05;
   col+=vec3(1.0,0.95,0.84)*spec*(0.32+0.68*F);
 
-  if(dist<2800.0){
-    // 白波(ホワイトキャップ)は波頭の高い部分のみに控えめに入れ、カメラ近傍が白っぽくならないようにする
-    float foamNoise=vn(vec2(wu*1.9,wv*2.1-uWT*1.6));
-    float foam=smoothstep(0.76,1.04,length(g)*2.45+max(0.0,elev)*0.42+foamNoise*0.30)*exp(-dist*0.002)*(0.55+0.45*nearBlue);
-    col=mix(col,vec3(0.90,0.96,0.99),foam*0.34);
+  if(dist<3200.0){
+    // 15knot以下の通常時は波頭のごく控えめなハイライトのみとし、
+    // 15knotを超える強風時(whitecapIntensity>0)は海面に白波(ホワイトキャップ＆風下への泡筋)が発生し、風が強くなるほど白波の度合いが明確に強くなる
+    float foamN1=vn(vec2(wu*0.42,wv*0.85-uWT*2.2));
+    float foamN2=vn(vec2(wu*1.35+3.7,wv*2.10-uWT*3.1));
+    float foamDetail=0.58*foamN1+0.42*foamN2;
+    float waveMetric=length(g)*2.35+max(0.0,elev)*0.52+foamDetail*0.44;
+    float baseFoam=smoothstep(0.88,1.12,waveMetric)*0.22*(0.55+0.45*nearBlue);
+    // 15kt超の白波: 風が強くなるほど閾値が下がり、波頭が崩れる白い泡と風下方向の白波ストリークが海面全体に広がる
+    float wcThresh=mix(0.92,0.50,clamp(whitecapIntensity,0.0,1.0));
+    float wcCrest=smoothstep(wcThresh,wcThresh+0.22,waveMetric+whitecapIntensity*0.18);
+    float wcStreak=smoothstep(0.68-0.14*clamp(whitecapIntensity,0.0,1.0),0.90,vn(vec2(wu*0.65,wv*0.24-uWT*1.4))*0.65+foamN2*0.35);
+    float galeFoam=(wcCrest*(0.55+0.45*foamN2)+wcStreak*wcCrest*0.55)*clamp(whitecapIntensity*0.88,0.0,1.0);
+    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.94)*exp(-dist*0.0014);
+    col=mix(col,vec3(0.93,0.97,1.0),totalFoam);
   }
   // ブロー(風の強い海面のさざ波): 物理のブロー移動速度(adv = ca + uWT*4.8)と完全に同期して風上から風下へ流れる
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
@@ -1030,6 +1042,8 @@ export function createWorld(scene) {
   markObjs.fcom = fComBoat;
   const fPinObj = buoy(0xffc21a); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
 
+  let courseVisible = true;
+
   // 風向(W0)やコースモード(COURSE_MODE)変更時にすべてのコースマーク・ライン・観覧艇のワールド座標と表示状態を更新
   const syncCourseObjects = () => {
     const isUpwindMode = COURSE_MODE === 'upwind';
@@ -1039,7 +1053,10 @@ export function createWorld(scene) {
     }
     // 上マークフィニッシュモード時は 1a, 2, 3, 4S(gL), 4P(gR), fm(下フィニッシュピン: 上マーク1がピンになるため) を非表示化
     for (const k of ['m1a', 'm2', 'm3', 'gL', 'gR', 'fm']) {
-      markObjs[k].visible = !isUpwindMode;
+      markObjs[k].visible = courseVisible && !isUpwindMode;
+    }
+    for (const k of ['m1', 'pin', 'com', 'fcom']) {
+      if (markObjs[k]) markObjs[k].visible = courseVisible;
     }
     const head = Math.atan2(U.x, U.z);
     for (const cb of courseBoats) {
@@ -1053,10 +1070,13 @@ export function createWorld(scene) {
       } else if (cb.markRef && MARKS[cb.markRef]) {
         ca = MARKS[cb.markRef].a + cb.daRef;
         cc = MARKS[cb.markRef].c + cb.dcRef;
-        cb.b.visible = cb.markRef === 'm2' ? !isUpwindMode : true;
+        cb.b.visible = courseVisible && (cb.markRef === 'm2' ? !isUpwindMode : true);
       } else if (isUpwindMode && cb.a >= 350) {
         // 1マーク北側の観覧艇は2倍レグ(a=600)の上側に退避
         ca = cb.a + 300;
+        cb.b.visible = courseVisible;
+      } else {
+        cb.b.visible = courseVisible;
       }
       cb.baseA = ca; cb.baseC = cc;
       const p = toWorld(ca, cc);
@@ -1066,7 +1086,9 @@ export function createWorld(scene) {
     const pa = toWorld(MARKS.pin.a, MARKS.pin.c), pb = toWorld(MARKS.com.a, MARKS.com.c);
     const lcx = (pa.x + pb.x) / 2, lcz = (pa.z + pb.z) / 2, lrot = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
     lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.06, lcz);
+    lineMesh.visible = courseVisible;
     startLabel.position.set(lcx, 8.8, lcz);
+    startLabel.visible = courseVisible;
     updateStartLabel();
 
     const fpa = toWorld(MARKS.fm.a, MARKS.fm.c), fpb = toWorld(MARKS.fcom.a, MARKS.fcom.c);
@@ -1076,7 +1098,9 @@ export function createWorld(scene) {
     finCurtain.scale.x = curFlen / flen;
     finBand.rotation.z = flrot; finBand.position.set(flcx, 0.08, flcz);
     finCurtain.rotation.y = flrot; finCurtain.position.set(flcx, 1.35, flcz);
+    fin.visible = courseVisible;
     finLabel.position.set(flcx, 5.0, flcz);
+    finLabel.visible = courseVisible;
   };
   syncCourseObjects();
 
@@ -1181,14 +1205,16 @@ export function createWorld(scene) {
           const fx = Math.sin(b.h), fz = -Math.cos(b.h);
           const sternX = b.x - fx * 2.36, sternZ = b.z - fz * 2.36;
           const bowX = b.x + fx * 1.92, bowZ = b.z + fz * 1.92;
-          // バウ(船首)が波頭・波の斜面にぶつかった瞬間のみしぶきを発生させる(常時白くならないよう閾値を設ける)
+          // そこそこの低速(v > 0.72)で走行中はバウからしぶきが上がり、波にはたかれた瞬間(visualSlam / waveSlam / 波頭衝突)はさらに大きなしぶきが飛ぶ
           const wsBow = waveSample(bowX, bowZ, SEA.clock, fx, fz);
-          const hitCrest = (wsBow.h > 0.042 && wsBow.slope > 0.052)
-            ? (wsBow.h - 0.042) * 3.4 + (wsBow.slope - 0.052) * 4.8
+          const hitCrest = (wsBow.h > 0.030 && wsBow.slope > 0.038)
+            ? (wsBow.h - 0.030) * 3.8 + (wsBow.slope - 0.038) * 5.2
             : 0;
-          const waveCut = hitCrest + (b.waveSlam || 0) * 1.25;
-          const spdCut = clampN((b.v - 0.75) / 1.65, 0, 1.15);
-          const bowImpact = waveCut > 0.16 ? clampN((waveCut - 0.12) * spdCut, 0, 1) : 0;
+          const slamCut = Math.max(b.waveSlam || 0, b.visualSlam || 0);
+          const spdBase = clampN((b.v - 0.72) / 2.2, 0, 1.0);
+          const cruiseSpray = spdBase * (0.28 + 0.16 * Math.max(0, Math.sin(SEA.clock * 7.5 + b.id * 1.9)));
+          const waveCut = hitCrest + slamCut * 1.45;
+          const bowImpact = b.v > 0.72 ? clampN(cruiseSpray + waveCut * clampN((b.v - 0.65) / 1.4, 0.25, 1.2), 0, 1) : 0;
           h.pts.unshift({
             x: sternX, z: sternZ,
             bowX, bowZ,
@@ -1208,21 +1234,21 @@ export function createWorld(scene) {
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           const rFoam = (p.rudder || 0) * Math.pow(life, 0.78);
 
-          // 1, 2) バウ(船首)で波にぶつかった瞬間だけ外側へ飛ぶ白いしぶき(船体と海面の接地部分が常時白くならないよう制御)
-          if (p.bowImpact > 0.14 && p.age < 0.52) {
-            const bLife = 1 - p.age / 0.52;
-            const bFade = Math.pow(bLife, 1.55);
+          // 1, 2) バウ(船首)から外側へ飛ぶ白いしぶき(船体と海面の接地部分が常時白くならないよう外側へオフセットして飛散)
+          if (p.bowImpact > 0.12 && p.age < 0.56) {
+            const bLife = 1 - p.age / 0.56;
+            const bFade = Math.pow(bLife, 1.45);
             const wsB = waveSample(p.bowX, p.bowZ, SEA.clock);
-            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.65 + 0.06 + 0.18 * Math.sin((p.age / 0.52) * Math.PI) * p.bowImpact;
-            const sprayOff = 0.44 + p.age * (1.45 + p.s * 0.95);
+            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.65 + 0.08 + 0.24 * Math.sin((p.age / 0.56) * Math.PI) * p.bowImpact;
+            const sprayOff = 0.48 + p.age * (1.55 + p.s * 1.05);
             for (const s of [-1, 1]) {
               const sa = p.h - s * 0.48;
               tq.setFromAxisAngle(yAx, -sa);
-              ts.set(0.13 + p.age * 0.18 * p.bowImpact, 1, 0.36 + p.age * 0.28);
+              ts.set(0.15 + p.age * 0.22 * p.bowImpact, 1, 0.40 + p.age * 0.32);
               m4.compose(tv.set(p.bowX + rx * s * sprayOff, bowY, p.bowZ + rz * s * sprayOff), tq, ts);
               trail.setMatrixAt(k, m4);
-              const sprayBright = (0.20 * p.bowImpact) * bFade;
-              col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
+              const sprayBright = (0.24 * p.bowImpact) * bFade;
+              col.setRGB(0.92, 0.97, 1.0).multiplyScalar(sprayBright);
               trail.setColorAt(k++, col);
             }
           } else {
@@ -1275,8 +1301,19 @@ export function createWorld(scene) {
 
   return {
     markObjs,
+    startLabel,
+    finLabel,
+    updateStartLabel,
     wake,
     syncCourseObjects,
+    setCourseVisible(vis) {
+      courseVisible = !!vis;
+      syncCourseObjects();
+      if (!courseVisible) {
+        for (const ar of targetArrows) ar.visible = false;
+        for (const sp of Object.values(markSprites)) sp.visible = false;
+      }
+    },
     // 海況を海面シェーダーへ反映(最大4成分)。すべての海況でカメラ周辺の立体変位パッチを有効化する
     setSea(sea) {
       const U4 = waterMat.uniforms;
@@ -1304,7 +1341,7 @@ export function createWorld(scene) {
       syncCourseObjects();
     },
     setTargetMark(legIndex, wt, finished) {
-      if (finished) {
+      if (!courseVisible || finished) {
         for (const ar of targetArrows) ar.visible = false;
         activeMarkKeys = [];
         return;
@@ -1351,6 +1388,7 @@ export function createWorld(scene) {
     update(t, camera, dt, wt = 0, player = null, boats = null) {
       waterMat.uniforms.uTime.value = t; waterMat.uniforms.uWT.value = wt; waterMat.uniforms.uW0.value = W0; skyMat.uniforms.uTime.value = t;
       waterMat.uniforms.uShift.value = shiftAt(wt);
+      waterMat.uniforms.uWindKt.value = BASE_WIND_KT;
       const nbArr = waterMat.uniforms.uNearBoats.value;
       for (let i = 0; i < 8; i++) nbArr[i].set(0, -9999, -9999, 0);
       if (player) {
@@ -1383,7 +1421,7 @@ export function createWorld(scene) {
       // 観覧艇・大型船のわずかな移動演出
       const head = Math.atan2(U.x, U.z);
       for (const cb of courseBoats) {
-        if (!cb.isSpectator) continue;
+        if (!cb.isSpectator || !cb.b.visible) continue;
         // 1マーク・2マーク風上近傍の観覧RIBはマーク近くをキープしつつわずかに漂い、外周観覧艇はゆったり移動
         const ampA = cb.markRef ? 2.4 : 14.0;
         const ampC = cb.markRef ? 2.0 : 10.0;
@@ -1403,6 +1441,7 @@ export function createWorld(scene) {
       }
       // マークブイは波に合わせて軽快に揺れ、クルーザーやエンジンボート(運営艇・観覧艇)は排水量が大きいため波の影響・揺れをごく少なく抑える
       for (const o of bob) {
+        if (!o.visible) continue;
         const ox = o.position.x, oz = o.position.z;
         const wsX = waveSample(ox, oz, SEA.clock, 1, 0);
         const slX = wsX.slope;
@@ -1427,20 +1466,28 @@ export function createWorld(scene) {
       }
       flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
 
+      if (!courseVisible) {
+        foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
+        surfMat.opacity = 0.62 + 0.22 * Math.sin(t * 0.7 + 1.2);
+        return;
+      }
+
       camera.getWorldDirection(camDir);
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
       // ドローンカメラと自艇の視線上(0 < along < 44m)にマークが入った場合やカメラ接近時は完全に非表示(0)にして視界を遮らない
-      const calcVis = (wx, wy, wz, minDist, fadeRange) => {
+      const calcVis = (wx, wy, wz, minDist, fadeRange, checkLos = true) => {
         const dx = wx - cx, dy = wy - cy, dz = wz - cz;
         const dCam = Math.hypot(dx, dz);
         const distFade = clampN((dCam - minDist) / fadeRange, 0, 1);
         if (distFade <= 0.01) return 0;
-        const along = dx * camDir.x + dy * camDir.y + dz * camDir.z;
-        if (along > -4 && along < 44) {
-          const px = dx - camDir.x * along, py = dy - camDir.y * along, pz = dz - camDir.z * along;
-          const perp = Math.hypot(px, py, pz);
-          const losFade = clampN((perp - 8) / 9, 0, 1);
-          return distFade * losFade;
+        if (checkLos) {
+          const along = dx * camDir.x + dy * camDir.y + dz * camDir.z;
+          if (along > -4 && along < 44) {
+            const px = dx - camDir.x * along, py = dy - camDir.y * along, pz = dz - camDir.z * along;
+            const perp = Math.hypot(px, py, pz);
+            const losFade = clampN((perp - 8) / 9, 0, 1);
+            return distFade * losFade;
+          }
         }
         return distFade;
       };
@@ -1456,7 +1503,7 @@ export function createWorld(scene) {
         const s = clampN(baseS + distBoost, baseS, isAct ? 22.0 : 18.0);
         sp.scale.set(s, s, 1);
         sp.position.y = 4.2 + (s - baseS) * 0.38;
-        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 26 : 55, 22);
+        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 26 : 55, 22, true);
         sp.material.opacity = 0.94 * v;
         sp.visible = v > 0.02;
       }
@@ -1477,14 +1524,14 @@ export function createWorld(scene) {
           ar.position.y = spTopY + 3.85 * arScale + 0.55 * Math.sin(t * 3.2);
         }
         ar.rotation.y = t * 1.6;
-        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18);
+        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 24, 18, !ar.userData.isFinish);
         ar.userData.mat.opacity = 0.96 * v;
         if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
       }
       for (const lb of [startLabel, finLabel]) {
         if (!lb) continue;
-        const v = calcVis(lb.position.x, lb.position.y, lb.position.z, 32, 24);
-        lb.material.opacity = 0.88 * v;
+        const v = calcVis(lb.position.x, lb.position.y, lb.position.z, 10, 10, false);
+        lb.material.opacity = 0.94 * v;
         lb.visible = v > 0.02;
       }
       // 磯波: 白波が寄せては引く
@@ -1861,64 +1908,274 @@ function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
   tthGroup.position.set(tthX, 0, tthZ);
   fukuura.add(tthGroup);
 
-  // (7-e) ヤグラ型エントツ (海岸線の北寄り角にある鉄骨トラスの櫓煙突と茶色い建屋)
+  // (7-d2) テクノタワー周辺(福浦1・2丁目〜幸浦1・2丁目 金沢工業団地)のリアルな工場・研究所・プラント・煙突群
+  // 単調な箱ではなく、カーテンウォール窓帯・縦ルーバー・越屋根・屋上空調塔・ステンレスサイロ・煙道ダクト・点検デッキ付き煙突で精密に構築
+  const indWhiteMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+  const indLightMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
+  const indWarmMat = new THREE.MeshLambertMaterial({ color: 0xe7e5e4 });
+  const indSilverMat = new THREE.MeshLambertMaterial({ color: 0xcbd5e1 });
+  const indSteelMat = new THREE.MeshLambertMaterial({ color: 0x475569 });
+  const indDarkWinMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+  const indBlueGlassMat = new THREE.MeshLambertMaterial({ color: 0x0369a1, emissive: 0x082f49 });
+  const indAccentBlueMat = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
+  const indRedMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+
+  // ヘルパー1: 窓帯・縦マリオン・屋上設備棟・コーポレートカラー帯を備えたリアルな研究棟・工場ビル
+  const addDetailedFacility = (gx, gz, w, h, d, wallMat, winMat, accentMat, opts = {}) => {
+    const g = new THREE.Group();
+    const main = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    main.position.y = h / 2 + 3; g.add(main);
+    // 1階基壇部(重厚なグレーのポディウム)
+    const podium = new THREE.Mesh(new THREE.BoxGeometry(w + 1.8, 5.5, d + 1.8), indSilverMat);
+    podium.position.y = 5.2; g.add(podium);
+    // 水平連窓ガラス帯
+    const floors = Math.max(2, Math.floor((h - 7) / 6.2));
+    for (let f = 0; f < floors; f++) {
+      const wy = 9.5 + f * 6.2;
+      if (wy > h - 1.5) break;
+      const wb = new THREE.Mesh(new THREE.BoxGeometry(w + 0.9, 2.5, d - 3.5), winMat);
+      wb.position.y = wy; g.add(wb);
+      const wbZ = new THREE.Mesh(new THREE.BoxGeometry(w - 3.5, 2.5, d + 0.9), winMat);
+      wbZ.position.y = wy; g.add(wbZ);
+    }
+    // 外壁の縦ピラスター(柱型・ルーバーフィン)
+    const pilStep = Math.max(12, Math.round(d / 6));
+    for (let pz = -d / 2 + 6; pz <= d / 2 - 6; pz += pilStep) {
+      const pil = new THREE.Mesh(new THREE.BoxGeometry(w + 1.4, h - 2, 1.3), wallMat);
+      pil.position.set(0, h / 2 + 3, pz); g.add(pil);
+    }
+    // パラペット上端のコーポレートライン帯
+    if (accentMat) {
+      const fascia = new THREE.Mesh(new THREE.BoxGeometry(w + 1.6, 2.2, d + 1.6), accentMat);
+      fascia.position.y = h + 2.4; g.add(fascia);
+    }
+    // 屋上スラブ縁と機械室ペントハウス＋冷却塔ルーバー
+    const roofCap = new THREE.Mesh(new THREE.BoxGeometry(w - 2, 1.2, d - 2), indSteelMat);
+    roofCap.position.y = h + 3.4; g.add(roofCap);
+    const phW = w * 0.36, phH = opts.phH || 6.5, phD = d * 0.32;
+    const pent = new THREE.Mesh(new THREE.BoxGeometry(phW, phH, phD), indLightMat);
+    pent.position.set(-w * 0.14, h + 3 + phH / 2, -d * 0.12); g.add(pent);
+    const pentLouv = new THREE.Mesh(new THREE.BoxGeometry(phW + 0.6, phH * 0.45, phD * 0.7), indSteelMat);
+    pentLouv.position.set(-w * 0.14, h + 3 + phH * 0.55, -d * 0.12); g.add(pentLouv);
+    // 外付けエレベーター/階段コア塔
+    if (opts.coreSide) {
+      const cw = 11, ch = h + phH + 2.5, cd = 13;
+      const core = new THREE.Mesh(new THREE.BoxGeometry(cw, ch, cd), indSilverMat);
+      core.position.set((w / 2 + cw / 2 - 1) * opts.coreSide, ch / 2 + 3, d * 0.22); g.add(core);
+      const coreGlass = new THREE.Mesh(new THREE.BoxGeometry(cw + 0.5, ch - 6, 4.2), indBlueGlassMat);
+      coreGlass.position.set((w / 2 + cw / 2 - 1) * opts.coreSide, ch / 2 + 3, d * 0.22); g.add(coreGlass);
+    }
+    // ノコギリ屋根/採光モニター屋根(工場棟オプション)
+    if (opts.monitors) {
+      const mCount = opts.monitors;
+      const mSpan = (d - 14) / mCount;
+      for (let i = 0; i < mCount; i++) {
+        const mz = -d / 2 + 7 + (i + 0.5) * mSpan;
+        const mon = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, w - 8, 3), wallMat);
+        mon.rotation.z = Math.PI / 2; mon.scale.set(0.65, 1, 1.3);
+        mon.position.set(0, h + 4.8, mz); g.add(mon);
+      }
+    }
+    g.position.set(gx, 0, gz);
+    fukuura.add(g);
+    return g;
+  };
+
+  // ヘルパー2: 点検キャットウォーク・航空障害灯赤白帯・基礎煙道ダクト付きのリアルな工業煙突
+  const addDetailedChimney = (cx, cz, height, rTop, rBot, style = 'redwhite') => {
+    const g = new THREE.Group();
+    // コンクリート基礎台座 + 工場からの煙道ダクト
+    const ped = new THREE.Mesh(new THREE.BoxGeometry(rBot * 3.1, 9, rBot * 3.1), indSilverMat);
+    ped.position.y = 6.5; g.add(ped);
+    const duct = new THREE.Mesh(new THREE.BoxGeometry(22, 4.8, rBot * 1.3), indSteelMat);
+    duct.position.set(-10, 8.5, 0); duct.rotation.z = -0.12; g.add(duct);
+
+    if (style === 'twin') {
+      // 2本束ねのシルバー集合煙突 + 外周鉄骨リングフレーム
+      for (const sz of [-rBot * 0.68, rBot * 0.68]) {
+        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(rTop * 0.58, rBot * 0.62, height, 14), indSilverMat);
+        pipe.position.set(0, height / 2 + 4, sz); g.add(pipe);
+        const tip = new THREE.Mesh(new THREE.CylinderGeometry(rTop * 0.60, rTop * 0.60, 4.5, 14), indDarkWinMat);
+        tip.position.set(0, height + 2.5, sz); g.add(tip);
+        const blueBand = new THREE.Mesh(new THREE.CylinderGeometry(rTop * 0.62, rTop * 0.64, 5.5, 14), indAccentBlueMat);
+        blueBand.position.set(0, height - 6, sz); g.add(blueBand);
+      }
+      for (let y = 18; y <= height - 6; y += 14) {
+        const brace = new THREE.Mesh(new THREE.BoxGeometry(rBot * 1.7, 1.4, rBot * 2.5), indSteelMat);
+        brace.position.set(0, y + 4, 0); g.add(brace);
+      }
+    } else {
+      // テーパー円筒煙突本体
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, height, 16), indWhiteMat);
+      shaft.position.y = height / 2 + 4; g.add(shaft);
+      if (style === 'redwhite') {
+        // 上部〜中部の紅白縞(航空障害標識)
+        const bandH = 8.5;
+        for (let b = 0; b < 4; b++) {
+          const by = height + 4 - (b * 2 + 0.6) * bandH;
+          if (by < 22) break;
+          const tFrac = 1 - (by - 4) / height;
+          const br = rTop + (rBot - rTop) * tFrac + 0.16;
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(br - 0.08, br + 0.08, bandH, 16), indRedMat);
+          band.position.y = by; g.add(band);
+        }
+      } else if (style === 'blueband') {
+        for (const dy of [6, 16]) {
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(rTop + 0.22, rTop + 0.32, 4.8, 16), indAccentBlueMat);
+          band.position.y = height + 4 - dy; g.add(band);
+        }
+      }
+      // 先端の黒色排煙ノズル
+      const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(rTop * 0.86, rTop * 0.96, 4.0, 16), indDarkWinMat);
+      nozzle.position.y = height + 5.5; g.add(nozzle);
+      // 3段の点検キャットウォーク(円形手すりデッキ)とタラップ支柱
+      for (const frac of [0.38, 0.66, 0.88]) {
+        const py = 4 + height * frac;
+        const pr = rTop + (rBot - rTop) * (1 - frac) + 1.35;
+        const catwalk = new THREE.Mesh(new THREE.CylinderGeometry(pr, pr, 1.1, 16), indSteelMat);
+        catwalk.position.y = py; g.add(catwalk);
+      }
+      const ladder = new THREE.Mesh(new THREE.BoxGeometry(0.9, height - 6, 1.1), indSteelMat);
+      ladder.position.set(rTop + (rBot - rTop) * 0.45 + 0.6, height / 2 + 4, 0); g.add(ladder);
+    }
+    g.position.set(cx, 0, cz);
+    fukuura.add(g);
+    return g;
+  };
+
+  // [A] テクノタワー南側エリア (z = -1040 〜 -1350: 精密機器R&Dセンター・製薬プラント・食品サイロ工場と紅白煙突・2本束ね煙突)
+  // 1) 南側先端: 大型精密機器R&Dセンター棟 (ガラスカーテンウォール＋青帯＋エレベーターコア)
+  addDetailedFacility(-725, -1085, 68, 38, 118, indWhiteMat, indBlueGlassMat, indAccentBlueMat, { coreSide: 1, phH: 7.5 });
+  // 2) 製薬・バイオ研究プラント棟 + 高さ84mの紅白縞ボイラー煙突 (海上からテクノタワー左隣に鮮やかに見えるランドマーク煙突)
+  addDetailedFacility(-740, -1245, 76, 32, 110, indLightMat, indDarkWinMat, null, { coreSide: -1, monitors: 3 });
+  addDetailedChimney(-692, -1210, 84, 3.0, 4.8, 'redwhite');
+  // 3) 食品・飲料プラント棟 + ステンレス6連貯蔵サイロ群 + 2本束ねシルバー集合煙突(高さ68m)
+  addDetailedFacility(-785, -1355, 72, 26, 92, indWarmMat, indDarkWinMat, indAccentBlueMat, { monitors: 4 });
+  addDetailedChimney(-715, -1340, 68, 2.8, 3.8, 'twin');
+  const siloGroup = new THREE.Group();
+  for (let sx = 0; sx < 2; sx++) {
+    for (let sz = 0; sz < 3; sz++) {
+      const sMesh = new THREE.Mesh(new THREE.CylinderGeometry(5.8, 5.8, 28, 14), indSilverMat);
+      sMesh.position.set(sx * 14, 17, sz * 14); siloGroup.add(sMesh);
+      const sCone = new THREE.Mesh(new THREE.ConeGeometry(6.1, 4.5, 14), indWhiteMat);
+      sCone.position.set(sx * 14, 33.2, sz * 14); siloGroup.add(sCone);
+    }
+  }
+  const siloBridge = new THREE.Mesh(new THREE.BoxGeometry(20, 2.6, 36), indSteelMat);
+  siloBridge.position.set(7, 35.8, 14); siloGroup.add(siloBridge);
+  siloGroup.position.set(-702, 0, -1370);
+  fukuura.add(siloGroup);
+
+  // [B] テクノタワー直近・産業振興センター複合研究棟群 (z = -1420 〜 -1580: テクノタワーの足元〜すぐ背後・北隣を固める中層インテリジェントビル)
+  addDetailedFacility(-765, -1485, 64, 46, 96, indWhiteMat, indBlueGlassMat, indAccentBlueMat, { coreSide: 1, phH: 8.5 });
+  addDetailedFacility(-720, -1595, 66, 36, 98, indLightMat, indBlueGlassMat, null, { coreSide: 1, phH: 6.5 });
+  // テクノタワー低層棟と隣接研究棟を結ぶ空中連絡ブリッジ(スカイウォーク)
+  const skyBridge = new THREE.Mesh(new THREE.BoxGeometry(52, 4.5, 8.5), indBlueGlassMat);
+  skyBridge.position.set(-720, 18.5, -1470); fukuura.add(skyBridge);
+
+  // [C] テクノタワー北側エリア (z = -1680 〜 -2080: コージェネエネルギーセンター＋高層煙突・大型物流センター・化学プラント群)
+  // 1) 福浦エネルギーセンター・ボイラータービン建屋 + 高さ96mの紅白高層煙突(点検デッキ・煙道ダクト付き)
+  addDetailedFacility(-745, -1735, 78, 34, 108, indWarmMat, indDarkWinMat, null, { coreSide: 1, phH: 9.0 });
+  addDetailedChimney(-685, -1705, 96, 3.4, 5.4, 'redwhite');
+  // 屋外球形ガスタンク(2基)と配管ラック
+  for (const gz of [-1665, -1690]) {
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(8.5, 14, 12), indLightMat);
+    sphere.position.set(-702, 13.5, gz); fukuura.add(sphere);
+    const sRing = new THREE.Mesh(new THREE.CylinderGeometry(8.8, 8.8, 1.0, 14), indAccentBlueMat);
+    sRing.position.set(-702, 13.5, gz); fukuura.add(sRing);
+    for (let l = 0; l < 4; l++) {
+      const a = (l / 4) * Math.PI * 2 + 0.4;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.7, 11, 6), indSteelMat);
+      leg.position.set(-702 + Math.cos(a) * 6.2, 6.5, gz + Math.sin(a) * 6.2); fukuura.add(leg);
+    }
+  }
+  // 2) 幸浦2丁目 大型多層物流・製造センター棟 (らせんランプウェイ塔＋青帯ファサード) + シルバー青帯煙突(高さ64m)
+  addDetailedFacility(-735, -1910, 84, 30, 145, indWhiteMat, indDarkWinMat, indAccentBlueMat, { monitors: 5 });
+  const rampTower = new THREE.Mesh(new THREE.CylinderGeometry(16, 16, 31, 18), indSilverMat);
+  rampTower.position.set(-686, 18.5, -1850); fukuura.add(rampTower);
+  for (let ry = 8; ry <= 28; ry += 6.5) {
+    const rBand = new THREE.Mesh(new THREE.CylinderGeometry(16.5, 16.5, 2.2, 18), indDarkWinMat);
+    rBand.position.set(-686, ry, -1850); fukuura.add(rBand);
+  }
+  addDetailedChimney(-698, -2035, 64, 2.6, 4.0, 'blueband');
+  // 3) ヤグラ型煙突の南隣プラント棟
+  addDetailedFacility(-750, -2090, 74, 28, 102, indLightMat, indDarkWinMat, null, { coreSide: 1, monitors: 3 });
+
+  // (7-e) ヤグラ型エントツ (海岸線の北寄り角にある鉄骨トラスの櫓煙突と付属プラント建屋: 斜めブレース・点検デッキ・煙道ダクト付き)
   const yagX = -680, yagZ = -2220;
-  const yagCore = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 7.5, 105, 12), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
-  yagCore.position.set(yagX, 55, yagZ); fukuura.add(yagCore);
-  const yagRed = new THREE.Mesh(new THREE.CylinderGeometry(5.8, 6.2, 16, 12), new THREE.MeshLambertMaterial({ color: 0xdc2626 }));
-  yagRed.position.set(yagX, 98, yagZ); fukuura.add(yagRed);
+  const yagCore = new THREE.Mesh(new THREE.CylinderGeometry(5.2, 7.2, 108, 16), indLightMat);
+  yagCore.position.set(yagX, 56, yagZ); fukuura.add(yagCore);
+  const yagRed = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.9, 15, 16), indRedMat);
+  yagRed.position.set(yagX, 99, yagZ); fukuura.add(yagRed);
+  const yagRed2 = new THREE.Mesh(new THREE.CylinderGeometry(5.9, 6.3, 12, 16), indRedMat);
+  yagRed2.position.set(yagX, 74, yagZ); fukuura.add(yagRed2);
+  const yagNozzle = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 5.2, 5, 16), indDarkWinMat);
+  yagNozzle.position.set(yagX, 111.5, yagZ); fukuura.add(yagNozzle);
   const trussCol = new THREE.MeshLambertMaterial({ color: 0x475569 });
   for (const sx of [-12, 12]) for (const sz of [-12, 12]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(2.5, 100, 2.5), trussCol);
-    post.position.set(yagX + sx, 52, yagZ + sz); fukuura.add(post);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(2.4, 104, 2.4), trussCol);
+    post.position.set(yagX + sx, 54, yagZ + sz); fukuura.add(post);
   }
-  for (let h = 18; h <= 96; h += 18) {
-    const ring = new THREE.Mesh(new THREE.BoxGeometry(27, 2.0, 27), trussCol);
+  for (let h = 16; h <= 100; h += 14) {
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(27.5, 1.8, 27.5), trussCol);
     ring.position.set(yagX, h, yagZ); fukuura.add(ring);
+    if (h < 100) {
+      // トラスの斜材(Xブレース)を四面に配置してリアルな鉄骨ヤグラ構造を表現
+      for (const s of [-1, 1]) {
+        const diagZ = new THREE.Mesh(new THREE.BoxGeometry(28, 1.2, 1.2), trussCol);
+        diagZ.position.set(yagX, h + 7, yagZ + s * 12); diagZ.rotation.z = s * 0.48; fukuura.add(diagZ);
+        const diagX = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 28), trussCol);
+        diagX.position.set(yagX + s * 12, h + 7, yagZ); diagX.rotation.x = -s * 0.48; fukuura.add(diagX);
+      }
+    }
   }
-  const yagBld = new THREE.Mesh(new THREE.BoxGeometry(85, 28, 75), new THREE.MeshLambertMaterial({ color: 0xa8a29e }));
-  yagBld.position.set(yagX - 55, 16, yagZ + 20); fukuura.add(yagBld);
+  addDetailedFacility(yagX - 62, yagZ + 18, 86, 30, 82, indWarmMat, indDarkWinMat, null, { coreSide: 1, phH: 6.5 });
+  const yagFlue = new THREE.Mesh(new THREE.BoxGeometry(36, 5.5, 6.5), trussCol);
+  yagFlue.position.set(yagX - 22, 16, yagZ + 4); yagFlue.rotation.z = 0.14; fukuura.add(yagFlue);
 
-  // (7-f) 焼却炉 (白地に水色トップの高層煙突と工場棟) & 三菱重工 (4棟並んだ白い三角屋根の大工場群: イラスト通り北岸に配置)
+  // (7-f) 焼却炉 (横浜市資源循環局金沢工場: 白地に水色トップの130m高層煙突と段差工場棟・煙道・サイロ) & 三菱重工 (4棟並んだ白い三角屋根の大工場群)
   // 北端の幸浦埋立地張り出し
   const northPier = new THREE.Mesh(new THREE.BoxGeometry(750, 4.5, 750), new THREE.MeshLambertMaterial({ color: 0xd6d3c9 }));
   northPier.position.set(-720, 1.2, -2850); fukuura.add(northPier);
   const incX = -1020, incZ = -2820;
-  const incBld = new THREE.Mesh(new THREE.BoxGeometry(150, 44, 140), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
-  incBld.position.set(incX, 24, incZ); fukuura.add(incBld);
-  // 金沢工場(資源循環局)の煙突: 実際の高さ130m
-  const incStack = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 12, 122, 16), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-  incStack.position.set(incX - 95, 62, incZ); fukuura.add(incStack);
-  const incCap = new THREE.Mesh(new THREE.CylinderGeometry(9.0, 9.5, 14, 16), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
-  incCap.position.set(incX - 95, 126, incZ); fukuura.add(incCap);
+  addDetailedFacility(incX, incZ, 152, 46, 142, indLightMat, indBlueGlassMat, indAccentBlueMat, { coreSide: 1, phH: 10 });
+  // 金沢工場(資源循環局)の煙突: 実際の高さ130m + 点検デッキ + 傾斜煙道ダクト
+  const incStack = new THREE.Mesh(new THREE.CylinderGeometry(8.2, 12.2, 124, 20), indWhiteMat);
+  incStack.position.set(incX - 95, 64, incZ); fukuura.add(incStack);
+  const incCap = new THREE.Mesh(new THREE.CylinderGeometry(8.6, 9.2, 15, 20), indAccentBlueMat);
+  incCap.position.set(incX - 95, 127, incZ); fukuura.add(incCap);
+  const incSubBand = new THREE.Mesh(new THREE.CylinderGeometry(9.4, 9.7, 5, 20), indAccentBlueMat);
+  incSubBand.position.set(incX - 95, 108, incZ); fukuura.add(incSubBand);
+  const incFlue = new THREE.Mesh(new THREE.BoxGeometry(46, 7.5, 9.5), indSilverMat);
+  incFlue.position.set(incX - 68, 22, incZ); incFlue.rotation.z = -0.15; fukuura.add(incFlue);
 
   // 三菱重工の4連白い蒲鉾/三角屋根工場棟 (イラスト右上・焼却炉の右隣に4棟並ぶ)
   for (let i = 0; i < 4; i++) {
     const hx = -820 + i * 82, hz = -2820;
     const hall = new THREE.Mesh(new THREE.BoxGeometry(74, 34, 210), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
     hall.position.set(hx, 19, hz); fukuura.add(hall);
+    const hallWin = new THREE.Mesh(new THREE.BoxGeometry(75.2, 5.5, 204), indDarkWinMat);
+    hallWin.position.set(hx, 26, hz); fukuura.add(hallWin);
     const roof = new THREE.Mesh(new THREE.CylinderGeometry(38, 38, 210, 3), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
     roof.rotation.x = Math.PI / 2; roof.rotation.y = Math.PI;
     roof.position.set(hx, 38, hz); roof.scale.set(1, 1, 0.45); fukuura.add(roof);
   }
 
-  // テクノタワーの手前にあった無機質すぎる箱型建物群は削除し、ずっと奥側(x <= -1020)の控えめな背景建屋とシーサイドライン高架のみ配置
+  // シーサイドライン高架(x=-825)の西側に並ぶ第2列の大型研究・工場棟群 (すべて窓帯・屋上ペントハウス付き)
   const fukuColors = [0xf8fafc, 0xe2e8f0, 0xf1f5f9, 0xdbeafe, 0xe5e7eb, 0xd6d3d1];
-  const fukuRoofMat = new THREE.MeshLambertMaterial({ color: 0x64748b });
   const fukuStripeBlue = new THREE.MeshLambertMaterial({ color: 0x0284c7 });
   for (const [bx, bz, bw, bh, bd, ci] of [
-    [-1035, -1120, 86, 24, 68, 1],
-    [-1040, -1360, 82, 22, 66, 0],
-    [-1045, -1640, 88, 26, 70, 2],
-    [-1035, -1920, 86, 24, 68, 4],
-    [-1180, -1260, 84, 22, 66, 1],
-    [-1180, -1560, 88, 26, 70, 0],
-    [-1180, -1840, 86, 24, 68, 2],
+    [-935, -1120, 86, 28, 88, 1],
+    [-940, -1340, 84, 32, 92, 0],
+    [-945, -1580, 90, 34, 96, 2],
+    [-935, -1820, 86, 28, 90, 4],
+    [-940, -2060, 88, 30, 92, 1],
+    [-1110, -1240, 92, 26, 84, 1],
+    [-1110, -1520, 96, 30, 88, 0],
+    [-1110, -1800, 92, 28, 86, 2],
   ]) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), new THREE.MeshLambertMaterial({ color: fukuColors[ci] }));
-    m.position.set(bx, bh / 2 + 3, bz); fukuura.add(m);
-    const rf = new THREE.Mesh(new THREE.BoxGeometry(bw + 2, 1.6, bd + 2), fukuRoofMat);
-    rf.position.set(bx, bh + 3.6, bz); fukuura.add(rf);
+    const wMat = new THREE.MeshLambertMaterial({ color: fukuColors[ci] });
+    addDetailedFacility(bx, bz, bw, bh, bd, wMat, indDarkWinMat, ci % 2 === 0 ? indAccentBlueMat : null, { phH: 5.5 });
   }
 
   // 2) 金沢シーサイドラインの高架軌道と駅舎 (市大医学部駅〜福浦駅〜産業振興センター駅〜幸浦駅: x=-825付近を南北に貫く)
