@@ -753,11 +753,11 @@ export class Boat {
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
 
     // 風下側への流され(リーウェイ＆風圧ドリフト):
-    // スタート時など船が止まっている・極微速時の下流れを従来の1.5倍に設定し、一定の速度が出るとセンターボードが効いて流されなくなる
-    const vCut = 1.30 * KT * SPEED_SCALE;
-    const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.4);
-    const leewayV = 0.30 * slowF * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向への下流れ(従来の1.5倍)
-    const windageV = 0.18 * slowF * SPEED_SCALE * w.f;                // 風下方向への吹き流され(従来の1.5倍)
+    // スタート時など船が止まっている・極微速時の下流れを従来のさらに2倍(計3倍)に設定し、一定の速度が出るとセンターボードが効いて流されなくなる
+    const vCut = 1.35 * KT * SPEED_SCALE;
+    const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.3);
+    const leewayV = 0.60 * slowF * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向への下流れ(低速時2倍)
+    const windageV = 0.36 * slowF * SPEED_SCALE * w.f;                // 風下方向への吹き流され(低速時2倍)
     // リーバウ・スターン通過リフト時はセンターボードの揚力で風上側へわずかにせり上がる(効果1/3)
     const nt = this.tack;
     const liftLatV = this.windBend > 0.008 && this.v > vCut ? this.windBend * 0.38 * SPEED_SCALE : 0;
@@ -845,12 +845,12 @@ export function resolveCollisions(boats, t) {
       }
     }
     // アウター艇(pin)および本部船(com)の船首前方から海底へ伸びるアンカー係留ロープへの引っかかり判定:
-    // スタート前後〜スタート直後にアウター艇や本部船の船首すぐ前(アンカーロープ水面下領域)を横切るとセンターボードがロープに引っかかり急減速する
+    // 船首すぐ前のアンカーロープ直上(狭い範囲)を横切ったときのみセンターボードがロープに引っかかり減速する
     if (!A.finished && !A.dsq) {
       const cp = toCourse(A.x, A.z);
       const anchorZones = [
-        { key: 'pin', aMin: MARKS.pin.a + 3.5, aMax: MARKS.pin.a + 8.4, cCenter: MARKS.pin.c, halfC: 1.38 },
-        { key: 'com', aMin: MARKS.com.a + 5.2, aMax: MARKS.com.a + 10.6, cCenter: MARKS.com.c, halfC: 1.48 },
+        { key: 'pin', aMin: MARKS.pin.a + 2.7, aMax: MARKS.pin.a + 4.1, cCenter: MARKS.pin.c, halfC: 0.45 },
+        { key: 'com', aMin: MARKS.com.a + 4.0, aMax: MARKS.com.a + 5.5, cCenter: MARKS.com.c, halfC: 0.48 },
       ];
       for (const az of anchorZones) {
         if (cp.a >= az.aMin && cp.a <= az.aMax && Math.abs(cp.c - az.cCenter) <= az.halfC) {
