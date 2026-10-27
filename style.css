@@ -369,18 +369,76 @@ body.orientOpen #touch{display:block!important;z-index:12;pointer-events:none!im
 body.orientOpen #touch button{pointer-events:none!important}
 body.orientOpen #result{z-index:14;pointer-events:none}
 
-/* 実際の画面上の対象ボタン・計器を周囲の赤い点滅枠で強調する */
+/* 実際の画面上の対象ボタン・計器を周囲のゆっくり目立つ赤い点滅枠で強調する */
 .orientTargetHighlight{
   position:relative;
-  z-index:15!important;
-  outline:3px solid #ff2424!important;
-  outline-offset:3px;
-  box-shadow:0 0 0 4px rgba(255,36,36,.45),0 0 24px rgba(255,36,36,.95),inset 0 0 14px rgba(255,36,36,.35)!important;
-  animation:orientRedBlink .5s ease-in-out infinite alternate!important;
+  z-index:18!important;
+  outline:4px solid #ff1e1e!important;
+  outline-offset:4px;
+  border-radius:4px;
+  box-shadow:0 0 0 6px rgba(255,30,30,.55),0 0 32px rgba(255,30,30,1),inset 0 0 18px rgba(255,30,30,.45)!important;
+  animation:orientRedBlink 1.15s ease-in-out infinite alternate!important;
 }
 @keyframes orientRedBlink{
-  from{outline-color:rgba(255,36,36,.2)!important;box-shadow:0 0 0 1px rgba(255,36,36,.15),0 0 6px rgba(255,36,36,.25)!important}
-  to{outline-color:#ff2424!important;box-shadow:0 0 0 6px rgba(255,36,36,.62),0 0 28px rgba(255,46,46,1),inset 0 0 16px rgba(255,36,36,.45)!important}
+  0%{
+    outline-color:rgba(255,40,40,.18)!important;
+    box-shadow:0 0 0 2px rgba(255,30,30,.12),0 0 8px rgba(255,30,30,.20)!important;
+  }
+  100%{
+    outline-color:#ff1a1a!important;
+    box-shadow:0 0 0 7px rgba(255,30,30,.72),0 0 36px rgba(255,40,40,1),0 0 12px rgba(255,255,255,.65),inset 0 0 18px rgba(255,30,30,.50)!important;
+  }
+}
+
+/* オリエンテーション対象を指すゆっくり点滅する赤枠＆太い赤矢印レイヤー */
+.orientPointerLayer{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:22;
+  overflow:hidden;
+}
+.orientFocusBox{
+  position:fixed;
+  pointer-events:none;
+  border:4px solid #ff1a1a;
+  border-radius:6px;
+  box-shadow:0 0 0 3px rgba(255,255,255,.85),0 0 28px rgba(255,26,26,1),inset 0 0 16px rgba(255,26,26,.45);
+  animation:orientFocusBoxBlink 1.15s ease-in-out infinite alternate;
+}
+@keyframes orientFocusBoxBlink{
+  0%{
+    opacity:.22;
+    transform:scale(.98);
+    box-shadow:0 0 0 1px rgba(255,255,255,.25),0 0 8px rgba(255,26,26,.3);
+  }
+  100%{
+    opacity:1;
+    transform:scale(1.03);
+    box-shadow:0 0 0 3px rgba(255,255,255,.92),0 0 34px rgba(255,26,26,1),0 0 52px rgba(255,40,40,.85),inset 0 0 18px rgba(255,26,26,.5);
+  }
+}
+.orientFocusArrow{
+  position:fixed;
+  width:68px;
+  height:68px;
+  pointer-events:none;
+  transform-origin:center center;
+  filter:drop-shadow(0 0 10px rgba(255,20,20,.95)) drop-shadow(0 3px 6px rgba(0,0,0,.85));
+  animation:orientArrowBlink 1.15s ease-in-out infinite alternate;
+}
+.orientFocusArrow svg{
+  display:block;
+  width:100%;
+  height:100%;
+}
+@keyframes orientArrowBlink{
+  0%{
+    opacity:.24;
+  }
+  100%{
+    opacity:1;
+  }
 }
 
 .orientOverlay{position:fixed;inset:0;z-index:16;pointer-events:none;display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden}
