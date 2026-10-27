@@ -1266,7 +1266,7 @@ export function createWorld(scene) {
               ts.set(0.14 + p.age * 0.18, 1, 0.42 + p.age * 0.30);
               m4.compose(tv.set(px, bowY, pz), tq, ts);
               trail.setMatrixAt(k, m4);
-              const sprayBright = (0.042 * (p.cruiseFoam || 0) + 0.095 * (p.slamSpray || 0)) * bFade;
+              const sprayBright = (0.048 * (p.cruiseFoam || 0) + 0.125 * (p.slamSpray || 0)) * bFade;
               col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
               trail.setColorAt(k++, col);
             }
@@ -1517,63 +1517,59 @@ export function createWorld(scene) {
         return distFade;
       };
 
-      // 1) マーク番号ラベル: 遠方では視認しやすく、近づくほど画面上でも3D上でもしっかり小さくなるよう距離の非線形関数でスケール調整
+      // 1) マーク番号ラベル: 遠方でも近くでもしっかり読めつつ、近づいた際に大きくなりすぎないよう距離に応じて3Dスケールを調整
       for (const [k, sp] of Object.entries(markSprites)) {
         const mo = markObjs[k];
         if (!mo.visible) { sp.visible = false; continue; }
         const isAct = activeMarkKeys.includes(k);
         const dCam = Math.hypot(mo.position.x - cx, mo.position.z - cz);
-        const closeShrink = clampN((dCam - 12) / 95, 0.22, 1.0);
-        const s = clampN(dCam * (isAct ? 0.032 : 0.025) * (0.38 + 0.62 * closeShrink), 0.42, isAct ? 14.0 : 11.0);
+        const s = clampN(1.1 + dCam * (isAct ? 0.046 : 0.036), 2.1, isAct ? 18.0 : 14.5);
         sp.scale.set(s, s, 1);
-        sp.position.y = 2.0 + s * 0.52;
-        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 16 : 36, 18, true);
+        sp.position.y = 2.4 + s * 0.55;
+        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 20 : 42, 20, true);
         sp.material.opacity = 0.94 * v;
         sp.visible = v > 0.02;
       }
 
-      // 2) START LINE / FINISH ラベル: 近づいた際に画面上で大きくなりすぎないよう、接近時ほど画面占有率も縮小させる
+      // 2) START LINE / FINISH ラベル: しっかり読める大きさを保ちつつ、接近時は距離に応じて3Dスケールを縮小し大きくなりすぎないようにする
       if (startLabel) {
         const dStart = Math.hypot(startLabel.position.x - cx, startLabel.position.z - cz);
-        const closeShrink = clampN((dStart - 10) / 85, 0.20, 1.0);
-        const sw = clampN(dStart * 0.115 * (0.35 + 0.65 * closeShrink), 1.25, 16.5);
+        const sw = clampN(2.4 + dStart * 0.155, 5.2, 22.0);
         const sh = sw / 2.743;
         startLabel.scale.set(sw, sh, 1);
-        startLabel.position.y = 1.85 + sh * 0.58;
-        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 8, 10, false);
+        startLabel.position.y = 2.2 + sh * 0.60;
+        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 9, 10, false);
         startLabel.material.opacity = 0.94 * v;
         startLabel.visible = courseVisible && v > 0.02;
       }
       if (finLabel) {
         const dFin = Math.hypot(finLabel.position.x - cx, finLabel.position.z - cz);
-        const closeShrink = clampN((dFin - 10) / 85, 0.20, 1.0);
-        const fw = clampN(dFin * 0.095 * (0.35 + 0.65 * closeShrink), 1.05, 13.5);
+        const fw = clampN(2.0 + dFin * 0.125, 4.2, 17.5);
         const fh = fw * 0.25;
         finLabel.scale.set(fw, fh, 1);
-        finLabel.position.y = 1.75 + fh * 0.60;
-        const v = calcVis(finLabel.position.x, finLabel.position.y, finLabel.position.z, 8, 10, false);
+        finLabel.position.y = 2.0 + fh * 0.62;
+        const v = calcVis(finLabel.position.x, finLabel.position.y, finLabel.position.z, 9, 10, false);
         finLabel.material.opacity = 0.94 * v;
         finLabel.visible = courseVisible && v > 0.02;
       }
 
-      // 3) マークの数字ラベル(またはFINISH)の「さらに上」に赤矢印＋Next表記を配置 (接近時は画面上でも小さくなるよう調整)
+      // 3) マークの数字ラベル(またはFINISH)の「さらに上」に赤矢印＋Next表記を配置 (しっかり見えつつ接近時は大きくなりすぎないよう調整)
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
         const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
-        const closeShrink = clampN((dCam - 12) / 95, 0.22, 1.0);
-        const arScale = clampN(dCam * 0.0052 * (0.38 + 0.62 * closeShrink), 0.10, 1.85);
+        const arScale = clampN(0.22 + dCam * 0.0074, 0.38, 2.3);
         ar.scale.setScalar(arScale);
         if (ar.userData.isFinish) {
-          const finTopY = finLabel ? (finLabel.position.y + finLabel.scale.y * 0.56) : 3.5;
-          ar.position.y = finTopY + 3.6 * arScale + 0.28 * arScale * Math.sin(t * 3.2);
+          const finTopY = finLabel ? (finLabel.position.y + finLabel.scale.y * 0.56) : 4.5;
+          ar.position.y = finTopY + 3.8 * arScale + 0.35 * arScale * Math.sin(t * 3.2);
         } else {
           const mk = ar.userData.markKey;
           const sp = mk && markSprites[mk];
-          const spTopY = sp ? (sp.position.y + sp.scale.y * 0.56) : 2.8;
-          ar.position.y = spTopY + 3.65 * arScale + 0.28 * arScale * Math.sin(t * 3.2);
+          const spTopY = sp ? (sp.position.y + sp.scale.y * 0.56) : 3.5;
+          ar.position.y = spTopY + 3.85 * arScale + 0.35 * arScale * Math.sin(t * 3.2);
         }
         ar.rotation.y = t * 1.6;
-        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 16, 16, !ar.userData.isFinish);
+        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 20, 16, !ar.userData.isFinish);
         ar.userData.mat.opacity = 0.96 * v;
         if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
       }
