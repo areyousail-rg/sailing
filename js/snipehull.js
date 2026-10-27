@@ -79,8 +79,30 @@ const speckle = tex(noiseCanvas(256, '#ffffff', 0.05, 1400), [1, 1]);
 export const M = {
   gel: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.26, metalness: 0.0, side: THREE.DoubleSide }),
   nonskid: new THREE.MeshStandardMaterial({ color: 0xfbfdff, roughness: 0.32, metalness: 0.0, side: THREE.DoubleSide }),
-  floor: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.34, metalness: 0.0, side: THREE.DoubleSide }),
-  wall: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.28, metalness: 0.0, side: THREE.DoubleSide }),
+  floor: new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    roughness: 0.34,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+    stencilWrite: true,
+    stencilFunc: THREE.AlwaysStencilFunc,
+    stencilRef: 1,
+    stencilZPass: THREE.ReplaceStencilOp,
+    stencilZFail: THREE.KeepStencilOp,
+    stencilFail: THREE.KeepStencilOp,
+  }),
+  wall: new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.28,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+    stencilWrite: true,
+    stencilFunc: THREE.AlwaysStencilFunc,
+    stencilRef: 1,
+    stencilZPass: THREE.ReplaceStencilOp,
+    stencilZFail: THREE.KeepStencilOp,
+    stencilFail: THREE.KeepStencilOp,
+  }),
   // 環境マップ無しでも黒く沈まず明るいシルバーに見えるよう metalness を抑えて明度を確保
   alu: new THREE.MeshStandardMaterial({ color: 0xdbe2ea, roughness: 0.35, metalness: 0.22 }),
   steel: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.32, metalness: 0.25 }),
@@ -163,7 +185,8 @@ export function buildHull(accent = 0x2a77ff) {
     const B = halfBeam(z), s = sheerY(z), bo = bottomY(z);
     return [w * B, bo + (s - bo) * Math.pow(Math.abs(w), 2.3), z];
   });
-  g.add(new THREE.Mesh(hullGeo, M.gel));
+  const addOrder = (m, order) => { m.renderOrder = order; g.add(m); return m; };
+  addOrder(new THREE.Mesh(hullGeo, M.gel), -9);
 
   // 船尾板 (トランサム): 上縁も後部デッキのキャンバー(deckY)に完全一致させ、スターン端の隙間を無くす
   const sh = new THREE.Shape(); const B = halfBeam(L), s = sheerY(L), bo = bottomY(L);
@@ -174,34 +197,34 @@ export function buildHull(accent = 0x2a77ff) {
     sh.lineTo(x, deckY(L, x));
   }
   sh.closePath();
-  const tr = new THREE.Mesh(new THREE.ShapeGeometry(sh), M.gel); tr.position.z = L; g.add(tr);
+  const tr = new THREE.Mesh(new THREE.ShapeGeometry(sh), M.gel); tr.position.z = L; addOrder(tr, -9);
   // トランサム上縁の純白ロールエッジキャップ
   const trCapPts = lin(-1, 1, 16).map((w) => { const x = w * B; return new THREE.Vector3(x, deckY(L, x), L); });
-  g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(trCapPts), 24, 0.012, 8), M.gel));
+  addOrder(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(trCapPts), 24, 0.012, 8), M.gel), -9);
 
   // デッキ(フォアデッキ / サイドデッキ / 後部デッキ): 段差や色ムラのない純白デッキ
   const dz = (a, b, n) => lin(a, b, n);
   const fore = grid(dz(-L, ZC0, 28), ws, (z, w) => { const x = w * halfBeam(z); return [x, deckY(z, x), z]; });
-  g.add(new THREE.Mesh(fore, M.gel));
+  addOrder(new THREE.Mesh(fore, M.gel), -9);
   const aft = grid(dz(ZC1, L, 12), ws, (z, w) => { const x = w * halfBeam(z); return [x, deckY(z, x), z]; });
-  g.add(new THREE.Mesh(aft, M.gel));
+  addOrder(new THREE.Mesh(aft, M.gel), -9);
   for (const sg of [-1, 1]) {
     const side = grid(dz(ZC0, ZC1, 28), lin(0, 1, 8), (z, v) => { const B2 = halfBeam(z); const x = sg * (COAM + v * (B2 - COAM)); return [x, deckY(z, x), z]; });
-    g.add(new THREE.Mesh(side, M.gel));
+    addOrder(new THREE.Mesh(side, M.gel), -9);
     // コーミング(コクピット側壁): 黒い縁を無くし、サイドデッキから滑らかに丸く巻き込む純白FRPのロールエッジ
     const wall = grid(dz(ZC0, ZC1, 20), lin(0, 1, 4), (z, v) => { const top = deckY(z, COAM); return [sg * COAM, FLOOR_Y + (top - FLOOR_Y) * v, z]; });
-    g.add(new THREE.Mesh(wall, M.wall));
+    addOrder(new THREE.Mesh(wall, M.wall), -8);
     const capPts = dz(ZC0, ZC1, 16).map((z) => new THREE.Vector3(sg * (COAM - 0.005), deckY(z, COAM) + 0.002, z));
-    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(capPts), 36, 0.018, 10), M.gel));
+    addOrder(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(capPts), 36, 0.018, 10), M.gel), -9);
     // ガンネルエッジも黒いラブレールではなく白いFRPシアーラインに統一(スターン端 L まで完全にカバー)
     const rr = dz(-L * 0.99, L, 44).map((z) => { const x = sg * halfBeam(z) * 0.998; return new THREE.Vector3(x, deckY(z, x), z); });
-    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rr), 72, 0.012, 8), M.gel));
+    addOrder(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rr), 72, 0.012, 8), M.gel), -9);
   }
   // 前後バルクヘッド & 純白のコクピットフロア
-  const fb = grid(lin(-1, 1, 6), lin(0, 1, 4), (w, v) => [w * COAM, FLOOR_Y + (deckY(ZC0, w * COAM) - FLOOR_Y) * v, ZC0]); g.add(new THREE.Mesh(fb, M.wall));
-  const ab = grid(lin(-1, 1, 6), lin(0, 1, 4), (w, v) => [w * COAM, FLOOR_Y + (deckY(ZC1, w * COAM) - FLOOR_Y) * v, ZC1]); g.add(new THREE.Mesh(ab, M.wall));
+  const fb = grid(lin(-1, 1, 6), lin(0, 1, 4), (w, v) => [w * COAM, FLOOR_Y + (deckY(ZC0, w * COAM) - FLOOR_Y) * v, ZC0]); addOrder(new THREE.Mesh(fb, M.wall), -8);
+  const ab = grid(lin(-1, 1, 6), lin(0, 1, 4), (w, v) => [w * COAM, FLOOR_Y + (deckY(ZC1, w * COAM) - FLOOR_Y) * v, ZC1]); addOrder(new THREE.Mesh(ab, M.wall), -8);
   const fl = grid(lin(ZC0, ZC1, 14), lin(-1, 1, 10), (z, w) => [w * COAM, FLOOR_Y + Math.max(0, z - 0.9) * 0.04 + 0.008 * (1 - w * w), z]);
-  g.add(new THREE.Mesh(fl, M.floor));
+  addOrder(new THREE.Mesh(fl, M.floor), -8);
 
   // 実艇写真の特徴的な「コクピット前端の白い立体波除けカウル (スプラッシュコーミング / コンソールフード)」
   // マスト前方(-1.12m)からコクピット前端(-0.52m)にかけて三角形に立ち上がる純白のFRPカウル
@@ -215,21 +238,23 @@ export function buildHull(accent = 0x2a77ff) {
     const arch = Math.sin(t * Math.PI * 0.85) * (1 - 0.65 * w * w) * 0.095;
     return [x, base + arch, z];
   });
-  g.add(new THREE.Mesh(hoodGeo, M.gel));
+  addOrder(new THREE.Mesh(hoodGeo, M.gel), -9);
   // カウル後端(コクピット側)の白いパネル壁
   const hoodBack = grid(lin(-1, 1, 12), lin(0, 1, 4), (w, v) => {
     const x = w * COAM * 0.88;
     const y0 = deckY(-0.50, x), y1 = y0 + (1 - 0.65 * w * w) * 0.075;
     return [x, y0 + (y1 - y0) * v, -0.50];
   });
-  g.add(new THREE.Mesh(hoodBack, M.wall));
+  addOrder(new THREE.Mesh(hoodBack, M.wall), -8);
 
   // センターボードケース(ダガーボードトランク):
   // 画像3枚目準拠: コクピット前部のみ(z = -0.54 〜 +0.04、長さ約0.58m)の低めの純白ケース(高さ th = 0.21m、サイドデッキより低い)
   // 上面は明るいシルバーのリムで、中央の黒いスリットはごく短く(長さ0.32m)再現
   const trunk = new THREE.Group();
   const tw = 0.048, tz0 = -0.54, tz1 = 0.04, th = 0.18;
-  trunk.add(mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, (tz0 + tz1) / 2));
+  const trBox = mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, (tz0 + tz1) / 2);
+  trBox.renderOrder = -8;
+  trunk.add(trBox);
   // 上面のシルバーアルミプレート
   trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.012, 0.010, tz1 - tz0 + 0.01), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
   // 短く細いセンターボードスリット開口部のみダークグレー (z = -0.45 〜 -0.13)
@@ -241,7 +266,9 @@ export function buildHull(accent = 0x2a77ff) {
   trunk.add(cbBoard);
   g.userData.cbBoard = cbBoard;
   // センターケース後端(z=0.04〜0.18)の低い白いフロアブレース＆メインシートブロック台座 (画像3枚目)
-  trunk.add(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.10));
+  const trBrace = mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.10);
+  trBrace.renderOrder = -8;
+  trunk.add(trBrace);
   g.add(trunk);
 
   // トランク・コンソール周りのクリート
