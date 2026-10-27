@@ -1731,7 +1731,11 @@ function initMenu() {
     sn.value = cfg.sailNo;
     sn.oninput = () => { cfg.sailNo = sn.value.replace(/\D/g, '').slice(0, 5) || '31804'; saveCfg(); rebuildPlayerModel(); };
   }
-  $('startBtn').onclick = startRace;
+  const startBtnEl = $('startBtn');
+  if (startBtnEl) {
+    startBtnEl.textContent = 'レーススタート';
+    startBtnEl.onclick = startRace;
+  }
   if ($('practiceBtn')) $('practiceBtn').onclick = startOrientation;
   if ($('orientPauseBtn')) $('orientPauseBtn').onclick = toggleOrientPause;
   if ($('orientExitBtn')) $('orientExitBtn').onclick = () => exitOrientation(false);
