@@ -221,6 +221,7 @@ h1{margin:0;font-size:1.4rem;line-height:1.2;font-weight:700;letter-spacing:.02e
 .startActions{display:flex;gap:8px;margin-top:2px;align-items:stretch}
 .startActions .cta{margin-top:0;flex:2.2}
 .startRaceBtn{padding:13px 16px;font-size:1.1rem;letter-spacing:.14em}
+.startRaceBtn .smashSub{display:none!important}
 .btnPractice{flex:1;padding:9px 10px;font-size:.84rem;font-weight:700;letter-spacing:.06em;color:var(--txt);background:transparent;border:1px solid var(--line-2);border-radius:var(--r);cursor:pointer;white-space:nowrap}
 .btnPractice:hover{background:var(--bg-3);border-color:var(--mute)}
 .weatherInfoBottom{font-size:.62rem;color:var(--mute);font-variant-numeric:tabular-nums;padding:6px 0 0;border-top:1px solid var(--line);line-height:1.45;white-space:normal;overflow:visible;word-break:break-word}
