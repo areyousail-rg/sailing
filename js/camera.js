@@ -156,8 +156,9 @@ export class DroneCam {
     const latOffset = this.menuOffset ? 0 : clamp(-hDiff * 3.2 - boat.heel * 1.4, -2.4, 2.4);
     const rx = Math.cos(ang), rz = Math.sin(ang);
     w.set(boat.x - Math.sin(ang) * d + rx * latOffset, hgt, boat.z + Math.cos(ang) * d + rz * latOffset);
-    const lookAhead = 9.5 + spdRatio * 3.5;
-    lk.set(boat.x + Math.sin(boat.h) * lookAhead, 1.45 + menuLift - spdRatio * 0.18, boat.z - Math.cos(boat.h) * lookAhead);
+    const yawAlign = Math.max(0, Math.cos(this.yaw));
+    const lookAhead = (9.5 + spdRatio * 3.5) * yawAlign;
+    lk.set(boat.x + Math.sin(boat.h) * lookAhead, 1.45 + (1 - yawAlign) * 0.45 + menuLift - spdRatio * 0.18, boat.z - Math.cos(boat.h) * lookAhead);
 
     w.x += wob(1); w.y += wob(1.7) * 0.7; w.z += wob(2.3);
     if (!this.inited) { this.pos.copy(w); this.look.copy(lk); this.inited = true; }
