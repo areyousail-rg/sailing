@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { buildFigure } from './crew.js';
 import { buildHull, block, rope, ropeGeo, ropeMat, M, FLOOR_Y, deckY } from './snipehull.js';
-import { clamp, waveSample, SEA } from './sim.js';
+import { clamp, waveSample, SEA, BASE_WIND_KT } from './sim.js';
 
 // 船体シェイプ
 const hullShape = new THREE.Shape();
@@ -539,6 +539,11 @@ export class BoatModel {
     this.side = boat.tack;
     this.crewSide = boat.tack;
     this.boomA = 0.3;
+    this.boomRotY = -boat.tack * 0.3;
+    this.sailSide = boat.tack > 0 ? -1 : 1;
+    this.jibRotCur = -boat.tack * 0.25;
+    this._prevTack = boat.tack;
+    this._inGybeFlip = false;
     this.phase = Math.random() * 10;
     this._prevPole = boat.pole;
     this.crewPoleTimer = 0;
@@ -834,7 +839,23 @@ export class BoatModel {
     ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
-    this.mainPivot.rotation.y = -sgn * this.boomA;
+    if (sgn !== this._prevTack) {
+      this._inGybeFlip = twa >= Math.PI * 0.5;
+      this._prevTack = sgn;
+    }
+    // ジャイブでセールが返る速度は「艇速に対する風速の比率(および追い風の実効風速)」に応じて変化させる:
+    // ・艇速に対して風速が強いほどセールは素早く勢いよく返り、風速に対して艇速が速い(波乗り中等で見かけの追い風が弱い)ほどゆっくり返る
+    const windSpd = BASE_WIND_KT * (b.windF || 1) * 0.5144 * 2.0;
+    const boatSpd = Math.max(0.45, Math.abs(b.v));
+    const windToBoat = clamp(windSpd / boatSpd, 0.55, 3.2);
+    const flipRate = this._inGybeFlip
+      ? clamp(1.8 + Math.pow(windToBoat, 1.35) * 3.1, 2.4, 15.0)
+      : clamp(5.5 + windToBoat * 2.2, 6.5, 13.5);
+    const targetBoomRotY = -sgn * this.boomA;
+    if (this.boomRotY === undefined) this.boomRotY = targetBoomRotY;
+    this.boomRotY += (targetBoomRotY - this.boomRotY) * (1 - Math.exp(-dt * flipRate));
+    if (Math.abs(targetBoomRotY - this.boomRotY) < 0.025) this._inGybeFlip = false;
+    this.mainPivot.rotation.y = this.boomRotY;
     // ジブ: クローズ時はさらに一段タイトに引き込み、クローズ以外の角度では従来の自然な引き具合を維持
     // ランニングのランチャーアップ時は、ジブが手前(アフト側)に引かれて風とほぼ直角(90°)になる角度(1.52〜1.66 rad)へ展開
     const pk = b.poleK || 0;
@@ -857,10 +878,16 @@ export class BoatModel {
     const jibLee = clamp(Math.min(Math.max(this.boomA * (0.62 * closeFactor + 0.72 * (1 - closeFactor)), jibDesired), jibMaxAwa), minJibLee, 0.82);
     // ランニングのランチャー展開時: 風に対して鈍角(前出)にならず、手前(コクピット側)へ引いて風とほぼ直角になる角度(約88°〜95° = 1.54〜1.66 rad)にする
     const wingAngle = clamp(Math.PI - twa + 0.36, 1.52, 1.66);
-    const jibRot = -sgn * jibLee * (1 - pk) + sgn * wingAngle * pk;
+    const targetJibRot = -sgn * jibLee * (1 - pk) + sgn * wingAngle * pk;
+    if (this.jibRotCur === undefined) this.jibRotCur = targetJibRot;
+    this.jibRotCur += (targetJibRot - this.jibRotCur) * (1 - Math.exp(-dt * (flipRate * 1.08)));
+    const jibRot = this.jibRotCur;
     this.jibRot = jibRot;
     this.jibPivot.rotation.y = 0; // ラフをフォアステーに完全固定するためjibPivot自体は回転させず頂点で展開
-    const bulgeSign = sgn > 0 ? -1 : 1;
+    const targetBulgeSign = sgn > 0 ? -1 : 1;
+    if (this.sailSide === undefined) this.sailSide = targetBulgeSign;
+    this.sailSide += (targetBulgeSign - this.sailSide) * (1 - Math.exp(-dt * (flipRate * 1.25)));
+    const bulgeSign = Math.abs(this.sailSide) < 0.08 ? targetBulgeSign * 0.08 : this.sailSide;
     const jibBulge = pk > 0.5 ? -bulgeSign : bulgeSign;
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
     const jibLuff = luff * (1 - pk);
@@ -894,7 +921,7 @@ export class BoatModel {
     this.poleStow.visible = pk <= 0.01;
     if (pk > 0.01) {
       const boomSlide = (1 - pk) * 0.45;
-      const pm = -sgn * this.boomA;
+      const pm = this.boomRotY;
       _root.set(
         POLE_ROOT.x + Math.sin(pm) * boomSlide,
         POLE_ROOT.y,
@@ -926,7 +953,7 @@ export class BoatModel {
     const poleMoving = pk > 0.03 && pk < 0.97 ? Math.sin(pk * Math.PI) : 0;
     const crewPoleAct = clamp(Math.max(this.crewPoleTimer / 1.15, poleMoving), 0, 1);
 
-    // クルー・スキッパーの乗船・ハイクアウト姿勢表現
+    // クルー・スキッパーの乗船・ハイクアウト姿勢 ＆ 生き生きとしたセーリング待機モーション(呼吸・バランス揺れ・首振り・シート/ティラー操作・しっぽ振り)
     // 下レグでは 120°〜150° はクルーは船の真ん中(0)に座り、150°以上で風下(-sgn)へ移動する
     this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3));
     const isDeepRun = twa >= (150 * Math.PI) / 180;
@@ -941,33 +968,59 @@ export class BoatModel {
     const crewSideAbs = Math.abs(this.crewSide);
     const boomLow = clamp(1 - (this.boomA - 0.35) / 0.30, 0, 1);
 
+    // 待機モーション用の自然な周期波 (各艇・スキッパー・クルーごとに少しずつ位相をずらす)
+    const idleT = t + this.phase * 1.7;
+    const helmBreath = Math.sin(idleT * 2.4) * 0.038 + Math.sin(idleT * 4.1) * 0.018; // 呼吸＆波に合わせた上体リズム
+    const crewBreath = Math.sin(idleT * 2.7 + 1.4) * 0.042 + Math.cos(idleT * 3.8) * 0.020;
+    // スキッパーは前方の波・テルテール・風上海面へ視線を巡らせる
+    const helmLookYaw = 0.22 * Math.sin(idleT * 0.95) + 0.12 * Math.sin(idleT * 2.15 + 0.7);
+    const helmLookPitch = 0.11 * Math.sin(idleT * 1.35 + 0.4) + 0.06 * Math.cos(idleT * 2.6);
+    const helmHeadTilt = 0.075 * Math.sin(idleT * 1.65 + 1.1);
+    // クルーは周囲の他艇・ブロー・ジブのトリムを確認するように首を動かす
+    const crewLookYaw = 0.28 * Math.sin(idleT * 1.12 + 2.2) + 0.15 * Math.cos(idleT * 2.35);
+    const crewLookPitch = 0.12 * Math.sin(idleT * 1.52 + 1.8) + 0.06 * Math.sin(idleT * 2.9);
+    const crewHeadTilt = 0.085 * Math.cos(idleT * 1.85 + 0.5);
+
     // ヘルムスマン(スキッパー): 後部サイドデッキ(z=0.86)に座り、強風時はガンネルから水平近くまで深くハイクアウト
     const helmPet = !!this.helm.userData.isRoundPet;
     this.helmRig.position.set(
       this.side * (0.54 + lean * (helmPet ? 0.17 : 0.155)),
-      0.35 - (1 - sideAbs) * 0.06 - Math.max(0, lean - 0.85) * (helmPet ? 0.01 : 0.035),
+      0.35 - (1 - sideAbs) * 0.06 - Math.max(0, lean - 0.85) * (helmPet ? 0.01 : 0.035) + 0.008 * Math.sin(idleT * 2.4),
       0.86
     );
     this.helmRig.rotation.y = this.side * 1.35;
     if (this.helm.userData.upper) {
+      const hu = this.helm.userData.upper;
       this.helmRig.rotation.z = 0;
       const duck = (1 - sideAbs) * 0.42 * boomLow;
       const hike = (helmPet ? Math.min(lean * 0.62, 0.76) : lean * 0.96) * sideAbs;
-      this.helm.userData.upper.rotation.x = hike - duck;
-      this.helm.userData.upper.rotation.z = -this.side * 0.08;
+      hu.rotation.x = hike - duck + helmBreath;
+      hu.rotation.z = -this.side * 0.08 + 0.045 * Math.sin(idleT * 1.8);
+      // スキッパーの腕(またはおてて/羽): ティラー操作とメインシートのトリム動作
+      if (hu.userData.armL && hu.userData.armR) {
+        const steerAct = (b.steer || 0) * 0.22 + 0.12 * Math.sin(idleT * 3.1);
+        const sheetAct = 0.14 * Math.sin(idleT * 2.3 + 0.8);
+        hu.userData.armL.rotation.set(-0.12 + sheetAct, 0.06 * Math.cos(idleT * 2.0), -0.08 + steerAct * 0.5);
+        hu.userData.armR.rotation.set(-0.12 - steerAct, -0.06 * Math.sin(idleT * 2.2), 0.08 + sheetAct * 0.5);
+      }
+      if (hu.userData.tail) {
+        hu.userData.tail.rotation.y = 0.28 * Math.sin(idleT * 5.2);
+        hu.userData.tail.rotation.x = 0.12 * Math.cos(idleT * 3.6);
+      }
     } else {
-      this.helmRig.rotation.z = -this.side * lean * 0.45;
+      this.helmRig.rotation.z = -this.side * lean * 0.45 + helmBreath * 0.5;
     }
     if (this.helm.userData.head) {
       const uRx = this.helm.userData.upper ? this.helm.userData.upper.rotation.x : 0;
-      this.helm.userData.head.rotation.x = -uRx * (helmPet ? 0.55 : 0.68);
-      this.helm.userData.head.rotation.y = -this.side * 0.55;
+      this.helm.userData.head.rotation.x = -uRx * (helmPet ? 0.55 : 0.68) + helmLookPitch;
+      this.helm.userData.head.rotation.y = -this.side * 0.55 + helmLookYaw;
+      this.helm.userData.head.rotation.z = helmHeadTilt;
     }
 
-    // クルー(人間・ネコ・イヌとも): 120°〜150°では船の真ん中(x≈0)に座り、強風クローズ時は水平近くまでフルハイクアウト
+    // クルー(人間・ネコ・イヌ・アヒルとも): 120°〜150°では船の真ん中(x≈0)に座り、強風クローズ時は水平近くまでフルハイクアウト
     const crewPet = !!this.crew.userData.isRoundPet;
     const baseCrewX = this.crewSide * (0.55 + crewLean * (crewPet ? 0.175 : 0.165));
-    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.04 - Math.max(0, crewLean - 0.85) * (crewPet ? 0.01 : 0.04);
+    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.04 - Math.max(0, crewLean - 0.85) * (crewPet ? 0.01 : 0.04) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
     const baseCrewZ = -0.04;
     const actCrewX = sgn * 0.12;
     const actCrewY = 0.39 + 0.03 * Math.sin(t * 14);
@@ -983,26 +1036,33 @@ export class BoatModel {
       this.crewRig.rotation.z = 0;
       const cDuck = (1 - crewSideAbs) * 0.45 * boomLow;
       const cHike = (crewPet ? Math.min(crewLean * 0.64, 0.78) : crewLean * 0.98) * crewSideAbs;
-      const baseUpperX = cHike - cDuck;
+      const baseUpperX = cHike - cDuck + crewBreath;
       const actUpperX = -0.52 + 0.14 * Math.sin(t * 16); // マスト・ランチャー側へ前傾して引き出す/収納する動作
       const cu = this.crew.userData.upper;
       cu.rotation.x = baseUpperX + (actUpperX - baseUpperX) * crewPoleAct;
-      cu.rotation.z = -this.crewSide * 0.08 * (1 - crewPoleAct);
-      // 強風フルハイク時(crewLean > 0.72)は人間クルーの外側(海面側)の腕を外へ伸ばしてモーメントを稼ぐ(実艇写真準拠)
+      cu.rotation.z = (-this.crewSide * 0.08 + 0.05 * Math.cos(idleT * 2.1)) * (1 - crewPoleAct);
+      // 強風フルハイク時(crewLean > 0.72)は人間クルーの外側(海面側)の腕を外へ伸ばし、通常時はジブシートを引く待機モーションを行う
       if (cu.userData.armL && cu.userData.armR) {
         const ext = clamp((crewLean - 0.70) / 0.55, 0, 1) * crewSideAbs * (1 - crewPoleAct);
         const lOut = this.crewSide > 0 ? ext : 0;
         const rOut = this.crewSide < 0 ? ext : 0;
-        cu.userData.armL.rotation.set(-0.55 * lOut, 0, -0.82 * lOut);
-        cu.userData.armR.rotation.set(-0.55 * rOut, 0, 0.82 * rOut);
+        const trimWaveL = 0.15 * Math.sin(idleT * 2.8) * (1 - lOut);
+        const trimWaveR = 0.15 * Math.cos(idleT * 2.8 + 0.9) * (1 - rOut);
+        cu.userData.armL.rotation.set(-0.55 * lOut + trimWaveL, 0.06 * Math.sin(idleT * 2.0), -0.82 * lOut - 0.08 * (1 - lOut));
+        cu.userData.armR.rotation.set(-0.55 * rOut + trimWaveR, -0.06 * Math.cos(idleT * 2.0), 0.82 * rOut + 0.08 * (1 - rOut));
+      }
+      if (cu.userData.tail) {
+        cu.userData.tail.rotation.y = 0.30 * Math.sin(idleT * 5.6 + 1.2);
+        cu.userData.tail.rotation.x = 0.14 * Math.sin(idleT * 3.9);
       }
     } else {
-      this.crewRig.rotation.z = -this.crewSide * crewLean * 0.42 * (1 - crewPoleAct);
+      this.crewRig.rotation.z = -this.crewSide * crewLean * 0.42 * (1 - crewPoleAct) + crewBreath * 0.5;
     }
     if (this.crew.userData.head) {
       const cRx = this.crew.userData.upper ? this.crew.userData.upper.rotation.x : 0;
-      this.crew.userData.head.rotation.x = -cRx * (crewPet ? 0.55 : 0.68);
-      this.crew.userData.head.rotation.y = -this.crewSide * 0.50 * (1 - crewPoleAct);
+      this.crew.userData.head.rotation.x = -cRx * (crewPet ? 0.55 : 0.68) + crewLookPitch * (1 - crewPoleAct);
+      this.crew.userData.head.rotation.y = (-this.crewSide * 0.50 + crewLookYaw) * (1 - crewPoleAct);
+      this.crew.userData.head.rotation.z = crewHeadTilt * (1 - crewPoleAct);
     }
 
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
@@ -1092,7 +1152,7 @@ export class BoatModel {
   // センターケース後端のフロアブロック(z=0.10)へ真っ直ぐ降り、そこからスキッパーの前手へ直線的に繋がる
   syncMainSheet(sgn, lean, sideAbs) {
     if (!this.mainSheetSegs) return;
-    const pm = -sgn * this.boomA;
+    const pm = this.boomRotY !== undefined ? this.boomRotY : -sgn * this.boomA;
     const sinP = Math.sin(pm), cosP = Math.cos(pm);
     const bzAft = 2.52, bzMid = 1.18;
     _p0.set(0, FLOOR_Y + 0.28, 1.56);
