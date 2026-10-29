@@ -33,6 +33,9 @@ export class Recorder {
         rcSpdSum: 0, rcSpdT: 0,
         upAngSum: 0, upAngT: 0, upAngRawSum: 0, upAngRawT: 0,
         dnAngSum: 0, dnAngT: 0, dnAngRawSum: 0, dnAngRawT: 0,
+        pinchT: 0, lossPinch: 0, footT: 0, lossFoot: 0,
+        windFSum: 0, windFT: 0, lowBlowT: 0,
+        headerT: 0, overstandT: 0, lossCourse: 0, vmgSum: 0,
         startCross: null, startRank: null, gunRank: null,
         ref: Math.abs(b.v), ev: null, events: [],
         tacks: 0, gybes: 0, lastTack: b.tack, stableTack: b.tack, pendT: null, pendKind: 'tack',
@@ -111,14 +114,77 @@ export class Recorder {
           if (!b.maneuver && !b.tacking && !b.penalty && twaDeg >= 24 && twaDeg <= 72) {
             s.upAngSum += twaDeg * dt; s.upAngT += dt;
           }
+          // 1) 上しすぎ(ピンチング < 39.8°)による艇速低下の積算
+          if (!b.maneuver && !b.tacking && !b.penalty && twaDeg < 39.8) {
+            s.pinchT += dt;
+            const pinchSeverity = Math.min(1.2, (39.8 - twaDeg) / 8.0 + (b.luff || 0) * 0.8);
+            s.lossPinch += Math.max(0.4, v) * (0.14 + 0.36 * pinchSeverity) * dt;
+          }
+          // 2) 落としすぎ(> 45.8°)による上りVMG低下の積算
+          if (!b.maneuver && !b.tacking && !b.penalty && twaDeg > 45.8 && twaDeg < 88) {
+            s.footT += dt;
+            const cosOpt = Math.cos((42 * Math.PI) / 180);
+            const cosCur = Math.max(0.1, Math.cos(b.twa));
+            s.lossFoot += v * Math.max(0, (cosOpt - cosCur) * 0.85) * dt;
+          }
         } else if (isDnLeg) {
           s.dnSpdSum += v * dt; s.dnSpdT += dt;
           s.dnAngRawSum += effTwaDeg * dt; s.dnAngRawT += dt;
           if (!b.maneuver && !b.penalty && twaDeg >= 110) {
             s.dnAngSum += effTwaDeg * dt; s.dnAngT += dt;
           }
+          if (!b.maneuver && !b.penalty && twaDeg < 134) {
+            s.pinchT += dt;
+            s.lossPinch += v * 0.16 * dt;
+          } else if (!b.maneuver && !b.penalty && twaDeg > 163) {
+            s.footT += dt;
+            s.lossFoot += v * 0.14 * dt;
+          }
         } else if (isRcLeg) {
           s.rcSpdSum += v * dt; s.rcSpdT += dt;
+          if (!b.maneuver && !b.penalty && b.luff > 0.08) {
+            s.pinchT += dt;
+            s.lossPinch += v * (0.18 * b.luff) * dt;
+          }
+        }
+
+        // 3) ブロー獲得状況の記録 (b.windF: ガスト・海面バイアスを含む風速倍率)
+        const wf = b.windF ?? 1.0;
+        s.windFSum += wf * dt;
+        s.windFT += dt;
+        if (wf < 0.985) s.lowBlowT += dt;
+
+        // 4) コース要因(シフト逆走・レイラインオーバー・大回り)の記録
+        if (!b.maneuver && !b.tacking && !b.penalty) {
+          const curShift = this.meta.shiftAt ? this.meta.shiftAt(t) : 0;
+          // クローズでは windFrom = W0 + shift のとき、tack=+1(スタボ)は右シフト(shift>0)でリフト・左シフト(shift<0)でヘッダー
+          if (isUpLeg) {
+            const tackGain = b.tack * curShift; // < 0 ならヘッダー(不利タック)を走っている
+            if (tackGain < -0.025) {
+              s.headerT += dt;
+              s.lossCourse += v * Math.sin(Math.min(0.35, -tackGain)) * 1.15 * dt;
+            }
+            // 上マーク(a=300または600)に対するレイラインオーバー検出
+            const m1a = this.meta.courseMode === 'upwind' && b.leg > 0 ? 600 : 300;
+            const remA = Math.max(0, m1a - (b.a ?? 0));
+            const layC = remA * Math.tan((43 * Math.PI) / 180) + 12;
+            if (Math.abs(b.c ?? 0) > layC) {
+              s.overstandT += dt;
+              s.lossCourse += v * 0.55 * dt;
+            }
+          } else if (isDnLeg) {
+            const tackGain = -b.tack * curShift;
+            if (tackGain < -0.025) {
+              s.headerT += dt;
+              s.lossCourse += v * Math.sin(Math.min(0.35, -tackGain)) * 0.95 * dt;
+            }
+            const remA = Math.max(0, (b.a ?? 0));
+            const layC = remA * Math.tan((36 * Math.PI) / 180) + 16;
+            if (Math.abs(b.c ?? 0) > layC) {
+              s.overstandT += dt;
+              s.lossCourse += v * 0.48 * dt;
+            }
+          }
         }
 
         if (s.startCross === null && !b.ocs && b.a > lineA(b.c) + 0.5) s.startCross = t;
@@ -200,6 +266,7 @@ export class Recorder {
       s.avgRcV = s.rcSpdT > 0 ? s.rcSpdSum / s.rcSpdT : null;
       s.avgUpAng = s.upAngT > 0 ? s.upAngSum / s.upAngT : (s.upAngRawT > 0 ? s.upAngRawSum / s.upAngRawT : null);
       s.avgDnAng = s.dnAngT > 0 ? s.dnAngSum / s.dnAngT : (s.dnAngRawT > 0 ? s.dnAngRawSum / s.dnAngRawT : null);
+      s.avgWindF = s.windFT > 0 ? s.windFSum / s.windFT : 1.0;
       s.lossEv = {}; for (const c of CAUSES) s.lossEv[c] = { n: 0, lost: 0 };
       for (const e of s.events) { s.lossEv[e.cause].n++; s.lossEv[e.cause].lost += e.lost; }
       s.avgDrop = s.events.length ? s.events.reduce((x, e) => x + e.drop, 0) / s.events.length : 0;
@@ -521,12 +588,51 @@ export function openReview(rec, o) {
     // 所要時間差の要因分解(参照艇比: マイナスは参照艇より速い/有利、プラスは参照艇より遅い/ロス)
     const lossS = s.lostTotal, lossR = ref.lostTotal;
     const dLossT = (lossS - lossR) / vR;
-    const dSpeed = s.dist / vS - s.dist / vR;
+    const dSpeedRaw = s.dist / vS - s.dist / vR - dLossT;
+
+    // 1) コース要因: 走行距離のロス ＋ ヘッダー(不利シフト)逆走・レイラインオーバーによるVMGコース効率ロス
+    const rawDistDiff = s.dist - ref.dist;
+    const effDistDiff = (!isWinner && s.pinchT > ref.pinchT + 3 && rawDistDiff < 0)
+      ? rawDistDiff * 0.25
+      : rawDistDiff;
+    const routeLossDiffM = (s.lossCourse || 0) - (ref.lossCourse || 0);
+    const dCourseT = (effDistDiff + routeLossDiffM * 1.45) / vR;
+
+    // 2) 艇速要因の4内訳（①上しすぎ / ②ブランケット走行 / ③ブロー未獲得 / ④落としすぎ）
+    const pinchLossT = ((s.lossPinch || 0) - (ref.lossPinch || 0)) / vR;
+    const blkLossT = (((s.lossBlk || 0) + (s.lossBack || 0)) - ((ref.lossBlk || 0) + (ref.lossBack || 0))) / vR;
+    const blowDiffPct = ((ref.avgWindF ?? 1) - (s.avgWindF ?? 1)) * 100;
+    const blowLossT = ((ref.avgWindF ?? 1) - (s.avgWindF ?? 1)) * 0.82 * Math.max(25, s.spdT || 60);
+    const footLossT = ((s.lossFoot || 0) - (ref.lossFoot || 0)) / vR;
+
+    const speedCandidates = [
+      { key: 'pinch', label: '上しすぎによる艇速によるもの', winLabel: '適切なクローズ角度維持による艇速', val: pinchLossT },
+      { key: 'blanket', label: 'ブランケット走行による艇速によるもの', winLabel: 'クリアウインド確保による艇速', val: blkLossT },
+      { key: 'blow', label: 'ブローに入れなかったことによる艇速によるもの', winLabel: 'ブローを捉えたことによる艇速', val: blowLossT },
+      { key: 'foot', label: '落としすぎによる艇速・VMGによるもの', winLabel: '無駄のないVMG角度による艇速', val: footLossT },
+    ];
+    speedCandidates.sort((a, b) => (isWinner ? a.val - b.val : b.val - a.val));
+    const mainSpdCause = speedCandidates[0];
+    // 2番目に大きい艇速要因も顕著なら併記する
+    const secondSpdCause = speedCandidates[1];
+    let speedCauseTitle = isWinner ? mainSpdCause.winLabel : mainSpdCause.label;
+    if (!isWinner && secondSpdCause && secondSpdCause.val > 1.2 && secondSpdCause.val >= mainSpdCause.val * 0.55) {
+      const shortMap = {
+        pinch: '上しすぎ',
+        blanket: 'ブランケット走行',
+        blow: 'ブロー未獲得',
+        foot: '落としすぎ',
+      };
+      speedCauseTitle = `${shortMap[mainSpdCause.key]}・${shortMap[secondSpdCause.key]}による艇速によるもの`;
+    }
+    const dPureSpeedT = dSpeedRaw - routeLossDiffM * 0.45;
+    const speedDetailTxt = `全体平均 ${fmtKt2(s.avgV)} (比較艇 ${fmtKt2(ref.avgV)}) ｜ 内訳: 上しすぎ ${Math.round(s.pinchT || 0)}秒(${sec(pinchLossT)})・ブランケット ${Math.round((s.blkT || 0) + (s.backT || 0))}秒(${sec(blkLossT)})・ブロー風速差 ${blowDiffPct >= 0 ? '−' : '+'}${Math.abs(blowDiffPct).toFixed(1)}%(${sec(blowLossT)})・落としすぎ ${Math.round(s.footT || 0)}秒(${sec(footLossT)})`;
+
     const parts = [
-      { k: 'スタート', v: (s.startCross ?? 8) - (ref.startCross ?? 8), d: `ライン通過 号砲${s.startCross !== null ? f1(s.startCross) : '−'}秒後 (比較艇 ${ref.startCross !== null ? f1(ref.startCross) : '−'}秒後)・25秒後の順位 ${s.startRank ?? '−'}位` },
-      { k: 'コース(走行距離)', v: (s.dist - ref.dist) / vR, d: `${Math.round(s.dist)}m (比較艇 ${Math.round(ref.dist)}m / ${s.dist >= ref.dist ? '+' : '−'}${Math.abs(Math.round(s.dist - ref.dist))}m)` },
-      { k: '純粋な艇速', v: dSpeed - dLossT, d: `全体平均 ${fmtKt2(s.avgV)} (比較艇 ${fmtKt2(ref.avgV)})` },
-      { k: '減速(タック・他艇・波など)', v: dLossT, d: `${s.events.length}回・平均${Math.round(s.avgDrop * 100)}%減速・損失約${Math.round(lossS)}m (比較艇 ${ref.events.length}回・${Math.round(lossR)}m)` },
+      { k: 'スタートによるもの', v: (s.startCross ?? 8) - (ref.startCross ?? 8), d: `ライン通過 号砲${s.startCross !== null ? f1(s.startCross) : '−'}秒後 (比較艇 ${ref.startCross !== null ? f1(ref.startCross) : '−'}秒後)・25秒後の順位 ${s.startRank ?? '−'}位` },
+      { k: 'コース取りによるもの', v: dCourseT, d: `走行距離 ${Math.round(s.dist)}m (比較艇 ${Math.round(ref.dist)}m / ${s.dist >= ref.dist ? '+' : '−'}${Math.abs(Math.round(s.dist - ref.dist))}m)・不利シフト逆走 ${Math.round(s.headerT || 0)}秒・レイライン超過 ${Math.round(s.overstandT || 0)}秒` },
+      { k: speedCauseTitle, v: dPureSpeedT, d: speedDetailTxt },
+      { k: '減速(タック・他艇・波など)によるもの', v: dLossT, d: `${s.events.length}回・平均${Math.round(s.avgDrop * 100)}%減速・損失約${Math.round(lossS)}m (比較艇 ${ref.events.length}回・${Math.round(lossR)}m)` },
     ];
     const worst = [...parts].sort((a, b) => b.v - a.v)[0];
     const best = [...parts].sort((a, b) => a.v - b.v)[0];
