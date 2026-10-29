@@ -3,27 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>スナイプカップ | ブラウザで遊ぶヨットレースゲーム</title>
-  <meta name="description" content="江の島沖でスナイプ級ヨット10艇がトラペゾイドコースで競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
+  <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
+  <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261030a">
+  <link rel="stylesheet" href="style.css?v=20261030b">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261030a",
-      "./js/sim.js": "./js/sim.js?v=20261030a",
-      "./js/review.js": "./js/review.js?v=20261030a",
-      "./js/ai.js": "./js/ai.js?v=20261030a",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261030a",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261030a",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261030a",
-      "./js/crew.js": "./js/crew.js?v=20261030a",
-      "./js/camera.js": "./js/camera.js?v=20261030a",
-      "./js/course.js": "./js/course.js?v=20261030a",
-      "./js/rules.js": "./js/rules.js?v=20261030a",
-      "./js/audio.js": "./js/audio.js?v=20261030a"
+      "./js/world.js": "./js/world.js?v=20261030b",
+      "./js/sim.js": "./js/sim.js?v=20261030b",
+      "./js/review.js": "./js/review.js?v=20261030b",
+      "./js/ai.js": "./js/ai.js?v=20261030b",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261030b",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261030b",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261030b",
+      "./js/crew.js": "./js/crew.js?v=20261030b",
+      "./js/camera.js": "./js/camera.js?v=20261030b",
+      "./js/course.js": "./js/course.js?v=20261030b",
+      "./js/rules.js": "./js/rules.js?v=20261030b",
+      "./js/audio.js": "./js/audio.js?v=20261030b"
     }
   }
   </script>
@@ -79,7 +79,6 @@
 
     <div id="markPointer" class="markPointer hidden"><span id="mpArrow" class="mpArrow">▲</span><span id="mpText">1</span></div>
     <div id="nearBoats" class="nearBoats"></div>
-    <div id="hailBubbles" class="hailBubbles"></div>
     <div id="penBadge" class="badge bad" style="display:none"></div>
     <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
     <div id="blkBadge" class="blkGauge" style="display:none">
@@ -127,7 +126,6 @@
   <!-- 中断（ポーズ）モーダル -->
   <section id="pauseModal" class="overlay menu hidden">
     <div class="card small pauseCard">
-      <p class="eyebrow">Paused</p>
       <h1>中断中</h1>
       <div class="pauseActions">
         <button id="resumeBtn" class="cta" type="button">再開</button>
@@ -141,8 +139,8 @@
   <section id="menu" class="overlay menu menuPractice">
     <div class="card menuCard">
       <div class="menuTitleRow">
-        <h1>スナイプカップ</h1>
-        <p class="eyebrow" id="menuEyebrow">SNIPE CLASS ・ ENOSHIMA / HAKKEIJIMA</p>
+        <h1>スナイプ級</h1>
+        <p class="eyebrow" id="menuEyebrow">八景島 ・ 江の島</p>
       </div>
       <div class="menuTopRow">
         <div class="menuGroup">
@@ -185,16 +183,47 @@
       <div class="startActions">
         <button id="startBtn" class="cta startRaceBtn" type="button">レーススタート</button>
         <button id="practiceBtn" class="btnPractice" type="button">オリエンテーション</button>
+        <button id="recordsBtn" class="btnPractice" type="button">戦績</button>
       </div>
       <div id="realWeatherInfo" class="weatherInfoBottom"></div>
     </div>
   </section>
 
-  <!-- スマブラ風オリエンテーション（HOW TO PLAY）オーバーレイ -->
+  <!-- 戦績モーダル (localStorage 保存データ表示) -->
+  <section id="recordsModal" class="overlay menu hidden">
+    <div class="card recordsCard">
+      <div class="recordsHead">
+        <h1>戦績記録</h1>
+        <div class="recordsHeadActions">
+          <button id="recordsClearBtn" class="btnSec danger btnSm" type="button">履歴を消去</button>
+          <button id="recordsCloseBtn" class="btnSec btnSm" type="button">閉じる</button>
+        </div>
+      </div>
+      <div id="recordsSummary" class="recordsSummary"></div>
+      <div class="tableWrap recordsTableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>日時</th>
+              <th>海面</th>
+              <th>コース</th>
+              <th>風向・風速</th>
+              <th>着順</th>
+              <th>タイム</th>
+              <th>平均艇速</th>
+            </tr>
+          </thead>
+          <tbody id="recordsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- オリエンテーション オーバーレイ -->
   <section id="orientation" class="orientOverlay hidden" aria-label="オリエンテーション">
     <div class="orientTopBar">
       <div class="orientBrand">
-        <span class="orientHowTo">HOW TO PLAY</span>
+        <span class="orientHowTo">ガイド</span>
         <span class="orientSubTitle">オリエンテーション</span>
       </div>
       <div class="orientTopActions">
@@ -210,7 +239,6 @@
       <div class="orientRevCard">
         <div class="orientRevHeader">
           <div>
-            <span class="eyebrow">POST-RACE REVIEW</span>
             <h3>レース振り返り・航跡リプレイ画面</h3>
           </div>
           <span class="orientRevCloseMock">閉じる</span>
@@ -253,7 +281,7 @@
                 <tr><td>3</td><td>ITA 31022</td><td>5位</td><td>1,495m</td><td>4.51kt / 43.10°</td><td>5.66kt / 141.20°</td><td>9 / 4</td></tr>
               </tbody>
             </table>
-            <div class="orientRevWindNote">🌬 海面ブロー・振れ履歴: 左海面ブロー優勢 ／ 01:15 右へ+7°シフト ／ 02:40 左へ-5°シフト</div>
+            <div class="orientRevWindNote">海面ブロー・振れ履歴: 左海面ブロー優勢 ／ 01:15 右へ+7°シフト ／ 02:40 左へ-5°シフト</div>
           </div>
         </div>
       </div>
@@ -263,12 +291,10 @@
       <div id="orientCard" class="orientCard">
         <div class="orientStepHead">
           <div class="orientStepBadge">
-            <span class="orientStepWord">STEP</span>
             <b id="orientStepNum">01</b>
             <small id="orientStepTotal">/ 08</small>
           </div>
           <div class="orientTitleWrap">
-            <div id="orientEnTag" class="orientEnTag">PRE-START POSITIONING</div>
             <h2 id="orientTitle">スタート1分前・ポジション確保</h2>
           </div>
         </div>
@@ -282,13 +308,12 @@
 
   <section id="result" class="overlay menu hidden">
     <div class="card small">
-      <p class="eyebrow">Result</p>
       <h1 id="resultTitle">1位</h1>
       <div class="tableWrap"><table><thead><tr><th>順位</th><th>艇</th><th>タイム</th></tr></thead><tbody id="resultBody"></tbody></table></div>
       <button id="againBtn" class="cta" type="button">もう一度</button>
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261030a"></script>
+  <script type="module" src="js/main.js?v=20261030b"></script>
 </body>
 </html>
