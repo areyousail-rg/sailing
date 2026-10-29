@@ -419,19 +419,30 @@ function landH(x, z) {
 }
 function colorLand(x, z, h, out) {
   const d = coastD(x, z);
-  if (h < 0.15) out.setRGB(0.38, 0.36, 0.32); // 波打ち際(濡れた砂)
-  else if (d < 125) { const g = noise2(x / 40, z / 40) * 0.04; out.setRGB(0.54 + g, 0.50 + g, 0.43 + g); } // 湘南の砂浜
-  else if (d < 155) out.setRGB(0.48, 0.49, 0.50); // 防潮堤・国道134号
-  else {
-    const g = noise2(x / 180, z / 180);
-    const u = smooth(15, 360, h);
-    const distHaze = smooth(320, 3000, d);
-    // 橋の奥に見える山並みは不自然な濃い緑ではなく、大気遠近で霞んだ薄い青灰〜淡い翠黛色(参考画像2枚目準拠)
-    const r0 = 0.36 + 0.04 * g, g0 = 0.46 + 0.05 * g, b0 = 0.46 + 0.05 * g;
-    const r1 = 0.55 + 0.06 * u, g1 = 0.65 + 0.06 * u, b1 = 0.76 + 0.05 * u;
-    const k = Math.max(u * 0.85, distHaze * 0.92);
+  if (h < 0.15) out.setRGB(0.36, 0.34, 0.30); // 波打ち際(濡れた砂)
+  else if (d < 125) { const g = noise2(x / 40, z / 40) * 0.04; out.setRGB(0.54 + g, 0.50 + g, 0.42 + g); } // 湘南の砂浜(片瀬・鵠沼・七里ヶ浜)
+  else if (d < 160) out.setRGB(0.44, 0.45, 0.47); // 防潮堤・国道134号
+  else if (d < 340 && h < 18) {
+    // 国道134号沿いの湘南海岸クロマツ防砂林帯（濃い松林の緑）
+    const g = noise2(x / 55, z / 55);
+    out.setRGB(0.12 + 0.04 * g, 0.28 + 0.06 * g, 0.14 + 0.03 * g);
+  } else {
+    const g = noise2(x / 160, z / 160);
+    const u = smooth(25, 380, h);
+    const distHaze = smooth(1800, 5800, d);
+    // 湘南の丘陵・鎌倉山〜藤沢の緑をしっかり濃い常緑樹色にし、遠方の山のみ緩やかに霞ませる
+    const r0 = 0.16 + 0.05 * g, g0 = 0.34 + 0.07 * g, b0 = 0.17 + 0.04 * g;
+    const r1 = 0.38 + 0.06 * u, g1 = 0.49 + 0.06 * u, b1 = 0.56 + 0.05 * u;
+    const k = Math.max(u * 0.55, distHaze * 0.68);
     out.setRGB(r0 + (r1 - r0) * k, g0 + (g1 - g0) * k, b0 + (b1 - b0) * k);
-    if (d < 1800 && h < 45 && noise2(x / 65, z / 65) > 0.48) out.setRGB(0.55, 0.56, 0.58); // 市街地
+    // 藤沢・片瀬・鵠沼・腰越・鎌倉の市街地ブロックを自然な街並み色で表現
+    if (d < 2600 && h < 52) {
+      const townNoise = noise2(x / 52, z / 52);
+      if (townNoise > 0.38) {
+        const bldTone = noise2(x / 18, z / 18);
+        out.setRGB(0.56 + 0.10 * bldTone, 0.54 + 0.09 * bldTone, 0.50 + 0.08 * bldTone);
+      }
+    }
   }
 }
 
@@ -603,10 +614,10 @@ export function createWorld(scene) {
 
   // 遠景: 三浦半島(東) / 箱根(富士の手前) / 伊豆半島(南西) / 伊豆大島(南の水平線)
   // (三浦半島は addEnoshimaScenery で実際の海岸線(稲村ヶ崎〜逗子〜葉山〜城ヶ島)に沿って作成)
-  // 箱根: 江の島から方位約265°(富士山の左手前)。外輪山の裾が小田原〜真鶴付近で相模湾へ落ちる
-  distantLand(enoshimaGroup, -26000, 2000, 8000, 6500, 1300, 0.25);
-  distantLand(enoshimaGroup, -31000, 26000, 8500, 20000, 950, -0.2, 56);
-  distantLand(enoshimaGroup, -6000, 41000, 5200, 6500, 760, 0);
+  // 箱根・伊豆・大島・富士山は実際の見え方・画角に合わせて横幅と高さを引き締めたリアルなサイズ感にする
+  distantLand(enoshimaGroup, -26500, 1600, 4200, 3200, 740, 0.25);
+  distantLand(enoshimaGroup, -31000, 26000, 5200, 12000, 680, -0.2, 56);
+  distantLand(enoshimaGroup, -6000, 41000, 3100, 3800, 520, 0);
 
   // 富士山 (山頂が尖らず、広い平らな火口頂上部と剣ヶ峰のわずかな起伏・優美な裾野を持つリアルなシルエット)
   const prof = [];
@@ -636,8 +647,8 @@ export function createWorld(scene) {
   fgeo.computeVertexNormals();
   fgeo.setAttribute('color', new THREE.BufferAttribute(fc, 3));
   const fuji = new THREE.Mesh(fgeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
-  // 江の島から見た富士山はほぼ真西(方位約278°)、箱根の右肩・丹沢の左に聳える
-  fuji.position.set(-41000, -2, -5800); fuji.scale.set(1, 1, 1); enoshimaGroup.add(fuji);
+  // 江の島から見た富士山はほぼ真西(方位約278°)、横に広がりすぎない実際のサイズ感(scale 0.45, 0.56, 0.45)で配置
+  fuji.position.set(-41000, -2, -5200); fuji.scale.set(0.45, 0.56, 0.45); enoshimaGroup.add(fuji);
 
   // 江の島の木(画像2枚目準拠: 島全体がこんもりとした緑の森に覆われるよう斜面〜頂上まで広葉樹＆黒松を高密度に配置)
   const treeCount = 960;
@@ -686,12 +697,12 @@ export function createWorld(scene) {
     const h = islandH(x, z); if (h < 2.2 || h > 18) continue;
     house(x, h - 0.5, z, 8 + rnd() * 10, 6 + rnd() * 8, 8 + rnd() * 10); k++;
   }
-  // 海岸の街並み(片瀬・鵠沼・腰越)
-  for (let k = 0; k < 1300; k++) {
-    const x = -9000 + rnd() * 21000, z = COAST_Z - 170 - rnd() * 1200;
+  // 海岸の街並み(片瀬・鵠沼・腰越・藤沢): 海岸沿いから丘陵手前まで密に建物を配置
+  for (let k = 0; k < 2100; k++) {
+    const x = -9000 + rnd() * 21000, z = COAST_Z - 165 - Math.pow(rnd(), 1.25) * 1650;
     const h = landH(x, z); if (h < 1.5) continue;
-    const tall = rnd() < 0.12;
-    house(x, h - 0.5, z, 10 + rnd() * 18, tall ? 22 + rnd() * 30 : 6 + rnd() * 14, 10 + rnd() * 18);
+    const tall = rnd() < 0.15;
+    house(x, h - 0.5, z, 10 + rnd() * 18, tall ? 20 + rnd() * 28 : 7 + rnd() * 14, 10 + rnd() * 18);
   }
   boxes.count = bn; enoshimaGroup.add(boxes);
 
@@ -992,11 +1003,17 @@ export function createWorld(scene) {
     b.traverse((o) => { if (o.userData.flag) flagSway.push(o); });
     return b;
   };
-  const ORG = { color: '#ff7a1a', w: 1.5, h: 1.0 };
+  const ORG = { color: '#ff7a1a', w: 1.5, h: 1.0, key: 'ORG' };
   markObjs.pin = putBoat(makeMotorboat('outer', { flags: [ORG] }), MARKS.pin.a, MARKS.pin.c, 0.06);
 
-  // スタート運営艇(右端)
-  const com = putBoat(makeMotorboat('committee', { flags: [ORG, { color: '#1c4fa0', w: 1.4, h: 0.9, text: 'P' }] }), MARKS.com.a, MARKS.com.c, -0.05);
+  // スタート運営艇(右端): オレンジ旗 + スナイプ級クラス旗(0秒で降下) + P旗(1分前に降下)
+  const com = putBoat(makeMotorboat('committee', {
+    flags: [
+      ORG,
+      { color: '#ffffff', w: 1.40, h: 0.90, text: 'SNIPE', key: 'SNIPE' },
+      { color: '#1d4ed8', w: 1.35, h: 0.88, text: 'P', key: 'P' },
+    ],
+  }), MARKS.com.a, MARKS.com.c, -0.05);
   markObjs.com = com;
 
   // 1マーク・2マークの風上側近めに配置する濃紺RIB観覧・コーチボート(参考写真準拠) ＋ コース外周の観覧艇
@@ -1024,11 +1041,16 @@ export function createWorld(scene) {
     const flags = s.type === 'rib' && !s.noFlag ? [{ color: i % 2 ? '#ffffff' : '#ffd23f', w: 0.8, h: 0.5 }] : [];
     putBoat(makeMotorboat(s.type, { tube: s.tube ?? TUBES[i % 4], flags }), a0, c0, s.rot, true, i, s.markRef || null, s.da || 0, s.dc || 0);
   });
-  // スタートライン(水面すれすれの控えめなライン)
+  // スタートライン(波の高さで消えたりちらついたりしないよう depthTest: false, renderOrder: 2 で常時安定描画)
   const pa0 = toWorld(MARKS.pin.a, MARKS.pin.c), pb0 = toWorld(MARKS.com.a, MARKS.com.c);
   const len = Math.hypot(pb0.x - pa0.x, pb0.z - pa0.z);
-  const lineMesh = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.55), new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.54, depthWrite: false, blending: THREE.AdditiveBlending }));
-  lineMesh.rotation.x = -Math.PI / 2; scene.add(lineMesh);
+  const lineMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(len, 0.58),
+    new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.62, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  lineMesh.rotation.x = -Math.PI / 2;
+  lineMesh.renderOrder = 2;
+  scene.add(lineMesh);
 
   // フィニッシュライン(チェッカー柄の帯 + 縦のカーテン + FINISH表示)
   const fpa0 = toWorld(MARKS.fm.a, MARKS.fm.c), fpb0 = toWorld(MARKS.fcom.a, MARKS.fcom.c);
@@ -1044,7 +1066,7 @@ export function createWorld(scene) {
   const finCurtain = new THREE.Mesh(new THREE.PlaneGeometry(flen, 2.2), finCurtainMat);
   const fin = new THREE.Group(); fin.add(finBand, finCurtain); scene.add(fin);
 
-  // START LINE ラベル(ヨットレース中継風のスタイリッシュなHUDバナーデザイン + 下段に有利サイドを併記)
+  // START LINE ラベル(AI風の斜め枠やSFフォントを廃し、クリーンで視認性の高い端正なスポーツ中継プレート)
   const startCanvas = document.createElement('canvas');
   startCanvas.width = 960; startCanvas.height = 350;
   const startTex = new THREE.CanvasTexture(startCanvas);
@@ -1056,112 +1078,67 @@ export function createWorld(scene) {
   scene.add(startLabel);
   let showPreStartFav = true;
 
-  const drawSkewPlate = (ctx, x, y, w, h, skew, r = 12) => {
+  const drawRoundPlate = (ctx, x, y, w, h, r = 14) => {
     ctx.beginPath();
-    ctx.moveTo(x + skew + r, y);
-    ctx.lineTo(x + w + skew - r, y);
-    ctx.quadraticCurveTo(x + w + skew, y, x + w + skew - r * 0.2, y + r);
-    ctx.lineTo(x + w - skew - r * 0.2, y + h - r);
-    ctx.quadraticCurveTo(x + w - skew, y + h, x + w - skew - r, y + h);
-    ctx.lineTo(x - skew + r, y + h);
-    ctx.quadraticCurveTo(x - skew, y + h, x - skew + r * 0.2, y + h - r);
-    ctx.lineTo(x + skew - r * 0.2, y + r);
-    ctx.quadraticCurveTo(x + skew, y, x + skew + r, y);
+    ctx.roundRect(x, y, w, h, r);
     ctx.closePath();
   };
 
   const updateStartLabel = () => {
     const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-    const favStr = FAVORED === 'even' || skewDeg === 0 ? 'EVEN  0° 有利なし' : `★ ${skewDeg}° ${FAVORED === 'com' ? '上有利 (本部船側)' : '下有利 (アウター側)'}`;
+    const favStr = FAVORED === 'even' || skewDeg === 0 ? 'EVEN  0° 有利なし' : `${skewDeg}° ${FAVORED === 'com' ? '上有利 (本部船側)' : '下有利 (アウター側)'}`;
     const ctx = startCanvas.getContext('2d');
     ctx.clearRect(0, 0, 960, 350);
 
-    // ドロップシャドウ付きメインプレート (ネイビー×ゴールド×アンバーのレーシング中継風プレート)
+    // メインプレート (落ち着いた濃紺ソリッド＋白枠の端正なサインボード)
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 8, 24, 0.72)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 8;
-    const bgGrad = ctx.createLinearGradient(60, 16, 900, 176);
-    bgGrad.addColorStop(0, 'rgba(7, 20, 42, 0.96)');
-    bgGrad.addColorStop(0.5, 'rgba(15, 38, 72, 0.96)');
-    bgGrad.addColorStop(1, 'rgba(7, 20, 42, 0.96)');
-    drawSkewPlate(ctx, 56, 18, 848, 152, 18, 14);
-    ctx.fillStyle = bgGrad;
+    ctx.shadowColor = 'rgba(0, 8, 20, 0.55)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 5;
+    drawRoundPlate(ctx, 84, 22, 792, 144, 14);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
     ctx.fill();
     ctx.restore();
 
-    // 上部ゴールドアクセントバー＆左右レーシングシェブロン
-    ctx.save();
-    drawSkewPlate(ctx, 56, 18, 848, 152, 18, 14);
-    ctx.clip();
-    const topBarGrad = ctx.createLinearGradient(56, 18, 904, 18);
-    topBarGrad.addColorStop(0, '#f59e0b');
-    topBarGrad.addColorStop(0.5, '#fde047');
-    topBarGrad.addColorStop(1, '#f59e0b');
-    ctx.fillStyle = topBarGrad;
-    ctx.fillRect(30, 18, 900, 16);
-    // 左右の斜めストライプアクセント
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.22)';
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      const ox = 72 + i * 26;
-      ctx.moveTo(ox + 16, 34); ctx.lineTo(ox + 30, 34); ctx.lineTo(ox + 6, 170); ctx.lineTo(ox - 8, 170);
-      ctx.fill();
-      const rx = 860 - i * 26;
-      ctx.beginPath();
-      ctx.moveTo(rx + 16, 34); ctx.lineTo(rx + 30, 34); ctx.lineTo(rx + 6, 170); ctx.lineTo(rx - 8, 170);
-      ctx.fill();
-    }
-    ctx.restore();
+    drawRoundPlate(ctx, 84, 22, 792, 144, 14);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 6;
+    ctx.stroke();
 
-    // 外枠(ゴールド＆ホワイトのダブルリム)
-    drawSkewPlate(ctx, 56, 18, 848, 152, 18, 14);
-    ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 7;
-    ctx.stroke();
-    drawSkewPlate(ctx, 64, 26, 832, 136, 16, 10);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
+    // 左端のオレンジフラッグ色バー
+    ctx.save();
+    drawRoundPlate(ctx, 84, 22, 792, 144, 14);
+    ctx.clip();
+    ctx.fillStyle = '#f97316';
+    ctx.fillRect(84, 22, 22, 144);
+    ctx.restore();
 
     // START LINE タイトル文字
-    ctx.save();
-    ctx.shadowColor = 'rgba(251, 191, 36, 0.45)';
-    ctx.shadowBlur = 12;
     ctx.fillStyle = '#ffffff';
-    ctx.font = '900 96px "Orbitron", "Montserrat", "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.font = '800 86px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('START LINE', 480, 102);
-    ctx.restore();
+    ctx.fillText('START LINE', 488, 96);
 
     // 下段: 有利サイドバッジ
     if (showPreStartFav) {
       ctx.save();
-      ctx.shadowColor = 'rgba(0, 8, 24, 0.75)';
-      ctx.shadowBlur = 14;
-      ctx.shadowOffsetY = 6;
-      const subGrad = ctx.createLinearGradient(150, 188, 810, 298);
-      subGrad.addColorStop(0, 'rgba(10, 18, 36, 0.96)');
-      subGrad.addColorStop(0.5, 'rgba(24, 42, 74, 0.96)');
-      subGrad.addColorStop(1, 'rgba(10, 18, 36, 0.96)');
-      drawSkewPlate(ctx, 140, 188, 680, 108, 14, 14);
-      ctx.fillStyle = subGrad;
+      ctx.shadowColor = 'rgba(0, 8, 20, 0.55)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 4;
+      drawRoundPlate(ctx, 168, 184, 624, 98, 12);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
       ctx.fill();
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 5.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.78)';
+      ctx.lineWidth = 4;
       ctx.stroke();
       ctx.restore();
 
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-      ctx.shadowBlur = 6;
       ctx.fillStyle = '#fde047';
-      ctx.font = '800 54px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      ctx.font = '700 50px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(favStr, 480, 244);
-      ctx.restore();
+      ctx.fillText(favStr, 480, 234);
     }
     startTex.needsUpdate = true;
   };
@@ -1169,52 +1146,37 @@ export function createWorld(scene) {
   const lineLabel = (txt, _bg, lx, lz) => {
     const c = document.createElement('canvas'); c.width = 768; c.height = 200; const x = c.getContext('2d');
     x.save();
-    x.shadowColor = 'rgba(0, 8, 24, 0.75)';
-    x.shadowBlur = 16;
-    x.shadowOffsetY = 6;
-    const g = x.createLinearGradient(40, 16, 728, 184);
-    g.addColorStop(0, 'rgba(10, 15, 28, 0.96)');
-    g.addColorStop(0.5, 'rgba(26, 38, 62, 0.96)');
-    g.addColorStop(1, 'rgba(10, 15, 28, 0.96)');
-    drawSkewPlate(x, 42, 18, 684, 164, 18, 14);
-    x.fillStyle = g;
+    x.shadowColor = 'rgba(0, 8, 20, 0.55)';
+    x.shadowBlur = 12;
+    x.shadowOffsetY = 5;
+    drawRoundPlate(x, 56, 22, 656, 156, 14);
+    x.fillStyle = 'rgba(15, 23, 42, 0.94)';
     x.fill();
     x.restore();
 
-    // 左右にチェッカーフラッグ柄のアクセント
+    // 左端のチェッカー柄アクセント
     x.save();
-    drawSkewPlate(x, 42, 18, 684, 164, 18, 14);
+    drawRoundPlate(x, 56, 22, 656, 156, 14);
     x.clip();
-    const sq = 22;
-    for (let r = 0; r < 8; r++) {
-      for (let col = 0; col < 4; col++) {
-        x.fillStyle = (r + col) % 2 === 0 ? 'rgba(255,255,255,0.88)' : 'rgba(15,23,42,0.88)';
-        x.fillRect(34 + col * sq, 14 + r * sq, sq, sq);
-        x.fillRect(726 - (col + 1) * sq, 14 + r * sq, sq, sq);
+    const sq = 26;
+    for (let r = 0; r < 6; r++) {
+      for (let col = 0; col < 2; col++) {
+        x.fillStyle = (r + col) % 2 === 0 ? '#ffffff' : '#0f172a';
+        x.fillRect(56 + col * sq, 22 + r * sq, sq, sq);
       }
     }
-    const topG = x.createLinearGradient(42, 18, 726, 18);
-    topG.addColorStop(0, '#38bdf8');
-    topG.addColorStop(0.5, '#fde047');
-    topG.addColorStop(1, '#38bdf8');
-    x.fillStyle = topG;
-    x.fillRect(30, 18, 710, 12);
     x.restore();
 
-    drawSkewPlate(x, 42, 18, 684, 164, 18, 14);
-    x.strokeStyle = '#fde047';
-    x.lineWidth = 7;
+    drawRoundPlate(x, 56, 22, 656, 156, 14);
+    x.strokeStyle = '#ffffff';
+    x.lineWidth = 6;
     x.stroke();
 
-    x.save();
-    x.shadowColor = 'rgba(56, 189, 248, 0.5)';
-    x.shadowBlur = 12;
     x.fillStyle = '#ffffff';
-    x.font = '900 96px "Orbitron", "Montserrat", "Segoe UI", sans-serif';
+    x.font = '800 88px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
     x.textAlign = 'center';
     x.textBaseline = 'middle';
-    x.fillText(txt, 384, 106);
-    x.restore();
+    x.fillText(txt, 404, 102);
 
     const tex = new THREE.CanvasTexture(c);
     tex.anisotropy = 4;
@@ -1271,7 +1233,7 @@ export function createWorld(scene) {
     }
     const pa = toWorld(MARKS.pin.a, MARKS.pin.c), pb = toWorld(MARKS.com.a, MARKS.com.c);
     const lcx = (pa.x + pb.x) / 2, lcz = (pa.z + pb.z) / 2, lrot = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
-    lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.06, lcz);
+    lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.12, lcz);
     lineMesh.visible = courseVisible;
     startLabel.position.set(lcx, 4.8, lcz);
     startLabel.visible = courseVisible;
@@ -1290,63 +1252,34 @@ export function createWorld(scene) {
   };
   syncCourseObjects();
 
-  // マークの番号ラベル (遠くのマークほど番号がはっきり大きく見えるよう距離比例スケール + カメラ接近時はコンパクト化)
+  // マークの番号ラベル (装飾過多なコンパスノッチを排し、見やすいシンプル丸バッジ)
   const markSprites = {};
   const label = (txt, key, y = 4.6) => {
     const c = document.createElement('canvas'); c.width = 320; c.height = 320; const x = c.getContext('2d');
     const cx0 = 160, cy0 = 160;
-    // ドロップシャドウ付き六角タクティカルメダリオン＋ダブルリング
     x.save();
-    x.shadowColor = 'rgba(0, 8, 24, 0.78)';
-    x.shadowBlur = 18;
-    x.shadowOffsetY = 6;
-    const radGrad = x.createRadialGradient(cx0, cy0 - 28, 18, cx0, cy0, 138);
-    radGrad.addColorStop(0, 'rgba(22, 54, 98, 0.96)');
-    radGrad.addColorStop(0.65, 'rgba(9, 24, 48, 0.96)');
-    radGrad.addColorStop(1, 'rgba(4, 12, 26, 0.98)');
+    x.shadowColor = 'rgba(0, 8, 20, 0.55)';
+    x.shadowBlur = 12;
+    x.shadowOffsetY = 4;
     x.beginPath();
-    x.arc(cx0, cy0, 134, 0, Math.PI * 2);
-    x.fillStyle = radGrad;
+    x.arc(cx0, cy0, 128, 0, Math.PI * 2);
+    x.fillStyle = 'rgba(15, 23, 42, 0.94)';
     x.fill();
     x.restore();
 
-    // 外周ゴールドリング＆内側シアンリング
     x.beginPath();
-    x.arc(cx0, cy0, 134, 0, Math.PI * 2);
-    x.strokeStyle = '#fbbf24';
-    x.lineWidth = 12;
+    x.arc(cx0, cy0, 128, 0, Math.PI * 2);
+    x.strokeStyle = '#ffffff';
+    x.lineWidth = 10;
     x.stroke();
-
-    x.beginPath();
-    x.arc(cx0, cy0, 116, 0, Math.PI * 2);
-    x.strokeStyle = 'rgba(56, 189, 248, 0.65)';
-    x.lineWidth = 4;
-    x.stroke();
-
-    // 上下のコンパスノッチ装飾
-    x.fillStyle = '#fde047';
-    for (let a = 0; a < 4; a++) {
-      x.save();
-      x.translate(cx0, cy0);
-      x.rotate((a * Math.PI) / 2);
-      x.beginPath();
-      x.moveTo(-10, -138); x.lineTo(10, -138); x.lineTo(0, -118);
-      x.closePath();
-      x.fill();
-      x.restore();
-    }
 
     // マーク番号テキスト
-    x.save();
-    x.shadowColor = 'rgba(0, 0, 0, 0.85)';
-    x.shadowBlur = 10;
     x.fillStyle = '#ffffff';
-    const fontSize = txt.length >= 2 ? 122 : 148;
-    x.font = `900 ${fontSize}px "Orbitron", "Montserrat", "Segoe UI", sans-serif`;
+    const fontSize = txt.length >= 2 ? 120 : 146;
+    x.font = `800 ${fontSize}px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif`;
     x.textAlign = 'center';
     x.textBaseline = 'middle';
     x.fillText(txt, cx0, cy0 + 6);
-    x.restore();
 
     const tex = new THREE.CanvasTexture(c);
     tex.anisotropy = 4;
@@ -1356,40 +1289,28 @@ export function createWorld(scene) {
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
 
-  // ---------- 次向かうマークの赤い矢印 + 上部「NEXT」バッジ (4ゲートは4S/4P両方に表示) ----------
+  // ---------- 次向かうマークの赤い矢印 + 上部「NEXT」バッジ (黄色を一切排除し、純粋な赤＋白枠のみで構成) ----------
   const makeNextTextTex = () => {
     const c = document.createElement('canvas'); c.width = 420; c.height = 160; const x = c.getContext('2d');
     x.save();
-    x.shadowColor = 'rgba(0, 6, 20, 0.75)';
-    x.shadowBlur = 14;
-    x.shadowOffsetY = 5;
-    const g = x.createLinearGradient(24, 16, 396, 144);
-    g.addColorStop(0, 'rgba(225, 29, 72, 0.96)');
-    g.addColorStop(0.5, 'rgba(244, 63, 94, 0.96)');
-    g.addColorStop(1, 'rgba(190, 18, 60, 0.96)');
-    drawSkewPlate(x, 28, 18, 364, 124, 14, 16);
-    x.fillStyle = g;
+    x.shadowColor = 'rgba(0, 6, 20, 0.55)';
+    x.shadowBlur = 10;
+    x.shadowOffsetY = 4;
+    drawRoundPlate(x, 36, 22, 348, 116, 14);
+    x.fillStyle = '#dc2626';
     x.fill();
     x.restore();
 
-    drawSkewPlate(x, 28, 18, 364, 124, 14, 16);
+    drawRoundPlate(x, 36, 22, 348, 116, 14);
     x.strokeStyle = '#ffffff';
-    x.lineWidth = 7;
-    x.stroke();
-    drawSkewPlate(x, 36, 26, 348, 108, 12, 12);
-    x.strokeStyle = '#fde047';
-    x.lineWidth = 3;
+    x.lineWidth = 6;
     x.stroke();
 
-    x.save();
-    x.shadowColor = 'rgba(0, 0, 0, 0.65)';
-    x.shadowBlur = 8;
     x.fillStyle = '#ffffff';
-    x.font = '900 76px "Orbitron", "Montserrat", "Segoe UI", sans-serif';
+    x.font = '800 72px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
     x.textAlign = 'center';
     x.textBaseline = 'middle';
     x.fillText('NEXT', 210, 82);
-    x.restore();
     const tex = new THREE.CanvasTexture(c);
     tex.anisotropy = 4;
     return tex;
@@ -1397,23 +1318,19 @@ export function createWorld(scene) {
   const nextTex = makeNextTextTex();
   const makeTargetArrow = () => {
     const g = new THREE.Group();
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xff1e42, transparent: true, opacity: 0.96, depthWrite: false });
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.96, depthWrite: false });
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xe11d48, transparent: true, opacity: 0.96, depthWrite: false });
     const cone = new THREE.Mesh(new THREE.ConeGeometry(2.8, 4.6, 6), coneMat);
     cone.rotation.x = Math.PI;
     cone.position.y = -1.2;
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 3.6, 6), coneMat);
     shaft.position.y = 2.4;
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.45, 0.55, 6), ringMat);
-    collar.position.y = 0.95;
     const nextMat = new THREE.SpriteMaterial({ map: nextTex, transparent: true, opacity: 0.98, depthWrite: false });
     const nextSp = new THREE.Sprite(nextMat);
     nextSp.scale.set(8.6, 3.3, 1);
     nextSp.position.y = 6.5;
     nextSp.renderOrder = 6;
-    g.add(cone, shaft, collar, nextSp);
+    g.add(cone, shaft, nextSp);
     g.userData.mat = coneMat;
-    g.userData.ringMat = ringMat;
     g.userData.nextMat = nextMat;
     g.visible = false;
     scene.add(g);
@@ -1749,13 +1666,53 @@ export function createWorld(scene) {
           o.rotation.x = clampN(Math.atan(slZ) * 0.10, -0.018, 0.018) + 0.005 * Math.cos(t * 1.0 + ox * 0.1);
         }
       }
-      flagSway.forEach((f, i) => { f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12; });
+      // 信号旗のはためき＋スタート1分前のP旗降下・0秒のスナイプ級旗降下アニメーション
+      flagSway.forEach((f, i) => {
+        f.rotation.y = Math.sin(t * 2.6 + i * 1.7) * 0.12;
+        const fk = f.userData && f.userData.flagKey;
+        const topY = (f.userData && f.userData.topY) ?? f.position.y;
+        const botY = (f.userData && f.userData.botY) ?? 0.28;
+        if (fk === 'P') {
+          // 1分前(wt = -60)の号砲とともにP旗がポール上からスッと降下する演出 (-59.9s 〜 -57.3s で降下完了)
+          if (wt < -59.9) {
+            f.visible = true;
+            f.position.y = topY;
+          } else if (wt < -57.3) {
+            f.visible = true;
+            const prog = clampN((wt - (-59.9)) / 2.6, 0, 1);
+            const ease = prog * prog * (3 - 2 * prog);
+            f.position.y = topY + (botY - topY) * ease;
+          } else {
+            f.visible = false;
+            f.position.y = botY;
+          }
+        } else if (fk === 'SNIPE') {
+          // 0秒(wt = 0)のスタート号砲とともにスナイプ級旗が降下する演出 (0.0s 〜 2.5s で降下完了)
+          if (wt < 0.0) {
+            f.visible = true;
+            f.position.y = topY;
+          } else if (wt < 2.5) {
+            f.visible = true;
+            const prog = clampN(wt / 2.5, 0, 1);
+            const ease = prog * prog * (3 - 2 * prog);
+            f.position.y = topY + (botY - topY) * ease;
+          } else {
+            f.visible = false;
+            f.position.y = botY;
+          }
+        }
+      });
 
       if (!courseVisible) {
         foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
         surfMat.opacity = 0.62 + 0.22 * Math.sin(t * 0.7 + 1.2);
         return;
       }
+
+      // スタート後しばらくしたら(wt > 12s〜18s)スタートライン帯とSTART LINEラベルをフェードアウトして消去
+      const postStartFade = wt <= 12 ? 1.0 : clampN(1.0 - (wt - 12) / 6.0, 0, 1);
+      lineMesh.visible = courseVisible && postStartFade > 0.01;
+      lineMesh.material.opacity = 0.62 * postStartFade;
 
       camera.getWorldDirection(camDir);
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
@@ -1798,7 +1755,7 @@ export function createWorld(scene) {
         const sh = sw * (350 / 960);
         startLabel.scale.set(sw, sh, 1);
         startLabel.position.y = 2.2 + sh * 0.58;
-        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 8, 9, false);
+        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 8, 9, false) * postStartFade;
         startLabel.material.opacity = 0.96 * v;
         startLabel.visible = courseVisible && v > 0.02;
       }
@@ -2736,64 +2693,71 @@ function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
   }
 
   // クレーンの奥側〜横浜・東京方面の低い遠方陸地プレート
-  const metroLand = new THREE.Mesh(new THREE.BoxGeometry(12000, 5, 18000), new THREE.MeshLambertMaterial({ color: 0x64748b }));
-  metroLand.position.set(-1800, 1.0, -16500); metro.add(metroLand);
+  const metroLand = new THREE.Mesh(new THREE.BoxGeometry(12000, 4, 18000), new THREE.MeshLambertMaterial({ color: 0x6b7c90 }));
+  metroLand.position.set(-1400, 0.8, -14500); metro.add(metroLand);
 
-  // 横浜ランドマークタワーと周辺のみなとみらいビル群 (かなり遠く z ≈ -11500 だがシルエットがはっきり分かるように再現)
-  const lmkX = -1550, lmkZ = -11500;
-  const lmk = new THREE.Mesh(new THREE.CylinderGeometry(42, 60, 360, 4), new THREE.MeshLambertMaterial({ color: 0xdbeafe, emissive: 0x1e293b }));
-  lmk.rotation.y = Math.PI / 4; lmk.position.set(lmkX, 180, lmkZ); metro.add(lmk);
-  // クイーンズスクエア3連棟 (ランドマークタワーのすぐ右隣)
+  // 横浜みなとみらい21・横浜ランドマークタワー (八景島沖から北北西 NNW 約348°〜355°、本牧ふ頭ガントリークレーンの左奥の水平線上にうっすら望む実在位置関係を再現)
+  const lmkX = -760, lmkZ = -6850;
+  const hazedTowerMat = new THREE.MeshLambertMaterial({ color: 0xc2d5ea, emissive: 0x2b3e54 });
+  const hazedSubMat = new THREE.MeshLambertMaterial({ color: 0xb8cce2, emissive: 0x26384d });
+  // 横浜ランドマークタワー (296m: 上に向かって段状に細くなる特徴的な四角柱シルエット)
+  const lmkBase = new THREE.Mesh(new THREE.CylinderGeometry(38, 52, 230, 4), hazedTowerMat);
+  lmkBase.rotation.y = Math.PI / 4; lmkBase.position.set(lmkX, 115, lmkZ); metro.add(lmkBase);
+  const lmkTop = new THREE.Mesh(new THREE.CylinderGeometry(28, 38, 95, 4), hazedTowerMat);
+  lmkTop.rotation.y = Math.PI / 4; lmkTop.position.set(lmkX, 275, lmkZ); metro.add(lmkTop);
+  // クイーンズスクエア横浜 3連棟 (ランドマークタワーのすぐ右隣に並ぶ3棟)
   for (let i = 0; i < 3; i++) {
-    const qh = 205 - i * 22;
-    const qb = new THREE.Mesh(new THREE.BoxGeometry(64, qh, 64), new THREE.MeshLambertMaterial({ color: 0xe2e8f0, emissive: 0x1e293b }));
-    qb.position.set(lmkX + 210 + i * 95, qh / 2, lmkZ + 80 + i * 45); metro.add(qb);
+    const qh = 195 - i * 20;
+    const qb = new THREE.Mesh(new THREE.BoxGeometry(52, qh, 52), hazedSubMat);
+    qb.position.set(lmkX + 145 + i * 78, qh / 2, lmkZ + 40 + i * 25); metro.add(qb);
   }
-  // ヨコハマ グランド インターコンチネンタル ホテル (ヨットのセール型)
-  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(75, 75, 24, 24, 1, false, 0, Math.PI), new THREE.MeshLambertMaterial({ color: 0xf1f5f9, emissive: 0x1e293b }));
-  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.4; interCon.position.set(lmkX + 520, 60, lmkZ + 180); interCon.scale.set(2.2, 1, 1); metro.add(interCon);
+  // ヨコハマ グランド インターコンチネンタル ホテル (ヨットのセール型の半月シルエット)
+  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(72, 72, 22, 24, 1, false, 0, Math.PI), hazedTowerMat);
+  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.35; interCon.position.set(lmkX + 410, 56, lmkZ + 110); interCon.scale.set(2.1, 1, 1); metro.add(interCon);
 
-  // 横浜ベイブリッジ (ランドマークタワーの手前右寄りに遠望できる斜張橋)
-  const bbX = 850, bbZ = -11200;
-  const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(2600, 9, 28), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }));
-  bbDeck.position.set(bbX, 64, bbZ); bbDeck.rotation.y = -0.25; metro.add(bbDeck);
-  for (const s of [-460, 460]) {
-    const tw = new THREE.Mesh(new THREE.BoxGeometry(22, 185, 30), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
-    tw.position.set(bbX + s * Math.cos(0.25), 92.5, bbZ + s * Math.sin(0.25)); metro.add(tw);
+  // 横浜ベイブリッジ (みなとみらいの右手前、本牧ふ頭の北東側に遠望できる斜張橋)
+  const bbX = 480, bbZ = -6350;
+  const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(1950, 8, 22), hazedSubMat);
+  bbDeck.position.set(bbX, 58, bbZ); bbDeck.rotation.y = -0.22; metro.add(bbDeck);
+  for (const s of [-360, 360]) {
+    const tw = new THREE.Mesh(new THREE.BoxGeometry(18, 165, 24), hazedTowerMat);
+    tw.position.set(bbX + s * Math.cos(0.22), 82.5, bbZ + s * Math.sin(0.22)); metro.add(tw);
   }
 
-  // クレーンの奥は都会になりすぎないよう大幅に棟数を絞り、ランドマークタワー周辺と東京側の遠景におとなしめに配置
+  // 横浜駅周辺〜みなとみらい・関内・本牧の遠景高層ビル群 (大気遠近でうっすら霞んだ青灰色のスカイライン)
   const HBOX = 180;
-  const hBoxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial(), HBOX);
+  const hBoxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ emissive: 0x223246 }), HBOX);
   let hbn = 0;
-  const cityPal = [0xcbd5e1, 0x94a3b8, 0xdbeafe, 0xb4c6da];
-  // (a) ランドマークタワー周辺のビル群 (z = -10800 .. -12600, x = -2300 .. -750 にコンパクトに集約)
-  for (let k = 0; k < 48 && hbn < HBOX; k++) {
-    const x = lmkX - 700 + rnd() * 1550, z = lmkZ - 900 + rnd() * 1600;
-    const bh = 65 + rnd() * 115, bw = 38 + rnd() * 45, bd = 38 + rnd() * 45;
+  const cityPal = [0xb4c8de, 0xa5bcd4, 0xc2d5ea, 0x9cb3cb];
+  // (a) みなとみらい〜桜木町・関内・横浜駅方面の高層ビル群 (z = -6500 .. -7900, x = -1450 .. +180)
+  for (let k = 0; k < 64 && hbn < HBOX; k++) {
+    const x = lmkX - 680 + rnd() * 1580, z = lmkZ - 950 + rnd() * 1450;
+    const distC = Math.abs(x - lmkX);
+    const bh = (distC < 450 ? 85 : 50) + rnd() * (distC < 450 ? 125 : 75);
+    const bw = 32 + rnd() * 38, bd = 32 + rnd() * 38;
     m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
     hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
   }
-  // (b) クレーンの少し奥(根岸・本牧ふ頭倉庫: z = -4500 .. -7200) はごく控えめな低層倉庫のみ (おとなしめ)
+  // (b) クレーンの少し奥(根岸・本牧ふ頭倉庫: z = -4300 .. -5800) の低層倉庫
   for (let k = 0; k < 22 && hbn < HBOX; k++) {
-    const x = -2200 + rnd() * 1800, z = -4500 - rnd() * 2600;
-    const bh = 14 + rnd() * 16, bw = 35 + rnd() * 45, bd = 35 + rnd() * 45;
+    const x = -2100 + rnd() * 1600, z = -4300 - rnd() * 1500;
+    const bh = 12 + rnd() * 14, bw = 35 + rnd() * 45, bd = 35 + rnd() * 45;
     m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
     hBoxes.setMatrixAt(hbn, m4); tc.setHex(0x94a3b8); hBoxes.setColorAt(hbn, tc); hbn++;
   }
-  // (c) さらに奥の川崎・東京側陸地(z = -13500 .. -22000) にうっすら見える控えめなビル群
-  for (let k = 0; k < 90 && hbn < HBOX; k++) {
-    const z = -13500 - rnd() * 8500;
-    const x = -2500 + rnd() * 5800;
-    const bh = 45 + rnd() * 85, bw = 42 + rnd() * 50, bd = 42 + rnd() * 50;
+  // (c) さらに奥の川崎・鶴見・東京湾岸の遠景ビル群 (z = -9500 .. -16500)
+  for (let k = 0; k < 80 && hbn < HBOX; k++) {
+    const z = -9500 - rnd() * 7000;
+    const x = -1800 + rnd() * 4200;
+    const bh = 45 + rnd() * 85, bw = 38 + rnd() * 45, bd = 38 + rnd() * 45;
     m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
     hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
   }
   hBoxes.count = hbn; metro.add(hBoxes);
   root.add(metro);
 
-  // 遠景陸地: 磯子・根岸の緑の丘陵(クレーン奥西側)、東京側奥の陸地(北〜北東)、千葉・房総半島(東〜南東の遠方にうっすら見える稜線)
-  distantLand(root, -2800, -6500, 1400, 2800, 82, 0.08);    // クレーン奥の穏やかな緑の丘陵
+  // 遠景陸地: 磯子・根岸の緑の丘陵(みなとみらいの視線を遮らないよう西側 x = -3350 に配置)、東京側奥の陸地
+  distantLand(root, -3350, -5800, 1150, 2200, 68, 0.08);
   distantLand(root, 2200, -21000, 8500, 6500, 65, 0.15);   // 東京側奥の陸地
   // (千葉・房総半島は addHakkeiScenery で実際の海岸線(富津岬・君津・木更津・鋸山)に沿って作成)
 
@@ -2808,7 +2772,7 @@ function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
     });
     const fujiH = new THREE.Mesh(fgeo, fujiHMat);
     fujiH.position.set(-41500, -320, -1500); // 八景島から見た富士山はほぼ真西(方位約272°)
-    fujiH.scale.set(0.82, 0.72, 0.82);
+    fujiH.scale.set(0.45, 0.54, 0.45);
     root.add(fujiH);
   }
 }
@@ -3075,11 +3039,11 @@ function addEnoshimaScenery(grp, surfStrip) {
   distantLand(sc, -8900, -3300, 1500, 750, 190, 0.25, 20);
   for (const [tx, tz, th] of [[-8950, -3330, 58], [-8820, -3270, 48], [-9080, -3380, 40]]) sBanded(sc, tx, 30, tz, 1.4, 6, th + 120, 9, 0xdc2626, 0xf8fafc, 4); // 根元は丘に埋める
 
-  // ---- 5) 遠景の山並み: 丹沢山地(大山1252m・塔ノ岳・蛭ヶ岳)/ 真鶴半島 / 初島 ----
-  distantLand(sc, -19500, -12600, 6800, 2500, 1650, -0.44, 40);
-  distantLand(sc, -13900, -10900, 2300, 2100, 1500, 0.2, 26);
-  distantLand(sc, -19400, 8600, 1700, 800, 120, 0.65, 20);
-  distantLand(sc, -17200, 16600, 900, 600, 55, 0, 14);
+  // ---- 5) 遠景の山並み: 丹沢山地(大山1252m・塔ノ岳・蛭ヶ岳)/ 真鶴半島 / 初島 (横に広がりすぎない実際のサイズ感に調整) ----
+  distantLand(sc, -19500, -12600, 3800, 1600, 920, -0.44, 40);
+  distantLand(sc, -13900, -10900, 1600, 1400, 860, 0.2, 26);
+  distantLand(sc, -19400, 8600, 1200, 600, 100, 0.65, 20);
+  distantLand(sc, -17200, 16600, 700, 480, 48, 0, 14);
 
   grp.add(sc);
 }
@@ -3148,17 +3112,18 @@ function addHakkeiScenery(root, movingShips = []) {
   };
   const bosoC = (x, z, h, out) => {
     const g = noise2(x / 900, z / 900);
-    if (h < 3) out.setRGB(0.42, 0.4, 0.36);
-    else if (h < 40 && z < 3000) out.setRGB(0.4, 0.4, 0.4); // 君津・木更津の臨海工業地帯
-    else out.setRGB(0.13 + 0.05 * g, 0.21 + 0.06 * g, 0.13 + 0.03 * g);
+    // 東京湾の対岸(約12〜25km先)の千葉・房総半島は大気遠近でうっすら霞んだ淡い青灰緑色にする
+    if (h < 3) out.setRGB(0.54, 0.61, 0.69);
+    else if (h < 40 && z < 3000) out.setRGB(0.52, 0.59, 0.67); // 君津・木更津の臨海部
+    else out.setRGB(0.46 + 0.04 * g, 0.56 + 0.05 * g, 0.66 + 0.04 * g);
   };
   sc.add(new THREE.Mesh(buildGrid(gridAxis([[9000, 34000, 600]]), gridAxis([[-26000, 30000, 700]]), bosoH, bosoC), new THREE.MeshLambertMaterial({ vertexColors: true })));
-  distantLand(sc, 8700, 1500, 2000, 260, 14, 0.157, 24); // 富津岬
-  // 君津製鉄所: 高炉と紅白煙突
-  for (const [x, z] of [[13300, -300], [13700, 600], [14200, 1500]]) { sBox(sc, x, 0, z, 70, 70, 60, 0x8b8f94); sCyl(sc, x + 30, 0, z + 10, 7, 9, 105, 0x6b6f75, 8); }
-  for (const [x, z, h] of [[13000, -900, 190], [13500, 1000, 170], [14000, 2200, 150], [12900, 1800, 120]]) sBanded(sc, x, 0, z, 5, 7, h, 7, 0xdc2626, 0xf8fafc, 8);
+  distantLand(sc, 8700, 1500, 2000, 260, 12, 0.157, 24); // 富津岬
+  // 君津製鉄所: 高炉と煙突も遠景の霞になじむ淡いトーンに調整
+  for (const [x, z] of [[13300, -300], [13700, 600], [14200, 1500]]) { sBox(sc, x, 0, z, 70, 70, 60, 0xa8b8c8); sCyl(sc, x + 30, 0, z + 10, 7, 9, 105, 0x9cb0c4, 8); }
+  for (const [x, z, h] of [[13000, -900, 190], [13500, 1000, 170], [14000, 2200, 150], [12900, 1800, 120]]) sBanded(sc, x, 0, z, 5, 7, h, 7, 0xd97777, 0xe2e8f0, 8);
   // 東京湾アクアライン: 海ほたるPA(船型の人工島) と木更津へ伸びる低い橋、川崎側の換気塔「風の塔」
-  sBox(sc, 13300, -1, -9800, 110, 26, 640, 0xe5e7eb, 0.557);
+  sBox(sc, 13300, -1, -9800, 110, 26, 640, 0xd8e2ec, 0.557);
   sBox(sc, 13300, 24, -9800, 60, 10, 260, 0xcbd5e1, 0.557);
   {
     const ax = 13300 + 320 * Math.sin(0.557), az = -9800 + 320 * Math.cos(0.557);
@@ -3169,7 +3134,7 @@ function addHakkeiScenery(root, movingShips = []) {
       sBox(sc, ax + (bx - ax) * t, hump, az + (bz - az) * t, 22, 3, L / N + 4, 0xd1d5db, ry);
     }
   }
-  sCyl(sc, 10450, -1, -11750, 22, 26, 75, 0xe2e8f0, 10); sCyl(sc, 10560, -1, -11720, 18, 22, 90, 0xe2e8f0, 10);
+  sCyl(sc, 10450, -1, -11750, 22, 26, 75, 0xd8e2ec, 10); sCyl(sc, 10560, -1, -11720, 18, 22, 90, 0xd8e2ec, 10);
 
   // ---- 4) 東京湾の錨泊船・航行船 (横浜港外の錨地〜浦賀水道をゆっくり航行) ----
   const bayLaneShips = [
@@ -3184,9 +3149,9 @@ function addHakkeiScenery(root, movingShips = []) {
   });
 
   // ---- 5) 遠景の丹沢(大山)・箱根: 西の丘陵越しにわずかに稜線が覗く ----
-  distantLand(sc, -26500, -8300, 2400, 2200, 1450, 0.2, 22);
-  distantLand(sc, -33000, -12000, 6500, 2400, 1600, -0.44, 30);
-  distantLand(sc, -38000, 9000, 8000, 6000, 1300, 0.25, 28);
+  distantLand(sc, -26500, -8300, 1600, 1500, 880, 0.2, 22);
+  distantLand(sc, -33000, -12000, 3800, 1600, 940, -0.44, 30);
+  distantLand(sc, -38000, 9000, 4200, 3200, 740, 0.25, 28);
 
   root.add(sc);
 }
