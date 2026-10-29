@@ -550,3 +550,52 @@ body.orientOpen #result{z-index:14;pointer-events:none}
   body.orientOpen #instr,
   body.touch.orientOpen .bottom-center{top:auto!important;bottom:136px!important;left:6px!important;transform:none!important}
 }
+
+/* 接近時の権利主張コール吹き出し (スタボ！ / 下！ / ニャン！ / ワン！ / グワッ！) */
+.hailBubbles{position:fixed;inset:0;pointer-events:none;z-index:13}
+.hailBubble{
+  position:fixed;
+  transform:translate(-50%,-100%);
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 12px 5px 9px;
+  background:linear-gradient(135deg,rgba(12,22,38,.95),rgba(24,42,72,.95));
+  border:2px solid #fde047;
+  border-radius:16px;
+  box-shadow:0 6px 18px rgba(0,0,0,.65),0 0 12px rgba(253,224,71,.35);
+  color:#ffffff;
+  font-size:.92rem;
+  font-weight:900;
+  letter-spacing:.04em;
+  white-space:nowrap;
+  animation:hailPopIn .18s cubic-bezier(.18,.89,.32,1.28);
+}
+.hailBubble::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:-8px;
+  transform:translateX(-50%);
+  border-width:8px 7px 0 7px;
+  border-style:solid;
+  border-color:#fde047 transparent transparent transparent;
+}
+.hailBubble .hbSw{
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  border:1.5px solid #fff;
+  flex-shrink:0;
+}
+.hailBubble .hbSub{
+  font-size:.66rem;
+  font-weight:800;
+  color:#fde047;
+  opacity:.92;
+}
+@keyframes hailPopIn{
+  0%{opacity:0;transform:translate(-50%,-75%) scale(.65)}
+  100%{opacity:1;transform:translate(-50%,-100%) scale(1)}
+}
+
