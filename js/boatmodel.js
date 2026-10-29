@@ -68,7 +68,7 @@ const carbonMat = new THREE.MeshStandardMaterial({ color: 0x222428, roughness: 0
 const JIB_NU = 12, JIB_NV = 10;
 const JIB_TACK_Y = 0.57, JIB_DECK_Y = 0.415, JIB_TACK_Z = -2.08;
 const JIB_CLEW_LEN = 1.72, JIB_HEAD_Y = 5.38, JIB_HEAD_Z = 1.18;
-const MAIN_TWIST = 0.36;
+const MAIN_TWIST = 0.42;
 const LEECH_RIBBON_US = [0.32, 0.56, 0.78]; // スナイプ級メインセールの3本バテン(下・中・トップバテン)位置
 function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twist = 0, withBattens = false) {
   const pos = [], uv = [], idx = [];
@@ -85,9 +85,9 @@ function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twis
         const rib = Math.exp(-du * du);
         roachZ += 0.018 * rib;
       }
-      // 各バテン(0.32, 0.56, 0.78)を境にセール面のツイスト角がわずかに段階的に変化する
+      // 各バテン(0.32, 0.56, 0.78)を境にセール面のツイスト角が段階的に変化し、中〜上部リーチが自然に開く
       const s1 = Math.max(0, u - 0.32), s2 = Math.max(0, u - 0.56), s3 = Math.max(0, u - 0.78);
-      battenFacetTwist = (0.14 * s1 + 0.18 * s2 + 0.22 * s3) * (1 - u);
+      battenFacetTwist = (0.16 * s1 + 0.21 * s2 + 0.26 * s3) * (1 - u * 0.88);
     }
     const rx = clew[0] + u * (head[0] - clew[0]), ry = clew[1] + u * (head[1] - clew[1]), rz = clew[2] + u * (head[2] - clew[2]) + roachZ;
     for (let j = 0; j <= nv; j++) {
@@ -97,7 +97,7 @@ function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twis
       let aftFlatten = 1.0;
       if (withBattens && v > 0.38) {
         const vWeight = Math.pow((v - 0.38) / 0.62, 0.85);
-        aftFlatten = 1.0 - 0.18 * vWeight;
+        aftFlatten = 1.0 - 0.12 * vWeight;
         for (let bi = 0; bi < LEECH_RIBBON_US.length; bi++) {
           const bu = LEECH_RIBBON_US[bi];
           const du = (u - bu) / 0.032;
@@ -107,9 +107,9 @@ function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twis
         const seg = u < 0.32 ? u / 0.32 : u < 0.56 ? (u - 0.32) / 0.24 : u < 0.78 ? (u - 0.56) / 0.22 : (u - 0.78) / 0.22;
         battenRidge -= 0.009 * Math.sin(Math.PI * seg) * vWeight;
       }
-      const b = bulge * Math.sin(Math.PI * v) * aftFlatten * (1 - 0.55 * u) * Math.sin(Math.PI * Math.min(1, 0.15 + u * 0.9));
-      // クローズ引き込み時にメインセール下部はセンター近くまでタイトに引き込まれ、中〜上部リーチがバテン節ごとにツイストして開く
-      const twistX = (twist * Math.pow(u, 1.18) * (1 - u) * 2.05 + battenFacetTwist) * Math.pow(v, 1.12);
+      const b = bulge * Math.sin(Math.PI * v) * aftFlatten * (1 - 0.50 * u) * Math.sin(Math.PI * Math.min(1, 0.16 + u * 0.88));
+      // クローズ引き込み時にメインセール下部はセンター近くまで引き込まれつつ、中〜上部リーチがわずかに開くリアルなツイスト形状
+      const twistX = (twist * Math.pow(u, 1.12) * (1 - u * 0.78) * 1.95 + battenFacetTwist) * Math.pow(v, 1.08);
       pos.push(lx + v * (rx - lx) + b + twistX + battenRidge, ly + v * (ry - ly), lz + v * (rz - lz));
       uv.push(v, u);
     }
@@ -137,7 +137,7 @@ function tautSheetGeo(pts, r = 0.0065) {
   return ropeGeo(sharpPts, r, Math.max(18, sharpPts.length * 4));
 }
 
-const mainGeo = sailGeometry([0, 1.02, 0], [0, 6.75, 0.08], [0, 0.98, 2.88], 0.33, 28, 12, 0.36, MAIN_TWIST, true);
+const mainGeo = sailGeometry([0, 1.02, 0], [0, 6.75, 0.08], [0, 0.98, 2.88], 0.37, 28, 12, 0.36, MAIN_TWIST, true);
 const jibGeo = sailGeometry([0, 0, 0], [0, JIB_HEAD_Y, JIB_HEAD_Z], [0, 0.22, JIB_CLEW_LEN], 0.20, JIB_NU, JIB_NV);
 const mastGeo = new THREE.CylinderGeometry(0.035, 0.046, 6.9, 12);
 const boomGeo = new THREE.CylinderGeometry(0.030, 0.030, 2.88, 8); boomGeo.rotateX(Math.PI / 2);
@@ -447,6 +447,222 @@ function placeSeg(mesh, a, b) {
   mesh.scale.set(1, len, 1);
 }
 
+// =========================================================================
+// 船体バウ・チャイン＆ラダーで海面を切り裂く3D水流・バウウェーブ＆ラダー水流メッシュ
+// 実艇動画に基づき、船と海面の境界に沿って立ち上がる薄い水膜(メニスカス)・バウからのV字水切り波・
+// トランサム＆ラダーブレードが水を切る白い水流の筋を艇速・波高・ヒール角・舵角に連動してリアルタイム生成する
+// =========================================================================
+let _waterCutGeo = null;
+function hullWaterHalfWidth(z) {
+  if (z <= -2.35) return 0.015;
+  if (z < 0.15) {
+    const t = clamp((z + 2.35) / 2.50, 0, 1);
+    return 0.015 + 0.715 * Math.pow(Math.sin(t * Math.PI * 0.5), 0.86);
+  }
+  const t = clamp((z - 0.15) / 2.21, 0, 1);
+  return 0.73 - 0.25 * Math.pow(t, 1.35);
+}
+function getWaterCutGeo() {
+  if (_waterCutGeo) return _waterCutGeo;
+  const pos = [], uv = [], part = [], idx = [];
+  let vBase = 0;
+
+  // 1) 左右ハル水線・バウ水切り波リボン (z = -2.36 〜 +2.32, NU=20, NV=5)
+  const H_NU = 20, H_NV = 5;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i <= H_NU; i++) {
+      const u = i / H_NU;
+      const z = -2.36 + u * 4.68;
+      const hx = hullWaterHalfWidth(z);
+      for (let j = 0; j <= H_NV; j++) {
+        const v = j / H_NV;
+        pos.push(side * hx, 0, z);
+        uv.push(u, v);
+        part.push(side, 0.0, hx);
+      }
+    }
+    for (let i = 0; i < H_NU; i++) {
+      for (let j = 0; j < H_NV; j++) {
+        const a = vBase + i * (H_NV + 1) + j;
+        const b = a + 1, c = a + (H_NV + 1), d = c + 1;
+        if (side > 0) idx.push(a, b, c, b, d, c);
+        else idx.push(a, c, b, b, c, d);
+      }
+    }
+    vBase += (H_NU + 1) * (H_NV + 1);
+  }
+
+  // 2) ラダーブレード＆トランサム水切りストリーム (z = +2.28 〜 +4.35, R_NU=16, R_NV=6)
+  const R_NU = 16, R_NV = 6;
+  for (let i = 0; i <= R_NU; i++) {
+    const u = i / R_NU;
+    const z = 2.28 + u * 2.07;
+    for (let j = 0; j <= R_NV; j++) {
+      const v = j / R_NV; // 0(左端) .. 0.5(ラダー中心) .. 1(右端)
+      pos.push(0, 0, z);
+      uv.push(u, v);
+      part.push((v - 0.5) * 2.0, 1.0, 0.0);
+    }
+  }
+  for (let i = 0; i < R_NU; i++) {
+    for (let j = 0; j < R_NV; j++) {
+      const a = vBase + i * (R_NV + 1) + j;
+      const b = a + 1, c = a + (R_NV + 1), d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(part, 3));
+  g.setIndex(idx);
+  _waterCutGeo = g;
+  return _waterCutGeo;
+}
+
+function makeWaterCutMat() {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: { value: 0 },
+      uSpeed: { value: 0 },
+      uWave: { value: 0 },
+      uHeel: { value: 0 },
+      uSteer: { value: 0 },
+      uRudderDrag: { value: 0 },
+      uOpacity: { value: 1.0 },
+    },
+    vertexShader: `
+      attribute vec3 aPart;
+      uniform float uTime;
+      uniform float uSpeed;
+      uniform float uWave;
+      uniform float uHeel;
+      uniform float uSteer;
+      uniform float uRudderDrag;
+      varying vec2 vUv;
+      varying float vKind;
+      varying float vSideBoost;
+      void main() {
+        vUv = uv;
+        float side = aPart.x;
+        float kind = aPart.y;
+        float hx = aPart.z;
+        vKind = kind;
+        vec3 p = position;
+        float spd = clamp(uSpeed, 0.0, 1.45);
+        float wav = clamp(uWave, 0.0, 1.35);
+
+        if (kind < 0.5) {
+          // 1) ハル水線・バウ水切り波リボン
+          float u = uv.x;
+          float v = uv.y;
+          // ヒールしている側(風下チャイン)がより深く水を捉えて強い水切り波を生む
+          float leeBoost = clamp(1.0 - side * uHeel * 2.2, 0.55, 1.55);
+          vSideBoost = leeBoost;
+          // 船体水線すぐ脇(v=0)から外側斜め後方(v=1)へ広がるケルビンバウ波幅
+          float spreadW = (0.045 + (0.14 + 0.42 * pow(u, 0.82)) * (0.18 + 0.68 * spd + 0.34 * wav)) * leeBoost;
+          // ヒールに伴う水線の横ずれ補正
+          float heelShift = -uHeel * 0.14;
+          p.x = side * (hx + v * spreadW) + heelShift;
+          // バウ〜フォアフット(u < 0.42)で水を左右へ押し分けながら立ち上がる薄い水膜リップ
+          float bowEnv = sin(clamp(u / 0.44, 0.0, 1.0) * 3.14159265);
+          float lipH = (1.0 - v) * (1.0 - v * 0.65) * bowEnv * (0.024 + 0.068 * spd + 0.075 * wav) * leeBoost;
+          // 船体側面の水線メニスカス(水とハルの境界を自然に馴染ませる微かなせり上がり)
+          float chineLip = (1.0 - smoothstep(0.0, 0.38, v)) * (1.0 - u * 0.55) * (0.014 + 0.024 * spd);
+          float ripple = 0.008 * sin(u * 22.0 - uTime * (5.0 + 5.5 * spd) + v * 6.0) * spd * v;
+          p.y = 0.012 + lipH + chineLip + ripple;
+          p.z += v * (0.12 + 0.28 * spd) * u;
+        } else {
+          // 2) ラダーブレード＆トランサム水切りストリーム
+          float u = uv.x;
+          float rSide = side; // -1 .. +1
+          vSideBoost = 1.0 + uRudderDrag * 0.8;
+          // ラダー前縁(u=0.04)で鋭く水を割り、後方へV字に広がる乱流シート
+          float halfW = 0.026 + (0.09 + 0.26 * pow(u, 0.78)) * (0.28 + 0.62 * spd + 0.45 * uRudderDrag + 0.22 * wav);
+          // 舵角(uSteer)に応じてラダー直後の水流軌道がしなる
+          float deflect = -uSteer * pow(u, 1.28) * (0.30 + 0.22 * spd);
+          p.x = deflect + rSide * halfW;
+          // ラダーブレードが水を切る襟状の盛り上がり(ラダーカラー)
+          float collarEnv = exp(-pow((u - 0.06) / 0.085, 2.0)) * (1.0 - abs(rSide) * 0.75);
+          float collarH = collarEnv * (0.025 + 0.055 * spd + 0.045 * uRudderDrag + 0.025 * wav);
+          p.y = 0.014 + collarH;
+        }
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      uniform float uTime;
+      uniform float uSpeed;
+      uniform float uWave;
+      uniform float uRudderDrag;
+      uniform float uOpacity;
+      varying vec2 vUv;
+      varying float vKind;
+      varying float vSideBoost;
+
+      float hh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vn(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hh(i), hh(i + vec2(1.0, 0.0)), f.x), mix(hh(i + vec2(0.0, 1.0)), hh(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+
+      void main() {
+        float spd = clamp(uSpeed, 0.0, 1.45);
+        if (spd < 0.04 && uWave < 0.05) discard;
+        float u = vUv.x;
+        float v = vUv.y;
+        float flowT = uTime * (2.6 + 4.8 * spd);
+
+        if (vKind < 0.5) {
+          // ハル水線・バウ水切り波: 船体直近の透き通った水膜光沢＋バウ先から後方へ流れる繊細な気泡筋
+          float n1 = vn(vec2(v * 5.2, u * 11.0 - flowT));
+          float n2 = vn(vec2(v * 11.5 + 3.1, u * 22.0 - flowT * 1.35));
+          float streak = 0.55 * n1 + 0.45 * n2;
+          // 内側(v=0: 船体キワ)は滑らかに立ち上がり、外側(v=1)と後端(u=1)で自然に海面へ溶け込む
+          float edgeIn = smoothstep(0.0, 0.09, v);
+          float edgeOut = pow(max(0.0, 1.0 - v), 1.65);
+          float bowFade = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.68, 1.0, u));
+          // バウが水を切る先端部(u < 0.36)のリップハイライト
+          float bowCrest = smoothstep(0.38, 0.04, u) * smoothstep(0.55, 0.08, v) * (0.45 + 0.55 * streak);
+          // ケルビン波の外縁に沿って走る細い水紋ライン
+          float kelvinRidge = exp(-pow((v - (0.42 + 0.32 * u)) / 0.18, 2.0)) * (0.4 + 0.6 * n1);
+          float intensity = (bowCrest * 0.72 + kelvinRidge * 0.48 + edgeOut * streak * 0.35) * edgeIn * bowFade;
+          float act = clamp((spd * 0.72 + uWave * 0.52) * vSideBoost, 0.0, 1.25);
+          float alpha = clamp(intensity * act * 0.58 * uOpacity, 0.0, 0.68);
+          if (alpha < 0.01) discard;
+          vec3 waterSheen = vec3(0.58, 0.84, 0.95);
+          vec3 foamWhite = vec3(0.95, 0.99, 1.0);
+          vec3 col = mix(waterSheen, foamWhite, clamp(bowCrest * 0.85 + streak * 0.45 + uWave * 0.3, 0.0, 1.0));
+          gl_FragColor = vec4(col, alpha);
+        } else {
+          // ラダー水切り＆トランサム渦流: ラダー前縁の水割りカラーと後方へ伸びる白い水流筋
+          float rDist = abs(v - 0.5) * 2.0; // 0(中心) .. 1(外縁)
+          float n1 = vn(vec2(rDist * 4.5, u * 10.5 - flowT * 1.25));
+          float n2 = vn(vec2(v * 9.0 + 1.7, u * 19.0 - flowT * 1.6));
+          float turb = 0.55 * n1 + 0.45 * n2;
+          // ラダーブレード直近(u < 0.18)のV字水切りカラー
+          float collar = smoothstep(0.22, 0.02, u) * (1.0 - smoothstep(0.0, 0.78, rDist));
+          // ラダー後方へ尾を引く2本の剥離渦と中央の気泡ストリーム
+          float twinVortex = exp(-pow((rDist - (0.25 + 0.35 * u)) / 0.24, 2.0));
+          float centerStream = (1.0 - smoothstep(0.0, 0.68, rDist)) * (0.45 + 0.55 * turb);
+          float uEnv = smoothstep(0.0, 0.04, u) * pow(max(0.0, 1.0 - u), 1.25);
+          float rAct = clamp(spd * 0.68 + uRudderDrag * 0.75 + uWave * 0.25, 0.0, 1.35);
+          float alpha = clamp((collar * 0.78 + (twinVortex * 0.48 + centerStream * 0.52) * turb) * uEnv * rAct * 0.62 * uOpacity, 0.0, 0.72);
+          if (alpha < 0.01) discard;
+          vec3 col = mix(vec3(0.62, 0.86, 0.96), vec3(0.96, 0.99, 1.0), clamp(collar * 0.9 + turb * 0.5 + uRudderDrag * 0.4, 0.0, 1.0));
+          gl_FragColor = vec4(col, alpha);
+        }
+      }
+    `,
+  });
+}
+
 export class BoatModel {
   constructor(boat, crewHelm, crewCrew) {
     this.boat = boat;
@@ -589,6 +805,13 @@ export class BoatModel {
     this.slamBurstPow = 0;
     this.slamAutoCD = 0;
 
+    // 船体バウ・チャイン＆ラダーブレードで海面を切る3D水流・バウウェーブ＆ラダーストリームメッシュ(海面高さに追従するroot直下に配置)
+    this.waterCutMat = makeWaterCutMat();
+    this.waterCutMesh = new THREE.Mesh(getWaterCutGeo(), this.waterCutMat);
+    this.waterCutMesh.frustumCulled = false;
+    this.waterCutMesh.renderOrder = 3;
+    this.root.add(this.waterCutMesh);
+
     if (boat.isPlayer) {
       this.tells = [];
       const yGeo = yarnGeo(0.28, 0.0046); // 細い毛糸・紐状のテルテール
@@ -631,6 +854,7 @@ export class BoatModel {
       this.sailMat.dispose();
     }
     if (this.jibGeo) this.jibGeo.dispose();
+    if (this.waterCutMat) this.waterCutMat.dispose();
   }
 
   setFirstPerson(on) {
@@ -646,6 +870,7 @@ export class BoatModel {
     if (this._occAlpha === undefined) this._occAlpha = 1.0;
     if (Math.abs(a - this._occAlpha) < 0.01 && (a >= 0.99) === (this._occAlpha >= 0.99)) return;
     this._occAlpha = a;
+    if (this.waterCutMat) this.waterCutMat.uniforms.uOpacity.value = a;
     if (!this._occMats) {
       this._occMats = [];
       const matMap = new Map();
@@ -690,6 +915,7 @@ export class BoatModel {
   // クローズ時はフット中央(v≈0.25..0.72)がフォアデッキに密接し、先端(v=0)と手前クリュー側(v=1)は船体から浮いた実艇形状を再現
   evalJibPoint(u, v, clewX, clewLocalY, clewLocalZ, camberSigned, pk, out) {
     const sgn = this.boat.tack || 1;
+    const closeF = this._closeFactor ?? 0;
     const headY = JIB_HEAD_Y - 0.055 * pk, headZ = JIB_HEAD_Z - 0.065 * pk;
     const sag = pk * Math.sin(Math.PI * u);
     const lx = -sgn * 0.095 * sag, ly = headY * u - 0.045 * sag, lz = headZ * u - 0.145 * sag;
@@ -700,17 +926,18 @@ export class BoatModel {
     const dx = rx - lx, dz = rz - lz;
     const clen = Math.hypot(dx, dz) || 1;
     const nx = dz / clen, nz = -dx / clen;
-    const upperTension = Math.pow(1 - u, 0.85) * (1 - 0.12 * pk * u) + 0.46 * pk * Math.sin(Math.PI * u);
-    const footProfile = Math.sin(Math.PI * Math.pow(v, 0.85 - 0.18 * pk));
+    const upperTension = Math.pow(1 - u, 0.80) * (1 - 0.12 * pk * u) + 0.46 * pk * Math.sin(Math.PI * u);
+    const footProfile = Math.sin(Math.PI * Math.pow(v, 0.84 - 0.18 * pk));
     const b = camberSigned * footProfile * upperTension;
-    let px = lx + v * dx + nx * b;
+    // クローズ走行時はジブの中〜上部リーチ(v→1, u≈0.25..0.85)が風下へわずかにツイストして開くリアルなスロット形状を表現
+    const jibLeechTwist = -sgn * closeF * (1 - pk) * 0.058 * Math.pow(u, 1.08) * (1 - u * 0.52) * Math.pow(v, 1.25);
+    let px = lx + v * dx + nx * b + jibLeechTwist;
     let py = ly + v * (ry - ly);
     const pz = lz + v * dz + nz * b;
     const zBody = JIB_TACK_Z + pz;
 
     // クローズ走行時: ジブセールの底(フット u→0)の真ん中あたり(v≈0.22..0.76)は船体(フォアデッキ)と密接し、
     // 先端(バウ側 v→0: ジブタック紐で浮く)や手前側(クリュー側 v→1)は船体にくっついていない形状を再現
-    const closeF = this._closeFactor ?? 0;
     if (pk < 0.35 && closeF > 0.05 && u < 0.42) {
       const midFootBell = Math.pow(Math.sin(Math.PI * v), 1.65); // v=0とv=1で0、中央(v=0.5)で1
       const footUWeight = Math.exp(-u * 6.8) * closeF * (1 - pk);
@@ -732,8 +959,8 @@ export class BoatModel {
       const uMain = clamp((yBody - 1.02) / 5.73, 0, 1);
       const chordMain = Math.max(0.35, 2.88 * (1 - uMain) + 0.36 * 4 * uMain * (1 - uMain));
       const vMain = clamp(zMain / chordMain, 0, 1);
-      const bMain = 0.33 * Math.sin(Math.PI * vMain) * (1 - 0.55 * uMain) * Math.sin(Math.PI * Math.min(1, 0.15 + uMain * 0.9));
-      const twMain = MAIN_TWIST * Math.pow(uMain, 1.18) * (1 - uMain) * 2.05 * Math.pow(vMain, 1.12);
+      const bMain = 0.37 * Math.sin(Math.PI * vMain) * (1 - 0.50 * uMain) * Math.sin(Math.PI * Math.min(1, 0.16 + uMain * 0.88));
+      const twMain = MAIN_TWIST * Math.pow(uMain, 1.12) * (1 - uMain * 0.78) * 1.95 * Math.pow(vMain, 1.08);
       const boomAng = this.boomA || 0.03;
       const mainScale = this.mainSail ? Math.abs(this.mainSail.scale.x) : 1;
       const mainLeeDist = zMain * Math.sin(boomAng) + (bMain + twMain) * mainScale * Math.cos(boomAng);
@@ -829,13 +1056,29 @@ export class BoatModel {
       this.rudderGroup.rotation.y = b.steer * 0.6;
     }
 
-    // セール: クローズ走行時はブーム・メインセールをセンターライン近くまでしっかり引き込み、上部リーチがツイストして開く
+    // 船体バウ・チャイン＆ラダーブレードで海面を切る3D水流・バウウェーブ＆ラダーストリームのリアルタイム同期
+    if (this.waterCutMesh && this.waterCutMat) {
+      const surfY = ws.hLong * 0.96 + (ws.h - ws.hLong) * 0.58;
+      this.waterCutMesh.position.y = surfY;
+      this.waterCutMesh.rotation.x = clamp(Math.atan(ws.slopeLong * 0.85 + (ws.slope - ws.slopeLong) * 0.45), -0.09, 0.09);
+      this.waterCutMesh.rotation.z = -clamp(Math.atan(wsR.slope * 0.55), -0.08, 0.08);
+      const u = this.waterCutMat.uniforms;
+      u.uTime.value = t;
+      u.uSpeed.value = clamp(Math.abs(b.v) / 2.25, 0, 1.45);
+      const waveCut = clamp((SEA.H || 0.25) * 1.15 + Math.max(0, ws.h) * 2.1 + Math.max(0, ws.slope) * 2.6 + (b.waveSlam || 0) * 0.9, 0.08, 1.35);
+      u.uWave.value = waveCut;
+      u.uHeel.value = b.heel || 0;
+      u.uSteer.value = b.steer || 0;
+      u.uRudderDrag.value = clamp((b.rudderDrag || 0) + Math.abs(b.steer || 0) * 0.55, 0, 1.2);
+    }
+
+    // セール: クローズ走行時はブーム・メインセールをセンターライン近くまでしっかり引き込み、わずかに深めのキャンバーと開いた上部リーチを表現
     const twa = b.twa, luff = b.luff;
     const closeFactor = clamp(1 - (twa - 0.65) / 0.38, 0, 1);
     this._closeFactor = closeFactor;
-    const effMainSheet = clamp(b.sheet + closeFactor * 0.045, 0, 1);
-    const sheetAng = (0.012 + (1 - closeFactor) * 0.052) + Math.pow(1 - effMainSheet, 1.12) * 1.34;
-    let ang = Math.min(sheetAng, Math.max(0.012, Math.abs(b.awa) - 0.12 * closeFactor - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
+    const effMainSheet = clamp(b.sheet + closeFactor * 0.036, 0, 1);
+    const sheetAng = (0.018 + (1 - closeFactor) * 0.052) + Math.pow(1 - effMainSheet, 1.12) * 1.34;
+    let ang = Math.min(sheetAng, Math.max(0.018, Math.abs(b.awa) - 0.11 * closeFactor - 0.04), 1.0); // シュラウド(サイドステー)を突き抜けない上限
     ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
     const sgn = b.tack;
@@ -856,8 +1099,7 @@ export class BoatModel {
     this.boomRotY += (targetBoomRotY - this.boomRotY) * (1 - Math.exp(-dt * flipRate));
     if (Math.abs(targetBoomRotY - this.boomRotY) < 0.025) this._inGybeFlip = false;
     this.mainPivot.rotation.y = this.boomRotY;
-    // ジブ: クローズ時はさらに一段タイトに引き込み、クローズ以外の角度では従来の自然な引き具合を維持
-    // ランニングのランチャーアップ時は、ジブが手前(アフト側)に引かれて風とほぼ直角(90°)になる角度(1.52〜1.66 rad)へ展開
+    // ジブ: クローズ時はわずかに深めのキャンバーと開いたリーチで引き込み、ランニングのランチャーアップ時は風とほぼ直角へ展開
     const pk = b.poleK || 0;
     // ランチャーアップ時はセンターボードを少し引き上げ(+22cm)、フォアステイのテンションを緩めてマストをわずかに前傾させる
     if (this.cbBoard) this.cbBoard.position.y = pk * 0.22;
@@ -870,12 +1112,12 @@ export class BoatModel {
     const ease = Math.max(0, 0.97 - b.sheet);
     const bearOut = Math.max(0, twa - 0.78) * 0.28;
     const luffOut = luff * (0.28 + 0.09 * Math.sin(t * 21 + this.phase));
-    const baseJibIn = 0.076 * closeFactor + 0.19 * (1 - closeFactor);
+    const baseJibIn = 0.088 * closeFactor + 0.19 * (1 - closeFactor);
     const easeWeight = 0.24 * closeFactor + 0.72 * (1 - closeFactor);
     const jibDesired = baseJibIn + ease * easeWeight + bearOut * 0.42 + luffOut;
-    const jibMaxAwa = Math.max(0.082 + 0.258 * (1 - closeFactor), Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
-    const minJibLee = 0.076 * closeFactor + 0.18 * (1 - closeFactor);
-    const jibLee = clamp(Math.min(Math.max(this.boomA * (0.62 * closeFactor + 0.72 * (1 - closeFactor)), jibDesired), jibMaxAwa), minJibLee, 0.82);
+    const jibMaxAwa = Math.max(0.092 + 0.258 * (1 - closeFactor), Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
+    const minJibLee = 0.088 * closeFactor + 0.18 * (1 - closeFactor);
+    const jibLee = clamp(Math.min(Math.max(this.boomA * (0.65 * closeFactor + 0.72 * (1 - closeFactor)), jibDesired), jibMaxAwa), minJibLee, 0.82);
     // ランニングのランチャー展開時: 風に対して鈍角(前出)にならず、手前(コクピット側)へ引いて風とほぼ直角になる角度(約88°〜95° = 1.54〜1.66 rad)にする
     const wingAngle = clamp(Math.PI - twa + 0.36, 1.52, 1.66);
     const targetJibRot = -sgn * jibLee * (1 - pk) + sgn * wingAngle * pk;
@@ -891,7 +1133,8 @@ export class BoatModel {
     const jibBulge = pk > 0.5 ? -bulgeSign : bulgeSign;
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
     const jibLuff = luff * (1 - pk);
-    this.mainSail.scale.x = bulgeSign * flap;
+    const closeDepthScale = 1 + 0.075 * closeFactor;
+    this.mainSail.scale.x = bulgeSign * flap * closeDepthScale;
     if (this.leechRibbons) {
       const stall = b.stall || 0;
       for (const r of this.leechRibbons) {
@@ -904,8 +1147,8 @@ export class BoatModel {
         r.m.rotation.x = -0.05 + 0.16 * Math.sin(t * 14 + r.ph) * (0.3 + Math.max(luff, stall));
       }
     }
-    // ランチャーアップ時はテンションを抜いてふっくら風をはらんだ深いポケット(0.31)を表現
-    const jibCamberScale = 0.132 * closeFactor + (0.23 + 0.085 * pk) * (1 - closeFactor);
+    // クローズ時はわずかに深めのジブキャンバー(0.162)、ランチャーアップ時はふっくら風をはらんだ深いポケット(0.31)を表現
+    const jibCamberScale = 0.162 * closeFactor + (0.23 + 0.085 * pk) * (1 - closeFactor);
     const transitDip = 1 - 0.55 * Math.sin(Math.PI * pk) * (1 - pk * 0.85);
     const jibCamber = jibBulge * jibCamberScale * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * transitDip;
     this.jibSail.scale.x = 1;
