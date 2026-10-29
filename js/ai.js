@@ -63,6 +63,9 @@ export class AI {
     this.gateRp = null;
     this.poleT = 0;
     this.coverTime = 0;
+    // リーチングで前後に密着した際に後ろから上してブランケットを仕掛けたり対抗する積極性(一部CP艇が積極的に仕掛ける)
+    this.luffAggro = (b.id % 3 !== 0 || rng() < 0.65) ? 0.58 + rng() * 0.42 : 0.20;
+    this.luffMatch = 0;
   }
 
   bearing(tx, tz) { return Math.atan2(tx - this.b.x, -(tz - this.b.z)); }
@@ -716,6 +719,45 @@ export class AI {
         }
       }
       heading = this.headingFor(tgt, t, false, directDownwind);
+      // リーチング(真風角60°〜136°付近・マークから十分離れている区間)での「上し合い(ラフマッチ)」戦術:
+      // 前後に密着した展開では、後ろの艇がラフ(のぼす)して艇速を上げながら風上へ登り前の艇をブランケットに入れようとし、
+      // 前の艇も抜かれないよう対抗してラフする「上し合い」を再現
+      const W = b.windFrom;
+      const twaBrg = Math.abs(wrap(W - heading));
+      let wantLuff = 0;
+      if (!rounding && !directDownwind && distMark > 32 && twaBrg >= 1.05 && twaBrg <= 2.38) {
+        const ux = Math.sin(heading), uz = -Math.cos(heading);
+        const wx = Math.sin(W), wz = -Math.cos(W); // 風上方向ベクトル
+        for (const o of this.others) {
+          if (o === b || o.finished || o.dsq || o.leg !== b.leg) continue;
+          const dx = o.x - b.x, dz = o.z - b.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > 18 * 18) continue;
+          const ahead = dx * ux + dz * uz;
+          const windLat = dx * wx + dz * wz;
+          if (this.luffAggro > 0.42 && ahead > 1.0 && ahead < 16.0 && windLat > -6.5 && windLat < 5.5) {
+            // 1) 直前に他艇がいる後続艇: ラフして艇速を伸ばし、風上側を奪って前の船をブランケットに入れようと仕掛ける
+            const prox = 1 - ahead / 16.0;
+            wantLuff = Math.max(wantLuff, (0.14 + 0.14 * this.luffAggro) * (0.65 + 0.35 * prox));
+          } else if (ahead < -0.5 && ahead > -15.5 && windLat > -3.2 && windLat < 7.0) {
+            // 2) 直後に迫る後続艇がいる先行艇: 後ろの船が風上へ上して被せようとしてきたら対抗して上し合い(ディフェンスラフ)を行う
+            const oTwa = Math.abs(wrap(W - o.h));
+            const attackerLuffing = oTwa < twaBrg - 0.03 || windLat > 0.5;
+            if (attackerLuffing || this.luffAggro > 0.45) {
+              const prox = 1 - Math.abs(ahead) / 15.5;
+              wantLuff = Math.max(wantLuff, (0.13 + 0.12 * Math.max(0.45, this.luffAggro)) * (0.65 + 0.35 * prox));
+            }
+          }
+        }
+      }
+      this.luffMatch += (wantLuff - (this.luffMatch || 0)) * (1 - Math.exp(-dt * 2.8));
+      if (this.luffMatch > 0.015) {
+        const minReachTwa = 1.08; // 62°未満には上りすぎず、最速のリーチング角度帯(62°〜95°)を使って加速する
+        const maxUp = Math.max(0, twaBrg - minReachTwa);
+        const dH = Math.min(this.luffMatch, maxUp);
+        heading = wrap(heading + b.tack * dH);
+        b.sheet = sheetOpt(Math.abs(wrap(W - heading)));
+      }
       this.updatePole(dt, heading, distMark, rounding);
     }
     const av = prestart ? this.avoid(t, heading) : this.avoid(t, heading);
