@@ -267,36 +267,24 @@ function hullWaveSlam(slam) {
   o.start(t); o.stop(t + 0.23);
 }
 
-// シバー時の「バサバサッ」というセールクロスの連続はためきパルス
+// シバー時の「バサバサッ」というセールクロスの連続はためきパルス (0度風位でもうるさくならないよう控えめな布音のみにする)
 function shiverFlap(lv) {
-  if (!ctx || !noiseBuf) return;
+  if (!ctx || !noiseBuf || !boatBus) return;
   const t = ctx.currentTime;
-  const dur = 0.08 + Math.random() * 0.06;
+  const dur = 0.075 + Math.random() * 0.05;
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-  s.playbackRate.value = 0.75 + Math.random() * 0.4;
+  s.playbackRate.value = 0.78 + Math.random() * 0.35;
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-  bp.frequency.setValueAtTime(520 + Math.random() * 380, t);
-  bp.frequency.exponentialRampToValueAtTime(240 + Math.random() * 140, t + dur);
-  bp.Q.value = 0.75;
+  bp.frequency.setValueAtTime(540 + Math.random() * 320, t);
+  bp.frequency.exponentialRampToValueAtTime(260 + Math.random() * 120, t + dur);
+  bp.Q.value = 0.85;
   const g = ctx.createGain();
-  const peak = (0.28 + 0.52 * lv) * (0.85 + Math.random() * 0.3);
+  const peak = (0.08 + 0.14 * lv) * (0.85 + Math.random() * 0.3);
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(peak, t + 0.014);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  s.connect(bp); bp.connect(g); g.connect(master);
+  s.connect(bp); bp.connect(g); g.connect(boatBus);
   s.start(t, Math.random() * 1.2); s.stop(t + dur + 0.02);
-
-  // 布が風を叩く低音の「ボワッ/バサッ」成分
-  const o = ctx.createOscillator(), og = ctx.createGain();
-  o.type = 'triangle';
-  const f0 = 115 + Math.random() * 45;
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(52, t + dur * 0.9);
-  og.gain.setValueAtTime(0.0001, t);
-  og.gain.linearRampToValueAtTime(0.22 * lv, t + 0.01);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(og); og.connect(master);
-  o.start(t); o.stop(t + dur + 0.02);
 }
 
 // active=false(一時停止/メニュー/リザルト/振り返り)で無音。レース中BGM('race_enoshima'/'race_hakkeijima')は帆走音と同時に鳴らす。
@@ -344,15 +332,15 @@ export function updateSailingAudio(dt, b, active = true) {
     chineFilter.frequency.setTargetAtTime(580 + sp * 620 + waveMod3 * 240, now, 0.10);
   }
 
-  // シバー (バサバサ音を大きく・はっきりと再生)
+  // シバー (0度風位でもうるさくならないよう控えめな音量で再生)
   const luff = active && b ? clamp01(b.luff) : 0;
   const lv = luff > 0.08 ? luff : 0;
-  shiverGain.gain.setTargetAtTime(lv * 0.58, now, 0.04);
-  shiverGain._amp.gain.setTargetAtTime(lv * 0.52, now, 0.04);
+  shiverGain.gain.setTargetAtTime(lv * 0.20, now, 0.04);
+  shiverGain._amp.gain.setTargetAtTime(lv * 0.16, now, 0.04);
   tShiver -= dt;
   if (tShiver <= 0) {
-    tShiver = 0.075 + Math.random() * 0.055;
-    shiverLfo.frequency.setValueAtTime(8 + Math.random() * 7, now);
+    tShiver = 0.095 + Math.random() * 0.065;
+    shiverLfo.frequency.setValueAtTime(8 + Math.random() * 6, now);
     if (active && lv > 0.08) shiverFlap(lv);
   }
   if (!active) return;
@@ -497,45 +485,40 @@ export function markHit(vol = 1) {
   tone(540, 0.2, 'sine', 0.15 * vol);
   noiseBurst(0.06, 1500, 'bandpass', 0.4 * vol);
 }
-// セールが「パンッ」と返る音(タック/ジャイブ時)
+// セールが「パンッ」と返る音(タック/ジャイブ時: 低音ブザー成分を排し、セール布の音のみ)
 export function flap(vol = 0.6) {
   if (!ctx || vol <= 0.02) return;
   noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.42 * vol);
-  tone(70 + Math.random() * 25, 0.09, 'sawtooth', 0.1 * vol);
 }
-// タック/ジャイブでセールが返る自然な「バサッ」: セールクロスが風を切って裏返る柔らかい布擦れ音と風をはらむ低い「バサッ」
+// タック/ジャイブでセールが返る自然な「バサッ」: 低音の「ブウ」というオシレーター音を廃し、純粋なセールクロスの布音だけで表現
 export function sailFlog(vol = 0.8) {
   if (!ctx || vol <= 0.02) return;
   const t0 = ctx.currentTime;
-  // 1) 「シュッ…バサッ」: セール布が大きくしなって空気を切る中低域〜中域の布音 (機械的な連打をなくし、1回の自然な布の返しにする)
-  const s1 = ctx.createBufferSource(); s1.buffer = noiseBuf; s1.playbackRate.value = 0.72;
-  const bp1 = ctx.createBiquadFilter(); bp1.type = 'bandpass'; bp1.Q.value = 0.65;
-  bp1.frequency.setValueAtTime(320, t0);
-  bp1.frequency.exponentialRampToValueAtTime(780, t0 + 0.08);
-  bp1.frequency.exponentialRampToValueAtTime(260, t0 + 0.34);
+  // 1) 「シュッ…バサッ」: セール布が大きくしなって空気を切る中低域〜中域の布音
+  const s1 = ctx.createBufferSource(); s1.buffer = noiseBuf; s1.playbackRate.value = 0.78;
+  const bp1 = ctx.createBiquadFilter(); bp1.type = 'bandpass'; bp1.Q.value = 0.72;
+  bp1.frequency.setValueAtTime(380, t0);
+  bp1.frequency.exponentialRampToValueAtTime(860, t0 + 0.08);
+  bp1.frequency.exponentialRampToValueAtTime(310, t0 + 0.34);
   const g1 = ctx.createGain();
   g1.gain.setValueAtTime(0.0001, t0);
   g1.gain.linearRampToValueAtTime(0.38 * vol, t0 + 0.035); // 風をまたぐ瞬間の「バ」
   g1.gain.linearRampToValueAtTime(0.55 * vol, t0 + 0.095); // 裏返って張る「サッ」
-  g1.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.38);
+  g1.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.36);
   s1.connect(bp1); bp1.connect(g1); g1.connect(master);
-  s1.start(t0, Math.random() * 1.0); s1.stop(t0 + 0.42);
+  s1.start(t0, Math.random() * 1.0); s1.stop(t0 + 0.40);
 
-  // 2) ジブのリーチが軽く一度だけ揺れる柔らかい余韻
-  const s2 = ctx.createBufferSource(); s2.buffer = noiseBuf; s2.playbackRate.value = 0.85;
-  const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.setValueAtTime(950, t0 + 0.12); lp2.frequency.exponentialRampToValueAtTime(280, t0 + 0.45);
+  // 2) ジブのリーチが軽く一度だけ揺れる柔らかい布の余韻
+  const s2 = ctx.createBufferSource(); s2.buffer = noiseBuf; s2.playbackRate.value = 0.90;
+  const lp2 = ctx.createBiquadFilter(); lp2.type = 'bandpass'; lp2.Q.value = 0.85;
+  lp2.frequency.setValueAtTime(980, t0 + 0.11);
+  lp2.frequency.exponentialRampToValueAtTime(360, t0 + 0.42);
   const g2 = ctx.createGain();
-  g2.gain.setValueAtTime(0.0001, t0 + 0.12);
-  g2.gain.linearRampToValueAtTime(0.32 * vol, t0 + 0.17);
-  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.46);
+  g2.gain.setValueAtTime(0.0001, t0 + 0.11);
+  g2.gain.linearRampToValueAtTime(0.30 * vol, t0 + 0.16);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.43);
   s2.connect(lp2); lp2.connect(g2); g2.connect(master);
-  s2.start(t0 + 0.12, Math.random() * 1.0); s2.stop(t0 + 0.5);
-
-  // 3) 新しいタックでセールが風をはらむ柔らかい低域の「ボフッ」
-  const o = ctx.createOscillator(), og = ctx.createGain();
-  o.type = 'sine'; o.frequency.setValueAtTime(92, t0 + 0.06); o.frequency.exponentialRampToValueAtTime(42, t0 + 0.28);
-  og.gain.setValueAtTime(0.0001, t0 + 0.06); og.gain.linearRampToValueAtTime(0.28 * vol, t0 + 0.09); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
-  o.connect(og); og.connect(master); o.start(t0 + 0.06); o.stop(t0 + 0.32);
+  s2.start(t0 + 0.11, Math.random() * 1.0); s2.stop(t0 + 0.46);
 }
 // ランチャー上げ下げの実艇音「シャキンーーッ！＋バサッ！」:
 // ①アルミポールとステンレスリングが擦れる長めで鮮明な金属スライド音「シャーー」→
@@ -747,7 +730,12 @@ export function playBgm(mode = 'result') {
 
   const bus = ctx.createGain();
   bus.gain.setValueAtTime(0.001, ctx.currentTime);
-  const targetGain = mode === 'result' ? 0.42 : mode === 'review' ? 0.38 : mode === 'menu' ? 0.34 : 0.25;
+  // BGMを全体的に少し大きめ・聴き応えのある音量バランスに調整
+  const targetGain = mode === 'result' ? 0.54
+    : mode === 'review' ? 0.48
+    : mode === 'menu' ? 0.44
+    : mode === 'orientation' ? 0.40
+    : 0.34;
   bus.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.28);
   bus.connect(master);
   const revSend = ctx.createGain();
@@ -786,6 +774,18 @@ export function playBgm(mode = 'result') {
     s.start(t0, Math.random() * 1.2); s.stop(t0 + dur + 0.02);
   };
 
+  const playSnare = (t0, vol = 0.055) => {
+    if (!ctx || !noiseBuf || !bgmBus || bgmBus !== bus || !bgmVoiceEnabled) return;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1850; bp.Q.value = 0.9;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+    s.connect(bp); bp.connect(g); g.connect(bus);
+    s.start(t0, Math.random() * 1.0); s.stop(t0 + 0.13);
+  };
+
   let step = 0;
   if (mode === 'menu') {
     // スタート画面BGM: 出艇前のヨットハーバーをイメージした爽やかで心地よいブリージー・マリーナBGM (112 BPM, 8分音符=0.268s)
@@ -809,19 +809,104 @@ export function playBgm(mode = 'result') {
       const ch = chords[Math.floor(s / 8)];
       const sub = s % 8;
       if (sub === 0 || sub === 4) {
-        ch.notes.forEach((f, i) => playNote(f, t0 + i * 0.015, sub === 0 ? 0.95 : 0.65, 'triangle', 0.046, 1900));
+        ch.notes.forEach((f, i) => playNote(f, t0 + i * 0.015, sub === 0 ? 0.95 : 0.65, 'triangle', 0.048, 1900));
       }
       if (sub === 0) playNote(ch.bass * 2, t0, 0.55, 'sine', 0.12, 520);
       else if (sub === 4) playNote(ch.bass * 3, t0, 0.38, 'sine', 0.08, 520);
       const af = ch.notes[arpIdx[sub] % ch.notes.length] * 2;
-      playNote(af, t0, 0.26, 'sine', 0.034, 2400);
+      playNote(af, t0, 0.26, 'sine', 0.036, 2400);
       const mf = melody[s];
-      if (mf > 0) playNote(mf, t0, 0.42, 'sine', 0.068, 3000);
-      playHat(t0, sub % 2 === 0 ? 0.020 : 0.011, sub === 6);
+      if (mf > 0) playNote(mf, t0, 0.42, 'sine', 0.072, 3000);
+      playHat(t0, sub % 2 === 0 ? 0.022 : 0.012, sub === 6);
       step++;
     };
     tick();
     bgmTimer = setInterval(tick, 268);
+  } else if (mode === 'orientation') {
+    // オリエンテーションBGM: スマブラの「あそびかた / 戦場」風のヒロイックで疾走感あるシンフォニック・ロックBGM (142 BPM, 8分音符=0.211s)
+    // キー: Dマイナー / Dm -> Bb -> C -> F/A -> Gm7 -> A7 -> Dm -> C/A7
+    const chords = [
+      { bass: 73.42, notes: [293.66, 349.23, 440.00, 587.33] }, // Dm
+      { bass: 58.27, notes: [233.08, 293.66, 349.23, 466.16] }, // Bb
+      { bass: 65.41, notes: [261.63, 329.63, 392.00, 523.25] }, // C
+      { bass: 87.31, notes: [349.23, 440.00, 523.25, 659.25] }, // Fmaj7
+      { bass: 98.00, notes: [293.66, 349.23, 392.00, 466.16] }, // Gm7
+      { bass: 55.00, notes: [220.00, 277.18, 329.63, 440.00] }, // A7
+      { bass: 73.42, notes: [293.66, 349.23, 440.00, 587.33] }, // Dm
+      { bass: 55.00, notes: [277.18, 329.63, 392.00, 554.37] }, // A7(#9)
+    ];
+    const melody = [
+      587.33, 0, 587.33, 659.25,  698.46, 0, 659.25, 587.33,
+      523.25, 0, 587.33, 659.25,  783.99, 0, 698.46, 659.25,
+      698.46, 783.99, 880.00, 0,  880.00, 783.99, 698.46, 659.25,
+      587.33, 0, 698.46, 659.25,  587.33, 0, 0, 0,
+    ];
+    const tick = () => {
+      if (bgmMode !== 'orientation' || bgmBus !== bus || !ctx) return;
+      const t0 = ctx.currentTime + 0.03;
+      const s = step % 32;
+      const ch = chords[Math.floor(s / 4)];
+      const sub = s % 4;
+      // ブラス＆ストリングス風コードヒット
+      if (sub === 0 || sub === 2) {
+        ch.notes.forEach((f, i) => playNote(f, t0 + i * 0.007, sub === 0 ? 0.36 : 0.22, 'sawtooth', 0.042, 2450));
+      }
+      // 疾走する8ビート・ロックベース
+      playNote(ch.bass * (sub % 2 === 0 ? 2 : 3), t0, 0.19, 'sawtooth', sub === 0 ? 0.105 : 0.072, 760);
+      // ヒロイックなブラス・リードメロディ
+      const mf = melody[s];
+      if (mf > 0) {
+        playNote(mf, t0, 0.30, 'sawtooth', 0.058, 3200);
+        playNote(mf * 0.5, t0, 0.28, 'square', 0.036, 1900);
+      }
+      // ドラムビート(ハイハット＆裏拍スネア)
+      playHat(t0, sub % 2 === 0 ? 0.026 : 0.016, sub === 3);
+      if (sub === 2) playSnare(t0, 0.052);
+      step++;
+    };
+    tick();
+    bgmTimer = setInterval(tick, 211);
+  } else if (mode === 'prestart_enoshima' || mode === 'prestart_hakkeijima') {
+    // スタート前(1分前〜0:00)BGM: スタートラインでのポジショニング・加速の緊張感と高揚感を高めるカウントダウン・パルスBGM (124 BPM, 8分音符=0.242s)
+    const isHakkei = mode === 'prestart_hakkeijima';
+    const chords = isHakkei
+      ? [
+          { bass: 65.41, notes: [261.63, 311.13, 392.00, 466.16] }, // Cm7
+          { bass: 58.27, notes: [233.08, 293.66, 349.23, 466.16] }, // Bb
+          { bass: 51.91, notes: [207.65, 261.63, 311.13, 392.00] }, // Abmaj7
+          { bass: 49.00, notes: [196.00, 246.94, 293.66, 392.00] }, // G7
+        ]
+      : [
+          { bass: 73.42, notes: [293.66, 369.99, 440.00, 523.25] }, // D7sus4
+          { bass: 65.41, notes: [261.63, 329.63, 392.00, 493.88] }, // Cmaj7
+          { bass: 58.27, notes: [233.08, 293.66, 349.23, 440.00] }, // Bbmaj7
+          { bass: 55.00, notes: [220.00, 277.18, 329.63, 392.00] }, // A7
+        ];
+    const arpSeq = [0, 1, 2, 3, 2, 1, 3, 2];
+    const tick = () => {
+      if (bgmMode !== mode || bgmBus !== bus || !ctx) return;
+      const t0 = ctx.currentTime + 0.03;
+      const s = step % 32;
+      const ch = chords[Math.floor(s / 8)];
+      const sub = s % 8;
+      // 緊張感のあるパルス・シンセアルペジオ
+      const af = ch.notes[arpSeq[sub] % ch.notes.length] * 2;
+      playNote(af, t0, 0.18, 'triangle', sub % 2 === 0 ? 0.056 : 0.038, 2400);
+      // タイトな低音パルスベース
+      if (sub % 2 === 0) {
+        playNote(ch.bass * 2, t0, 0.22, 'sawtooth', sub === 0 ? 0.095 : 0.068, 560);
+      }
+      // 小節頭のサステインパッド
+      if (sub === 0) {
+        ch.notes.forEach((f, i) => playNote(f, t0 + i * 0.01, 0.85, 'sine', 0.036, 1500));
+      }
+      // 秒針を刻むようなクリスプなハイハット＆リム
+      playHat(t0, sub % 2 === 0 ? 0.026 : 0.014, sub === 7);
+      if (sub === 4) playSnare(t0, 0.034);
+      step++;
+    };
+    tick();
+    bgmTimer = setInterval(tick, 242);
   } else if (mode === 'race_enoshima') {
     // 江の島レース中BGM: 湘南・相模湾の太陽と潮風を感じる爽快オーシャン・レガッタフュージョン (128 BPM, 8分音符=0.234s)
     // キー: Aメジャー / Dmaj7 -> E7 -> C#m7 -> F#m7 -> Bm7 -> E7 -> Amaj7 -> A7
@@ -987,11 +1072,12 @@ export function playBgm(mode = 'result') {
   }
 }
 
-// ---- 接近時の権利主張コール (スタボ！ / 下！ / 動物の鳴き声) ----
-// crewType: 'human_m' | 'human_f' | 'cat' | 'dog' | 'duck'
+// ---- 接近時の権利主張コール (動物キャラクターのみ鳴き声を鳴らし、人間は声を出さない) ----
+// crewType: 'cat' | 'dog' | 'duck' (human_m / human_f はスキップ)
 // callKind: 'starboard' (スタボ) | 'leeward' (下)
-export function playRightOfWayHail(crewType = 'human_m', callKind = 'starboard', pan = 0) {
+export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard', pan = 0) {
   if (!bgmVoiceEnabled || muted) return;
+  if (crewType !== 'cat' && crewType !== 'dog' && crewType !== 'shiba' && crewType !== 'duck') return;
   initAudio();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
@@ -1110,79 +1196,56 @@ export function playRightOfWayHail(crewType = 'human_m', callKind = 'starboard',
       o1.start(ts); o2.start(ts);
       o1.stop(ts + dur + 0.03); o2.stop(ts + dur + 0.03);
     });
+  }
+}
+
+// スタート画面でキャラクターを選択したときのボイス・鳴き声再生
+export function playCrewSelectSound(crewType = 'human_m') {
+  if (!bgmVoiceEnabled || muted) return;
+  initAudio();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+
+  if (crewType === 'cat' || crewType === 'dog' || crewType === 'shiba' || crewType === 'duck') {
+    playRightOfWayHail(crewType, 'starboard', 0);
     return;
   }
 
-  // 人間 ('human_m' / 'human_f'): 「スタボ！」 / 「下！」
+  // 人間キャラクター選択時: 爽やかな決定チャイム＋明るい「よし！ / いくよ！」フォルマントボイス
   const isFemale = crewType === 'human_f';
-  let spokeTts = false;
-  try {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-      const synth = window.speechSynthesis;
-      if (!synth.speaking) {
-        const utter = new SpeechSynthesisUtterance(callKind === 'starboard' ? 'スタボ！' : 'シタ！');
-        utter.lang = 'ja-JP';
-        utter.pitch = isFemale ? 1.38 : 0.92;
-        utter.rate = 1.28;
-        utter.volume = 0.92;
-        const voices = synth.getVoices ? synth.getVoices() : [];
-        const jaVoices = voices.filter((v) => v.lang && v.lang.toLowerCase().includes('ja'));
-        if (jaVoices.length > 0) {
-          utter.voice = jaVoices[0];
-        }
-        synth.speak(utter);
-        spokeTts = true;
-      }
-    }
-  } catch (e) {}
+  const t0 = ctx.currentTime + 0.01;
+  const fBase = isFemale ? 265 : 155;
+  const notes = isFemale ? [523.25, 659.25, 1046.5] : [392.00, 523.25, 783.99];
+  notes.forEach((f, idx) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(f, t0 + idx * 0.045);
+    g.gain.setValueAtTime(0.0001, t0 + idx * 0.045);
+    g.gain.linearRampToValueAtTime(0.14, t0 + idx * 0.045 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + idx * 0.045 + 0.22);
+    o.connect(g); g.connect(master);
+    o.start(t0 + idx * 0.045); o.stop(t0 + idx * 0.045 + 0.24);
+  });
 
-  // WebAudio フォルマント声フォールバック＆アタック補強 (TTS非対応環境でも確実に迫力ある掛け声が鳴るようにする)
-  const fBase = isFemale ? 255 : 148;
-  const syllables = callKind === 'starboard'
-    ? [
-        // 「ス・タ・ボ！」
-        { dt: 0.00, dur: 0.065, f0: fBase * 1.05, f1: fBase * 1.15, form1: 420, form2: 1950, sibilant: 0.22 },
-        { dt: 0.07, dur: 0.095, f0: fBase * 1.28, f1: fBase * 1.38, form1: 820, form2: 1450, sibilant: 0.06 },
-        { dt: 0.17, dur: 0.180, f0: fBase * 1.35, f1: fBase * 1.02, form1: 520, form2: 980,  sibilant: 0.02 },
-      ]
-    : [
-        // 「シ・タ！」
-        { dt: 0.00, dur: 0.075, f0: fBase * 1.12, f1: fBase * 1.24, form1: 380, form2: 2250, sibilant: 0.26 },
-        { dt: 0.08, dur: 0.190, f0: fBase * 1.42, f1: fBase * 1.05, form1: 840, form2: 1480, sibilant: 0.05 },
-      ];
-  const synthVolMul = spokeTts ? 0.32 : 0.78;
-  for (const syl of syllables) {
+  // 短い元気な掛け声フォルマント
+  [
+    { dt: 0.00, dur: 0.075, f0: fBase * 1.15, f1: fBase * 1.38, form1: 680, form2: 1750 },
+    { dt: 0.08, dur: 0.130, f0: fBase * 1.32, f1: fBase * 1.08, form1: 520, form2: 1420 },
+  ].forEach((syl) => {
     const ts = t0 + syl.dt;
-    const o = ctx.createOscillator();
+    const o = ctx.createOscillator(), bp1 = ctx.createBiquadFilter(), bp2 = ctx.createBiquadFilter(), g = ctx.createGain();
     o.type = 'sawtooth';
     o.frequency.setValueAtTime(syl.f0, ts);
     o.frequency.exponentialRampToValueAtTime(syl.f1, ts + syl.dur);
-
-    const bp1 = ctx.createBiquadFilter(), bp2 = ctx.createBiquadFilter();
     bp1.type = 'bandpass'; bp1.frequency.value = syl.form1; bp1.Q.value = 3.2;
-    bp2.type = 'bandpass'; bp2.frequency.value = syl.form2; bp2.Q.value = 3.8;
-
-    const g = ctx.createGain();
+    bp2.type = 'bandpass'; bp2.frequency.value = syl.form2; bp2.Q.value = 3.6;
     g.gain.setValueAtTime(0.0001, ts);
-    g.gain.linearRampToValueAtTime(0.32 * synthVolMul, ts + 0.014);
+    g.gain.linearRampToValueAtTime(0.16, ts + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, ts + syl.dur + 0.02);
-
-    o.connect(bp1); o.connect(bp2);
-    bp1.connect(g); bp2.connect(g);
-    g.connect(out);
+    o.connect(bp1); o.connect(bp2); bp1.connect(g); bp2.connect(g); g.connect(master);
     o.start(ts); o.stop(ts + syl.dur + 0.03);
-
-    if (noiseBuf && syl.sibilant > 0) {
-      const ns = ctx.createBufferSource(); ns.buffer = noiseBuf;
-      const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 4600; hp.Q.value = 2.0;
-      const ng = ctx.createGain();
-      ng.gain.setValueAtTime(0.0001, ts);
-      ng.gain.linearRampToValueAtTime(syl.sibilant * synthVolMul, ts + 0.008);
-      ng.gain.exponentialRampToValueAtTime(0.0001, ts + 0.05);
-      ns.connect(hp); hp.connect(ng); ng.connect(out);
-      ns.start(ts, Math.random() * 0.8); ns.stop(ts + 0.06);
-    }
-  }
+  });
 }
+
 
 
