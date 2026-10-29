@@ -8,7 +8,7 @@ import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
 import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
-import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm } from './audio.js';
+import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
@@ -35,10 +35,14 @@ const PENALTY_MODES = [
   { id: 'off', label: 'ペナルティなし', icon: '' },
   { id: 'on', label: 'ペナルティあり (360°/720°・DSQ)', icon: '' },
 ];
+const BGM_MODES = [
+  { id: 'on', label: 'BGM ON (音楽・声あり)', icon: '' },
+  { id: 'off', label: 'BGM OFF', icon: '' },
+];
 const PLAYER_BIB = 0x0e52b8; // 自艇クルー・スキッパーの青ビブス
 const CP_BIBS = [0x181c24, 0xf1f5f9, 0xc8242b]; // CP艇のビブス色（黒・白・赤）
 const weatherCache = {}; // Open-Meteo 取得結果キャッシュ(スタート前のメニュー時のみ1回取得しレース中の負荷ゼロ)
-const defaults = { venue: 'hakkeijima', courseMode: 'trapezoid', penaltyMode: 'off', helm: 'human_m', crew: 'cat', skin: '#d68e66', shirt: '#1a1d22', hat: '#ffffff', sailNo: '31804' };
+const defaults = { venue: 'hakkeijima', courseMode: 'trapezoid', penaltyMode: 'off', bgmMode: 'on', helm: 'human_m', crew: 'cat', skin: '#d68e66', shirt: '#1a1d22', hat: '#ffffff', sailNo: '31804' };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(localStorage.getItem('snipe-cfg') || '{}') }; } catch (e) {}
 if (cfg.sailNo === '31415' || cfg.sailNo === '30804') cfg.sailNo = '31804';
@@ -49,6 +53,8 @@ cfg.helm = 'human_m';
 cfg.crew = 'cat';
 if (!COURSE_MODES.find((m) => m.id === cfg.courseMode)) cfg.courseMode = 'trapezoid';
 if (!PENALTY_MODES.find((m) => m.id === cfg.penaltyMode)) cfg.penaltyMode = 'off';
+if (!BGM_MODES.find((m) => m.id === cfg.bgmMode)) cfg.bgmMode = 'on';
+setBgmVoiceEnabled(cfg.bgmMode !== 'off');
 const saveCfg = () => { try { localStorage.setItem('snipe-cfg', JSON.stringify(cfg)); } catch (e) {} };
 const hexNum = (s) => parseInt(s.replace('#', ''), 16);
 
@@ -176,6 +182,9 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
       helm = { type: cfg.helm, style: { ...humanStyle(false), jacket } };
       crew = { type: cfg.crew, style: { ...humanStyle(false), jacket } };
     } else { helm = randomCrewSpec(); crew = randomCrewSpec(); }
+    b.helmType = helm.type;
+    b.crewType = crew.type;
+    b.hailCD = 1.5 + rng() * 2.0;
     const m = new BoatModel(b, helm, crew);
     m.sync(0, 0);
     scene.add(m.root);
@@ -190,6 +199,8 @@ function rebuildPlayerModel() {
   if (models[0].dispose) models[0].dispose();
   scene.remove(models[0].root);
   player.sailNo = cfg.sailNo;
+  player.helmType = cfg.helm;
+  player.crewType = cfg.crew;
   const jacket = PLAYER_BIB;
   const helm = { type: cfg.helm, style: { ...humanStyle(false), jacket } };
   const crew = { type: cfg.crew, style: { ...humanStyle(false), jacket } };
@@ -434,6 +445,148 @@ function updateNearBoatsHUD(b) {
   }
 }
 
+// ---------- 接近時の権利主張コール (スタボ！ / 下！ / 動物の鳴き声) ----------
+const hailBubblesBox = $('hailBubbles');
+const activeHails = [];
+const hailProjV3 = new THREE.Vector3();
+let globalHailCD = 0;
+
+function formatHailText(crewType, callKind) {
+  const ruleWord = callKind === 'starboard' ? 'スタボ！' : '下！';
+  if (crewType === 'cat') return { main: 'ニャン！', sub: ruleWord };
+  if (crewType === 'dog' || crewType === 'shiba') return { main: 'ワン！', sub: ruleWord };
+  if (crewType === 'duck') return { main: 'グワッ！', sub: ruleWord };
+  return { main: ruleWord, sub: '' };
+}
+
+function spawnHailBubble(rowBoat, callKind) {
+  if (!hailBubblesBox || !rowBoat) return;
+  const existing = activeHails.find((h) => h.boat === rowBoat);
+  if (existing) {
+    existing.ttl = 2.1;
+    return;
+  }
+  const el = document.createElement('div');
+  el.className = 'hailBubble';
+  const colHex = '#' + rowBoat.color.toString(16).padStart(6, '0');
+  const { main, sub } = formatHailText(rowBoat.helmType || 'human_m', callKind);
+  el.innerHTML = `<span class="hbSw" style="background:${colHex}"></span><span>${main}</span>${sub ? `<span class="hbSub">(${sub})</span>` : ''}`;
+  hailBubblesBox.appendChild(el);
+  activeHails.push({ boat: rowBoat, el, ttl: 2.1 });
+}
+
+function clearHailBubbles() {
+  while (activeHails.length > 0) {
+    const h = activeHails.pop();
+    if (h.el && h.el.parentNode) h.el.remove();
+  }
+}
+
+function checkRightOfWayHails(dt) {
+  if (!player || state.ff || state.phase !== 'race' || cfg.bgmMode === 'off') return;
+  if (globalHailCD > 0) globalHailCD -= dt;
+  for (const b of boats) {
+    if (b.hailCD > 0) b.hailCD -= dt;
+  }
+  if (globalHailCD > 0) return;
+
+  const n = boats.length;
+  for (let i = 0; i < n; i++) {
+    const a = boats[i];
+    if (a.dsq || a.finished || a.penalty) continue;
+    for (let j = i + 1; j < n; j++) {
+      const b = boats[j];
+      if (b.dsq || b.finished || b.penalty) continue;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const distM = Math.hypot(dx, dz) / 1.5;
+      if (distM > 13.5 || distM < 1.2) continue;
+
+      // 自艇が絡む接近、または自艇の近く(22m以内)で発生した接近のみ声を鳴らす
+      const involvesPlayer = a === player || b === player;
+      const dPlayer = involvesPlayer ? distM : Math.min(Math.hypot(a.x - player.x, a.z - player.z), Math.hypot(b.x - player.x, b.z - player.z)) / 1.5;
+      if (!involvesPlayer && dPlayer > 22) continue;
+
+      // 接近中または至近距離(8.2m以内)か判定
+      const avx = Math.sin(a.h) * a.v, avz = -Math.cos(a.h) * a.v;
+      const bvx = Math.sin(b.h) * b.v, bvz = -Math.cos(b.h) * b.v;
+      const closingDot = dx * (bvx - avx) + dz * (bvz - avz);
+      if (closingDot >= -0.05 && distM > 8.2) continue;
+
+      let rowBoat = null, gwBoat = null, callKind = null;
+      if (a.tack !== b.tack) {
+        // ルール10: ポート・スターボード (tack > 0 がスターボード艇)
+        rowBoat = a.tack > 0 ? a : b;
+        gwBoat = a.tack > 0 ? b : a;
+        callKind = 'starboard';
+      } else {
+        // ルール11: 同一タックのオーバーラップ (風下艇が権利艇)
+        const wf = a.windFrom ?? W0;
+        const dwx = -Math.sin(wf), dwz = Math.cos(wf); // 風下ベクトル
+        const rwx = Math.cos(wf), rwz = Math.sin(wf);
+        // 艇の進行方向に沿った前後差でオーバーラップ判定
+        const hx = Math.sin(a.h), hz = -Math.cos(a.h);
+        const along = (dx * hx + dz * hz) / 1.5;
+        const cross = Math.abs(dx * rwx + dz * rwz) / 1.5;
+        if (Math.abs(along) < 5.5 && cross < 8.5) {
+          // 風下度合い: dw ベクトル方向の座標が大きい方がより風下
+          const leeA = a.x * dwx + a.z * dwz;
+          const leeB = b.x * dwx + b.z * dwz;
+          if (Math.abs(leeA - leeB) > 1.2) {
+            rowBoat = leeA > leeB ? a : b;
+            gwBoat = leeA > leeB ? b : a;
+            callKind = 'leeward';
+          }
+        }
+      }
+
+      if (rowBoat && gwBoat && callKind && rowBoat.hailCD <= 0) {
+        // 他艇が自艇に対してスタボ/下の権利を持つ時は優先的に声を出して主張する
+        if (!involvesPlayer && rng() < 0.45) continue;
+        rowBoat.hailCD = (involvesPlayer ? 5.2 : 7.5) + rng() * 2.5;
+        globalHailCD = involvesPlayer ? 1.25 : 2.0;
+
+        const rx = Math.cos(player.h), rz = Math.sin(player.h);
+        const pdx = rowBoat.x - player.x, pdz = rowBoat.z - player.z;
+        const pDist = Math.hypot(pdx, pdz) || 1;
+        const pan = rowBoat === player ? 0 : clamp(((pdx * rx + pdz * rz) / pDist) * 0.85, -0.88, 0.88);
+        playRightOfWayHail(rowBoat.helmType || 'human_m', callKind, pan);
+        spawnHailBubble(rowBoat, callKind);
+        return;
+      }
+    }
+  }
+}
+
+function updateHailBubbles(dt) {
+  if (!hailBubblesBox) return;
+  if (state.phase !== 'race' || state.paused || cfg.bgmMode === 'off') {
+    for (const h of activeHails) h.el.style.display = 'none';
+    return;
+  }
+  const W = window.innerWidth, H = window.innerHeight;
+  for (let i = activeHails.length - 1; i >= 0; i--) {
+    const h = activeHails[i];
+    h.ttl -= dt;
+    if (h.ttl <= 0 || !h.boat || h.boat.dsq) {
+      if (h.el && h.el.parentNode) h.el.remove();
+      activeHails.splice(i, 1);
+      continue;
+    }
+    hailProjV3.set(h.boat.x, 3.6, h.boat.z);
+    hailProjV3.project(camera);
+    if (hailProjV3.z > 1) {
+      h.el.style.display = 'none';
+      continue;
+    }
+    const sx = clamp((hailProjV3.x * 0.5 + 0.5) * W, 64, W - 64);
+    const sy = clamp((-hailProjV3.y * 0.5 + 0.5) * H, 52, H - 72);
+    h.el.style.display = 'inline-flex';
+    h.el.style.left = `${sx}px`;
+    h.el.style.top = `${sy}px`;
+    h.el.style.opacity = h.ttl < 0.35 ? (h.ttl / 0.35).toFixed(2) : '1';
+  }
+}
+
 function updateHUD(sorted) {
   const b = player, t = state.t;
   const isMenu = state.phase === 'menu';
@@ -589,7 +742,8 @@ function handleCollision(e) {
 // ---------- レース進行 ----------
 function startRace() {
   initAudio();
-  stopBgm();
+  clearHailBubbles();
+  playBgm(cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima');
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   randomizeStartLine();
@@ -1036,6 +1190,7 @@ function exitOrientation(toRace = false) {
     $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden');
     state.phase = 'menu'; document.body.classList.add('menuOpen'); cam.menuOffset = true;
     makeFleet(true);
+    playBgm('menu');
   }
 }
 
@@ -1277,6 +1432,7 @@ function simStep(dt) {
   computeBlanket(boats);
   for (const b of boats) b.update(dt, t, boats);
   for (const e of resolveCollisions(boats, t)) { if (recorder) recorder.event(e, t); handleCollision(e); }
+  checkRightOfWayHails(dt);
   for (const b of boats) {
     if (b.penaltyUpgraded !== null) {
       const r = b.penaltyUpgraded;
@@ -1353,9 +1509,11 @@ function togglePause(p) {
   state.paused = p !== undefined ? p : !state.paused;
   const modal = $('pauseModal');
   if (state.paused) {
+    stopBgm();
     modal.classList.remove('hidden');
     toast('一時中断中', 'info', 2000);
   } else {
+    playBgm(cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima');
     modal.classList.add('hidden');
     toast('再開', 'info', 1500);
   }
@@ -1432,6 +1590,7 @@ function loop() {
     if (world.setTargetMark) world.setTargetMark(player.leg, (state.phase === 'race' || state.phase === 'orientation') ? state.t : 1, player.finished);
     updateMarkPointer(player);
     updateNearBoatsHUD(player);
+    updateHailBubbles(dt);
     if (state.phase === 'orientation') applyOrientStepHighlights(orientState.step, orientState.elapsed);
   }
   
@@ -1510,7 +1669,7 @@ function initTouch() {
   tap('pauseBtn', () => togglePause());
   tap('resumeBtn', () => togglePause(false));
   tap('restartBtn', () => { togglePause(false); startRace(); });
-  tap('exitMenuBtn', () => { stopBgm(); togglePause(false); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; state.resultShown = false; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(true); });
+  tap('exitMenuBtn', () => { clearHailBubbles(); togglePause(false); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; state.resultShown = false; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(true); playBgm('menu'); });
 
   // ランチャー アップ/ダウン
   tap('poleUpBtn', () => setPlayerPole(true));
@@ -1688,6 +1847,23 @@ function buildPenaltyChoices() {
     box.appendChild(btn);
   }
 }
+function buildBgmChoices() {
+  const box = $('bgmChoices'); if (!box) return;
+  box.innerHTML = '';
+  for (const m of BGM_MODES) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'choice' + (cfg.bgmMode === m.id ? ' sel' : ''); btn.id = `bgmMode-${m.id}`;
+    btn.innerHTML = `<span class="ic">${m.icon}</span><span class="lb">${m.label}</span>`;
+    btn.onclick = () => {
+      cfg.bgmMode = m.id;
+      saveCfg();
+      setBgmVoiceEnabled(cfg.bgmMode !== 'off');
+      if (cfg.bgmMode !== 'off' && state.phase === 'menu') playBgm('menu');
+      buildBgmChoices();
+    };
+    box.appendChild(btn);
+  }
+}
 function buildChoices(containerId, key) {
   const box = $(containerId); if (!box) return;
   box.innerHTML = '';
@@ -1725,6 +1901,7 @@ function initMenu() {
   buildVenueChoices();
   buildCourseChoices();
   buildPenaltyChoices();
+  buildBgmChoices();
   buildChoices('helmChoices', 'helm'); buildChoices('crewChoices', 'crew');
   const sn = $('sailNo');
   if (sn) {
@@ -1739,8 +1916,16 @@ function initMenu() {
   if ($('practiceBtn')) $('practiceBtn').onclick = startOrientation;
   if ($('orientPauseBtn')) $('orientPauseBtn').onclick = toggleOrientPause;
   if ($('orientExitBtn')) $('orientExitBtn').onclick = () => exitOrientation(false);
-  $('againBtn').onclick = () => { stopBgm(); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; state.resultShown = false; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(true); };
+  $('againBtn').onclick = () => { clearHailBubbles(); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; state.resultShown = false; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(true); playBgm('menu'); };
   initPreview();
+  // スタート画面での初回操作時にスタート画面BGMを開始(ブラウザの自動再生制限対応)
+  const unlockMenuBgm = () => {
+    if (state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
+    window.removeEventListener('pointerdown', unlockMenuBgm);
+    window.removeEventListener('keydown', unlockMenuBgm);
+  };
+  window.addEventListener('pointerdown', unlockMenuBgm);
+  window.addEventListener('keydown', unlockMenuBgm);
 }
 
 (async function boot() {
