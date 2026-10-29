@@ -1,6 +1,7 @@
 // 運営艇・アウター艇・フィニッシュ艇・観覧艇のリアルなモーターボートモデル
 // ローカル座標: 船首 +z / 船尾 -z / y=上(喫水線 y=0)
 import * as THREE from 'three';
+import { buildFigure } from './crew.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const mat = (c, r = 0.5, m = 0, extra = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m, ...extra });
@@ -33,6 +34,38 @@ function flagMesh(w, h, color, text) {
     x.strokeStyle = '#cbd5e1'; x.lineWidth = 4; x.strokeRect(2, 2, 124, 80);
     x.fillStyle = '#1d4ed8'; x.fillRect(28, 18, 72, 48);
     x.fillStyle = '#ffffff'; x.font = 'bold 38px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('S', 64, 43);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
+  } else if (text === 'P') {
+    // 国際信号旗「P旗」(準備信号・1分前に降下): 濃紺/青地に白い中央長方形
+    const c = document.createElement('canvas'); c.width = 128; c.height = 84; const x = c.getContext('2d');
+    x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 128, 84);
+    x.strokeStyle = '#1e3a8a'; x.lineWidth = 3; x.strokeRect(1.5, 1.5, 125, 81);
+    x.fillStyle = '#ffffff'; x.fillRect(30, 18, 68, 48);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
+  } else if (text === 'SNIPE') {
+    // スナイプ級クラス旗(5分前に掲揚・0秒スタートで降下): 白地に赤いスナイプ鳥シルエット
+    const c = document.createElement('canvas'); c.width = 160; c.height = 104; const x = c.getContext('2d');
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 160, 104);
+    x.strokeStyle = '#cbd5e1'; x.lineWidth = 4; x.strokeRect(2, 2, 156, 100);
+    x.save();
+    x.translate(78, 56);
+    x.scale(1.15, 1.15);
+    x.fillStyle = '#dc2626';
+    x.beginPath();
+    x.moveTo(46, -8);    // 長いくちばし先端
+    x.lineTo(18, -5);    // 頭頂
+    x.quadraticCurveTo(10, -9, 2, -4);
+    x.quadraticCurveTo(-8, -26, -34, -22); // 翼端上
+    x.quadraticCurveTo(-20, -10, -14, -2);
+    x.lineTo(-36, 8);
+    x.lineTo(-22, 11);
+    x.quadraticCurveTo(-2, 12, 12, 2);
+    x.lineTo(20, -1);
+    x.closePath();
+    x.fill();
+    x.restore();
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
   } else if (text) {
@@ -147,8 +180,49 @@ function pole(h, flags) {
   g.add(cyl(0.035, h, alu, 0, h / 2, 0));
   g.add(cyl(0.05, 0.08, blackM, 0, 0.04, 0));
   const ball = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), mat(0xe8c14a, 0.3, 0.8)); ball.position.y = h + 0.03; g.add(ball);
-  flags.forEach((f, i) => { const fm = flagMesh(f.w || 1.2, f.h || 0.8, f.color, f.text); const h2 = new THREE.Group(); h2.position.set(0.035, h - 0.5 - i * (f.h || 0.8) * 1.15 - (f.dy || 0), 0); h2.add(fm); h2.userData.flag = true; g.add(h2); });
+  flags.forEach((f, i) => {
+    const fm = flagMesh(f.w || 1.2, f.h || 0.8, f.color, f.text);
+    const h2 = new THREE.Group();
+    const topY = h - 0.35 - i * ((f.h || 0.8) * 1.08) - (f.dy || 0);
+    h2.position.set(0.035, topY, 0);
+    h2.add(fm);
+    h2.userData.flag = true;
+    h2.userData.flagKey = f.key || f.text || 'ORG';
+    h2.userData.topY = topY;
+    h2.userData.botY = 0.28;
+    g.add(h2);
+  });
   return g;
+}
+
+// 運営艇スタッフ（人間＆動物）を配置するヘルパー
+function addOfficialCrew(parent, specs) {
+  const wrap = new THREE.Group();
+  wrap.userData.noMerge = true;
+  wrap.userData.officialCrew = true;
+  for (const s of specs) {
+    const fig = buildFigure(s.type, {
+      vest: s.vest ?? 0xea580c,
+      suit: s.suit ?? 0x1e293b,
+      cap: s.cap ?? 0xf8fafc,
+      skin: s.skin ?? 0xf2c9a6,
+      hair: s.hair ?? 0x1a1410,
+      scale: s.scale ?? 1.05,
+    });
+    fig.position.set(s.x, s.y, s.z);
+    fig.rotation.y = s.rotY || 0;
+    if (s.stand && fig.userData.parts) {
+      const P = fig.userData.parts;
+      if (P.legL) P.legL.rotation.x = 0.06;
+      if (P.legR) P.legR.rotation.x = -0.06;
+      if (P.shinL) P.shinL.rotation.x = 0.08;
+      if (P.shinR) P.shinR.rotation.x = 0.08;
+      if (P.armL) { P.armL.rotation.x = -0.35; P.armL.rotation.z = 0.18; }
+      if (P.armR) { P.armR.rotation.x = -0.55; P.armR.rotation.z = -0.15; }
+    }
+    wrap.add(fig);
+  }
+  parent.add(wrap);
 }
 
 // 船首から水面〜海底へ斜め前方に伸びるアンカー係留ロープ＋バウアンカーローラー
@@ -278,6 +352,13 @@ export function makeMotorboat(type, o = {}) {
       for (const sg of [-1, 1]) g.add(fender(sg * (hb(z) + 0.05), sh(z) - 0.02, z, 0xf8fafc));
     }
     addAnchorMooring(g, sh(L / 2 - 0.1), L / 2 - 0.1, 5.4, 4.8);
+    // 7) 運営スタッフ（人間＆動物）を本部船デッキ・コクピットに配置（スタートライン＝左舷 -X 方向を見守る）
+    addOfficialCrew(g, [
+      { type: 'human_m', x: 0.42, y: H + 0.10, z: -4.45, rotY: -Math.PI * 0.48, vest: 0xea580c, suit: 0x1e293b, cap: 0x1e3a8a, scale: 1.08, stand: true },
+      { type: 'human_f', x: -0.68, y: H + 0.14, z: -3.55, rotY: -Math.PI * 0.50, vest: 0xf59e0b, suit: 0x0f172a, cap: 0xf8fafc, scale: 1.04 },
+      { type: 'duck',    x: -0.42, y: H + 0.62, z: -0.35, rotY: -Math.PI * 0.46, vest: 0x0284c7, suit: 0x1e293b, cap: 0xfacc15, scale: 1.12 },
+      { type: 'cat',     x: -0.25, y: sh(2.35), z: 2.35,  rotY: -Math.PI * 0.42, vest: 0xdc2626, suit: 0x1e293b, cap: 0xffffff, scale: 1.08 },
+    ]);
   } else if (type === 'outer') {
     // アウター艇(参考写真準拠): 和船型サポートモーターボート(白船体・濃紺ボトム・側面の赤×黒紺2色ストライプ・前傾黒窓フォワードキャビン＋白ハードトップ・大型白青俵フェンダー・アンカー係留ロープ)
     const L = 7.8, B = 2.48, H = 0.82;
@@ -329,6 +410,12 @@ export function makeMotorboat(type, o = {}) {
     }
     // 4) 船首から海底へ垂れるアンカー係留ロープ(スタート前後にヨットが船首すぐ前を通ると引っかかる)
     addAnchorMooring(g, sh(L / 2 - 0.08), L / 2 - 0.08, 5.0, 4.6);
+    // 5) アウター艇の運営スタッフ（人間＆動物、右舷 +X 方向のスタートラインを見守る）
+    addOfficialCrew(g, [
+      { type: 'human_m', x: 0.36,  y: H + 0.02, z: -0.65, rotY: Math.PI * 0.48, vest: 0xf97316, suit: 0x0f172a, cap: 0x1e3a8a, scale: 1.06, stand: true },
+      { type: 'dog',     x: -0.34, y: H + 0.02, z: -1.65, rotY: Math.PI * 0.52, vest: 0x2563eb, suit: 0x1e293b, cap: 0xfef08a, scale: 1.08 },
+      { type: 'duck',    x: 0.12,  y: sh(1.90), z: 1.90,  rotY: Math.PI * 0.44, vest: 0x16a34a, suit: 0x1e293b, cap: 0xffffff, scale: 1.10 },
+    ]);
   } else if (type === 'cruiser') {
     const L = 13, B = 4.2, H = 1.15;
     const hull = hullGroup(L, B, H, 0xfafafa, o.stripe ?? 0x1e293b); g.add(hull);
@@ -493,7 +580,7 @@ function mergeBoat(g) {
   const inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
   const buckets = new Map();
   const walk = (o) => {
-    if (o.userData && o.userData.flag) return;
+    if (o.userData && (o.userData.flag || o.userData.noMerge)) return;
     if (o.isMesh && !Array.isArray(o.material) && !o.material.map && o.geometry.attributes.position) {
       const key = boatMatKey(o.material);
       if (key) { let b = buckets.get(key); if (!b) { b = []; buckets.set(key, b); } b.push(o); }
