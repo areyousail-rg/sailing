@@ -77,10 +77,25 @@ const webbing = webbingTex();
 const speckle = tex(noiseCanvas(256, '#ffffff', 0.05, 1400), [1, 1]);
 
 export const M = {
-  gel: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.26, metalness: 0.0, side: THREE.DoubleSide }),
-  nonskid: new THREE.MeshStandardMaterial({ color: 0xfbfdff, roughness: 0.32, metalness: 0.0, side: THREE.DoubleSide }),
+  gel: new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0x283542,
+    emissiveIntensity: 0.22,
+    roughness: 0.34,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+    stencilWrite: true,
+    stencilFunc: THREE.AlwaysStencilFunc,
+    stencilRef: 1,
+    stencilZPass: THREE.ReplaceStencilOp,
+    stencilZFail: THREE.KeepStencilOp,
+    stencilFail: THREE.KeepStencilOp,
+  }),
+  nonskid: new THREE.MeshStandardMaterial({ color: 0xfbfdff, emissive: 0x283542, emissiveIntensity: 0.22, roughness: 0.34, metalness: 0.0, side: THREE.DoubleSide }),
   floor: new THREE.MeshStandardMaterial({
     color: 0xf8fafc,
+    emissive: 0x283542,
+    emissiveIntensity: 0.22,
     roughness: 0.34,
     metalness: 0.0,
     side: THREE.DoubleSide,
@@ -93,7 +108,9 @@ export const M = {
   }),
   wall: new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    roughness: 0.28,
+    emissive: 0x283542,
+    emissiveIntensity: 0.22,
+    roughness: 0.32,
     metalness: 0.0,
     side: THREE.DoubleSide,
     stencilWrite: true,
@@ -181,7 +198,8 @@ export function buildHull(accent = 0x2a77ff) {
   const ts = [0, 0.01, 0.04, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.88, 0.94, 0.98, 1];
   const ws = [...ts.map((t) => -Math.pow(t, 1 / 2.3)).reverse(), ...ts.slice(1).map((t) => Math.pow(t, 1 / 2.3))];
   const zs = lin(-L, L, 70);
-  const hullGeo = grid(zs, ws, (z, w) => {
+  const wsOut = [...ws].reverse();
+  const hullGeo = grid(zs, wsOut, (z, w) => {
     const B = halfBeam(z), s = sheerY(z), bo = bottomY(z);
     return [w * B, bo + (s - bo) * Math.pow(Math.abs(w), 2.3), z];
   });
@@ -202,17 +220,19 @@ export function buildHull(accent = 0x2a77ff) {
   const trCapPts = lin(-1, 1, 16).map((w) => { const x = w * B; return new THREE.Vector3(x, deckY(L, x), L); });
   addOrder(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(trCapPts), 24, 0.012, 8), M.gel), -9);
 
-  // デッキ(フォアデッキ / サイドデッキ / 後部デッキ): 段差や色ムラのない純白デッキ
+  // デッキ(フォアデッキ / サイドデッキ / 後部デッキ): 段差や色ムラのない純白デッキ (左右とも法線が必ず上向き+yになるよう頂点順を揃える)
   const dz = (a, b, n) => lin(a, b, n);
   const fore = grid(dz(-L, ZC0, 28), ws, (z, w) => { const x = w * halfBeam(z); return [x, deckY(z, x), z]; });
   addOrder(new THREE.Mesh(fore, M.gel), -9);
   const aft = grid(dz(ZC1, L, 12), ws, (z, w) => { const x = w * halfBeam(z); return [x, deckY(z, x), z]; });
   addOrder(new THREE.Mesh(aft, M.gel), -9);
   for (const sg of [-1, 1]) {
-    const side = grid(dz(ZC0, ZC1, 28), lin(0, 1, 8), (z, v) => { const B2 = halfBeam(z); const x = sg * (COAM + v * (B2 - COAM)); return [x, deckY(z, x), z]; });
+    const vSide = sg > 0 ? lin(0, 1, 8) : lin(1, 0, 8);
+    const side = grid(dz(ZC0, ZC1, 28), vSide, (z, v) => { const B2 = halfBeam(z); const x = sg * (COAM + v * (B2 - COAM)); return [x, deckY(z, x), z]; });
     addOrder(new THREE.Mesh(side, M.gel), -9);
     // コーミング(コクピット側壁): 黒い縁を無くし、サイドデッキから滑らかに丸く巻き込む純白FRPのロールエッジ
-    const wall = grid(dz(ZC0, ZC1, 20), lin(0, 1, 4), (z, v) => { const top = deckY(z, COAM); return [sg * COAM, FLOOR_Y + (top - FLOOR_Y) * v, z]; });
+    const vWall = sg < 0 ? lin(0, 1, 4) : lin(1, 0, 4);
+    const wall = grid(dz(ZC0, ZC1, 20), vWall, (z, v) => { const top = deckY(z, COAM); return [sg * COAM, FLOOR_Y + (top - FLOOR_Y) * v, z]; });
     addOrder(new THREE.Mesh(wall, M.wall), -8);
     const capPts = dz(ZC0, ZC1, 16).map((z) => new THREE.Vector3(sg * (COAM - 0.005), deckY(z, COAM) + 0.002, z));
     addOrder(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(capPts), 36, 0.018, 10), M.gel), -9);
