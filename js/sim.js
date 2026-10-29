@@ -808,9 +808,14 @@ export function rebuildObstacles() {
   // マークの当たり判定は水線位置のブイの太さ(半径約1.3m)に合わせる (上マークフィニッシュ時は1マークのみ)
   const markKeys = COURSE_MODE === 'upwind' ? ['m1'] : ['m1', 'm1a', 'm2', 'm3', 'gL', 'gR', 'fm'];
   for (const k of markKeys) { const p = toWorld(MARKS[k].a, MARKS[k].c); OBSTACLES.push({ key: k, x: p.x, z: p.z, r: 1.35 }); }
-  // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)。本部船は全長約12mのセーリングクルーザー、アウター・フィニッシュ艇は全長約7.8mの和船型サポートボート
-  for (const [k, sp, n, r, gap] of [['com', MARKS.com, 3, 2.2, 3.8], ['pin', MARKS.pin, 2, 2.0, 3.8], ['com', MARKS.fcom, 2, 2.0, 3.8]]) {
+  // 艇型障害物: 船首を風上に向けてアンカー(長軸 = a軸)。本部船・アウター・フィニッシュ艇と船首アンカーロープのコンパクトな当たり判定
+  for (const [k, sp, n, r, gap] of [['com', MARKS.com, 3, 1.65, 3.3], ['pin', MARKS.pin, 2, 1.45, 3.1], ['com', MARKS.fcom, 2, 1.45, 3.1]]) {
     for (let i = -(n - 1) / 2; i <= (n - 1) / 2; i++) { const p = toWorld(sp.a + i * gap, sp.c); OBSTACLES.push({ key: k, x: p.x, z: p.z, r }); }
+  }
+  // アンカーロープ判定: 普通の船の当たり判定と同じ仕組みで、船首すぐ前にごく小さな円(r=0.58m)として配置
+  for (const [k, sp, aOff] of [['pin', MARKS.pin, 2.5], ['com', MARKS.com, 3.8]]) {
+    const p = toWorld(sp.a + aOff, sp.c);
+    OBSTACLES.push({ key: k, x: p.x, z: p.z, r: 0.58 });
   }
 }
 rebuildObstacles();
@@ -819,7 +824,7 @@ function circles(b) {
   const dx = Math.sin(b.h), dz = -Math.cos(b.h);
   return [{ x: b.x + dx * 1.2, z: b.z + dz * 1.2 }, { x: b.x - dx * 1.2, z: b.z - dz * 1.2 }];
 }
-const CR = 0.95;
+const CR = 0.88;
 
 // 衝突処理。イベントを返す。
 export function resolveCollisions(boats, t) {
@@ -857,30 +862,6 @@ export function resolveCollisions(boats, t) {
         if (pp > 0) {
           A.x += (dx / d) * pp; A.z += (dz / d) * pp; A.v *= 0.97;
           if (A.touchCD <= 0 && !A.finished) { A.touchCD = 6; ev.push({ type: 'touch', boat: A, mark: o.key }); }
-        }
-      }
-    }
-    // アウター艇(pin)および本部船(com)の船首前方から海底へ伸びるアンカー係留ロープへの引っかかり判定:
-    // 船首すぐ前のアンカーロープ直上(狭い範囲)を横切ったときのみセンターボードがロープに引っかかり減速する
-    if (!A.finished && !A.dsq) {
-      const cp = toCourse(A.x, A.z);
-      const anchorZones = [
-        { key: 'pin', aMin: MARKS.pin.a + 2.7, aMax: MARKS.pin.a + 4.1, cCenter: MARKS.pin.c, halfC: 0.45 },
-        { key: 'com', aMin: MARKS.com.a + 4.0, aMax: MARKS.com.a + 5.5, cCenter: MARKS.com.c, halfC: 0.48 },
-      ];
-      for (const az of anchorZones) {
-        if (cp.a >= az.aMin && cp.a <= az.aMax && Math.abs(cp.c - az.cCenter) <= az.halfC) {
-          A.v *= 0.26; // アンカーロープに引っかかって大きく減速
-          A.rudderDrag = Math.max(A.rudderDrag || 0, 0.85);
-          // ロープに引かれて船首がわずかにアンカー側へ振られる
-          const ropeW = toWorld((az.aMin + az.aMax) * 0.5, az.cCenter);
-          const brgRope = Math.atan2(ropeW.x - A.x, -(ropeW.z - A.z));
-          A.h = wrap(A.h + wrap(brgRope - A.h) * 0.16);
-          if ((A.snagCD || 0) <= 0) {
-            A.snagCD = 4.5;
-            ev.push({ type: 'anchorSnag', boat: A, mark: az.key });
-          }
-          break;
         }
       }
     }
