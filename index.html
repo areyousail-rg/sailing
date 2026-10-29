@@ -6,24 +6,24 @@
   <title>スナイプカップ | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="江の島沖でスナイプ級ヨット10艇がトラペゾイドコースで競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261028c">
+  <link rel="stylesheet" href="style.css?v=20261030a">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261028c",
-      "./js/sim.js": "./js/sim.js?v=20261028c",
-      "./js/review.js": "./js/review.js?v=20261028c",
-      "./js/ai.js": "./js/ai.js?v=20261028c",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261028c",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261028c",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261028c",
-      "./js/crew.js": "./js/crew.js?v=20261028c",
-      "./js/camera.js": "./js/camera.js?v=20261028c",
-      "./js/course.js": "./js/course.js?v=20261028c",
-      "./js/rules.js": "./js/rules.js?v=20261028c",
-      "./js/audio.js": "./js/audio.js?v=20261028c"
+      "./js/world.js": "./js/world.js?v=20261030a",
+      "./js/sim.js": "./js/sim.js?v=20261030a",
+      "./js/review.js": "./js/review.js?v=20261030a",
+      "./js/ai.js": "./js/ai.js?v=20261030a",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261030a",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261030a",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261030a",
+      "./js/crew.js": "./js/crew.js?v=20261030a",
+      "./js/camera.js": "./js/camera.js?v=20261030a",
+      "./js/course.js": "./js/course.js?v=20261030a",
+      "./js/rules.js": "./js/rules.js?v=20261030a",
+      "./js/audio.js": "./js/audio.js?v=20261030a"
     }
   }
   </script>
@@ -79,6 +79,7 @@
 
     <div id="markPointer" class="markPointer hidden"><span id="mpArrow" class="mpArrow">▲</span><span id="mpText">1</span></div>
     <div id="nearBoats" class="nearBoats"></div>
+    <div id="hailBubbles" class="hailBubbles"></div>
     <div id="penBadge" class="badge bad" style="display:none"></div>
     <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
     <div id="blkBadge" class="blkGauge" style="display:none">
@@ -153,9 +154,15 @@
           <div id="courseChoices" class="choices venueChoices"></div>
         </div>
       </div>
-      <div class="menuGroup">
-        <h2>ペナルティ</h2>
-        <div id="penaltyChoices" class="choices venueChoices"></div>
+      <div class="menuTopRow">
+        <div class="menuGroup">
+          <h2>ペナルティ</h2>
+          <div id="penaltyChoices" class="choices venueChoices"></div>
+        </div>
+        <div class="menuGroup">
+          <h2>BGM・声</h2>
+          <div id="bgmChoices" class="choices venueChoices"></div>
+        </div>
       </div>
       <div class="crewPreviewRow">
         <div class="crewRow">
@@ -282,6 +289,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261028c"></script>
+  <script type="module" src="js/main.js?v=20261030a"></script>
 </body>
 </html>
