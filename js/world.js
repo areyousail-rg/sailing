@@ -236,10 +236,10 @@ void main(){
   float wu=dot(p,wp), wv=dot(p,wd);
   float gust=smoothstep(0.84,1.18,wf);
   float blow=smoothstep(0.98,1.16,wf);
-  // 局所風速[kt]: 15knotを超えると海面に白波(ホワイトキャップ)が発生し、風が強くなるほど度合いが強くなる
-  float localKt=uWindKt*wf;
-  float galeKt=max(uWindKt,localKt*0.97);
-  float whitecapIntensity=clamp((galeKt-15.0)/6.0,0.0,1.45);
+  // 局所風速[kt]: 15knotを超えた海面部分(ブロー域または全体が15kt超の海面)にはリアルな白波(ホワイトキャップ＆風下への泡筋)が立ち、風が強くなるほど白波の度合いが強くなる
+  float localKt=uWindKt*(0.88+0.36*puff+uSideBias*sideNorm*0.065);
+  float over15=max(localKt-15.0,(uWindKt-15.0)*0.85);
+  float whitecapIntensity=clamp(over15/4.8,0.0,1.45);
 
   vec2 g=vec2(0.0);
   float wH=0.0;
@@ -319,19 +319,25 @@ void main(){
 
   if(dist<3200.0){
     // 15knot以下の通常時は波頭のごく控えめなハイライトのみとし、
-    // 15knotを超える強風時(whitecapIntensity>0)は海面に白波(ホワイトキャップ＆風下への泡筋)が発生し、風が強くなるほど白波の度合いが明確に強くなる
-    float foamN1=vn(vec2(wu*0.42,wv*0.85-uWT*2.2));
-    float foamN2=vn(vec2(wu*1.35+3.7,wv*2.10-uWT*3.1));
-    float foamDetail=0.58*foamN1+0.42*foamN2;
-    float waveMetric=length(g)*2.35+max(0.0,elev)*0.52+foamDetail*0.44;
-    float baseFoam=smoothstep(0.94,1.18,waveMetric)*0.08*(0.55+0.45*nearBlue);
-    // 15kt超の白波: 風が強くなるほど閾値が下がり、波頭が崩れる白い泡と風下方向の白波ストリークが海面全体に広がる
-    float wcThresh=mix(0.92,0.50,clamp(whitecapIntensity,0.0,1.0));
-    float wcCrest=smoothstep(wcThresh,wcThresh+0.22,waveMetric+whitecapIntensity*0.18);
-    float wcStreak=smoothstep(0.68-0.14*clamp(whitecapIntensity,0.0,1.0),0.90,vn(vec2(wu*0.65,wv*0.24-uWT*1.4))*0.65+foamN2*0.35);
-    float galeFoam=(wcCrest*(0.55+0.45*foamN2)+wcStreak*wcCrest*0.55)*clamp(whitecapIntensity*0.88,0.0,1.0);
-    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.94)*exp(-dist*0.0014);
-    col=mix(col,vec3(0.93,0.97,1.0),totalFoam);
+    // 15knotを超える強風時(whitecapIntensity>0)は海面にリアルな白波(波頭が崩れる白い泡と風下へ引く泡筋)が発生する
+    float foamN1=vn(vec2(wu*0.45,wv*0.90-uWT*2.1));
+    float foamN2=vn(vec2(wu*1.55+3.7,wv*2.35-uWT*3.0));
+    float foamN3=vn(vec2(wu*3.80-6.2,wv*4.20-uWT*3.8));
+    float foamDetail=0.50*foamN1+0.32*foamN2+0.18*foamN3;
+    float crestSlope=length(g)*2.45+max(0.0,elev)*0.58;
+    float waveMetric=crestSlope+foamDetail*0.42;
+    float baseFoam=smoothstep(0.96,1.20,waveMetric)*0.07*(0.55+0.45*nearBlue);
+    // 15kt超の白波: 波の峰に沿って不規則に砕ける白波パッチ＋気泡の粒立ち＋風下へ尾を引くスピンドリフト筋
+    float wci=clamp(whitecapIntensity,0.0,1.5);
+    float patchMask=smoothstep(0.36-0.12*min(wci,1.0),0.74,vn(vec2(wu*0.18+1.9,wv*0.22-uWT*0.85))*0.65+foamN1*0.35);
+    float wcThresh=mix(0.84,0.46,clamp(wci*0.85,0.0,1.0));
+    float wcCrest=smoothstep(wcThresh,wcThresh+0.18,waveMetric+wci*0.20)*patchMask;
+    float wcBubble=0.62+0.38*smoothstep(0.28,0.78,foamN2*0.60+foamN3*0.40);
+    float wcStreak=smoothstep(0.62-0.14*min(wci,1.0),0.88,vn(vec2(wu*0.82,wv*0.20-uWT*1.45))*0.65+foamN2*0.35)*smoothstep(0.25,0.65,crestSlope);
+    float galeFoam=clamp((wcCrest*wcBubble*0.92+wcStreak*patchMask*0.42)*smoothstep(0.0,0.28,wci)*(0.55+0.45*min(wci,1.2)),0.0,0.92);
+    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.94)*exp(-dist*0.0012);
+    vec3 foamCol=mix(vec3(0.88,0.94,0.99),vec3(0.98,0.995,1.0),clamp(wcCrest+0.35*foamN3,0.0,1.0));
+    col=mix(col,foamCol,totalFoam);
   }
   // ブロー(風の強い海面のさざ波): 物理のブロー移動速度(adv = ca + uWT*4.8)と完全に同期して風上から風下へ流れる
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
@@ -639,9 +645,11 @@ export function createWorld(scene) {
   const treeTrunks = new THREE.InstancedMesh(getTreeTrunkGeo(), new THREE.MeshLambertMaterial({ color: 0x563d2d, vertexColors: true }), treeCount);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), tc = new THREE.Color(), eul = new THREE.Euler();
   let n = 0;
+  const lhx = ISLAND.x - 35, lhz = ISLAND.z - 15;
   for (let tries = 0; tries < 9000 && n < treeCount; tries++) {
     const x = ISLAND.x - 460 + rnd() * 610, z = ISLAND.z + (rnd() * 2 - 1) * 225;
     if (x > ISLAND.x + 135 && islandH(x, z) < 14) continue; // 東側下部はヨットハーバー・広場
+    if (Math.hypot(x - lhx, z - lhz) < 28) continue; // シーキャンドル足元のサムエル・コッキング苑広場は木を除外して展望灯台を際立たせる
     const h = islandH(x, z); if (h < 5.0) continue;
     if (x < ISLAND.x - 245 && h < 17) continue; // 左端下部の海食崖は岩肌を残す
     const slope = Math.abs(islandH(x + 3, z) - h) + Math.abs(islandH(x, z + 3) - h);
@@ -687,17 +695,50 @@ export function createWorld(scene) {
   }
   boxes.count = bn; enoshimaGroup.add(boxes);
 
-  // 江の島シーキャンドル(展望灯台): 画像2枚目の実寸比率に合わせ、樹林の上にすっきりと覗く高さ(約24m)に調整
-  const lhx = ISLAND.x - 35, lhz = ISLAND.z - 15, topH = islandH(lhx, lhz);
+  // 江の島シーキャンドル(展望灯台): 実物(高さ59.8m・海抜119.6m)のランドマーク感を再現し、樹林の上に堂々と聳えるよう造形
+  const topH = islandH(lhx, lhz);
   const lh = new THREE.Group();
-  const towerM = new THREE.MeshLambertMaterial({ color: 0xf1efe9 });
-  const tw = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 2.35, 19, 16), towerM); tw.position.y = 9.5; lh.add(tw);
-  for (let i = 0; i < 6; i++) { const rib = new THREE.Mesh(new THREE.BoxGeometry(0.35, 19, 0.35), new THREE.MeshLambertMaterial({ color: 0xd8d4cc })); const a = (i / 6) * Math.PI * 2; rib.position.set(Math.cos(a) * 2.1, 9.5, Math.sin(a) * 2.1); rib.rotation.z = Math.cos(a) * 0.05; rib.rotation.x = -Math.sin(a) * 0.05; lh.add(rib); }
-  const deck = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 2.8, 2.6, 20), new THREE.MeshLambertMaterial({ color: 0x8fb8cc, emissive: 0x1d3442 })); deck.position.y = 19.6; lh.add(deck);
-  const deckRoof = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.6, 0.5, 20), towerM); deckRoof.position.y = 21.1; lh.add(deckRoof);
-  const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.8, 12), new THREE.MeshLambertMaterial({ color: 0xfff6d0, emissive: 0x665a2a })); lantern.position.y = 22.2; lh.add(lantern);
-  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.65, 2.8, 12), new THREE.MeshLambertMaterial({ color: 0x555a60 })); spire.position.y = 24.4; lh.add(spire);
-  lh.position.set(lhx, topH - 1.5, lhz); enoshimaGroup.add(lh);
+  const towerM = new THREE.MeshLambertMaterial({ color: 0xf7f5f0, emissive: 0x1e2229 });
+  const frameM = new THREE.MeshLambertMaterial({ color: 0xe2dfd7, emissive: 0x161920 });
+  // 基壇(サムエル・コッキング苑の円形プラザとエントランス棟)
+  const basePlaza = new THREE.Mesh(new THREE.CylinderGeometry(9.5, 11.0, 3.2, 20), new THREE.MeshLambertMaterial({ color: 0xd8d2c5 }));
+  basePlaza.position.y = 1.6; lh.add(basePlaza);
+  const baseGlass = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.8, 3.4, 16), new THREE.MeshLambertMaterial({ color: 0x7ca6bf, emissive: 0x182c3a }));
+  baseGlass.position.y = 4.5; lh.add(baseGlass);
+  // 中央エレベーターシャフト＆逆円錐トラス支柱(高さ38m)
+  const tw = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 4.8, 38, 16), towerM);
+  tw.position.y = 22.0; lh.add(tw);
+  for (let i = 0; i < 8; i++) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.65, 39, 0.65), frameM);
+    const a = (i / 8) * Math.PI * 2;
+    rib.position.set(Math.cos(a) * 4.2, 22.0, Math.sin(a) * 4.2);
+    rib.rotation.z = Math.cos(a) * 0.048;
+    rib.rotation.x = -Math.sin(a) * 0.048;
+    lh.add(rib);
+  }
+  for (let ringIdx = 0; ringIdx < 5; ringIdx++) {
+    const ry = 9.0 + ringIdx * 7.2;
+    const rr = 5.1 - ringIdx * 0.42;
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, 0.55, 16, 1, true), frameM);
+    ring.position.y = ry; lh.add(ring);
+  }
+  // ガラス張り屋内展望フロア＆屋外展望デッキ
+  const deckLower = new THREE.Mesh(new THREE.CylinderGeometry(5.6, 3.4, 2.2, 24), towerM);
+  deckLower.position.y = 41.2; lh.add(deckLower);
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(6.8, 5.6, 5.2, 24), new THREE.MeshLambertMaterial({ color: 0x88b8d6, emissive: 0x213d52 }));
+  deck.position.y = 44.8; lh.add(deck);
+  const deckRoof = new THREE.Mesh(new THREE.CylinderGeometry(7.3, 7.0, 1.1, 24), towerM);
+  deckRoof.position.y = 47.9; lh.add(deckRoof);
+  const openDeck = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.2, 2.2, 20), frameM);
+  openDeck.position.y = 49.5; lh.add(openDeck);
+  // 灯室(ランタン)と避雷針スパイア
+  const lantern = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 3.8, 16), new THREE.MeshLambertMaterial({ color: 0xfff8d6, emissive: 0x8a7532 }));
+  lantern.position.y = 52.4; lh.add(lantern);
+  const lanternCap = new THREE.Mesh(new THREE.ConeGeometry(2.5, 1.8, 16), towerM);
+  lanternCap.position.y = 55.1; lh.add(lanternCap);
+  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.55, 6.5, 10), new THREE.MeshLambertMaterial({ color: 0xd0d5dd, emissive: 0x22262c }));
+  spire.position.y = 59.0; lh.add(spire);
+  lh.position.set(lhx, topH - 1.0, lhz); enoshimaGroup.add(lh);
   // 神社(辺津宮)と入口の青銅鳥居
   const sx = ISLAND.x - 110, sz = ISLAND.z - 140, sh = islandH(sx, sz);
   const shrine = new THREE.Mesh(new THREE.BoxGeometry(18, 8, 14), new THREE.MeshLambertMaterial({ color: 0xc63a2d })); shrine.position.set(sx, sh + 3.5, sz); enoshimaGroup.add(shrine);
@@ -1003,46 +1044,182 @@ export function createWorld(scene) {
   const finCurtain = new THREE.Mesh(new THREE.PlaneGeometry(flen, 2.2), finCurtainMat);
   const fin = new THREE.Group(); fin.add(finBand, finCurtain); scene.add(fin);
 
-  // START LINE ラベル(遠くやドローン視点からも見やすいよう少し高めの位置に大きく表示し、すぐ下に有利サイドを併記)
+  // START LINE ラベル(ヨットレース中継風のスタイリッシュなHUDバナーデザイン + 下段に有利サイドを併記)
   const startCanvas = document.createElement('canvas');
-  startCanvas.width = 768; startCanvas.height = 280;
+  startCanvas.width = 960; startCanvas.height = 350;
   const startTex = new THREE.CanvasTexture(startCanvas);
+  startTex.anisotropy = 4;
   const startLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: startTex, transparent: true, depthWrite: false }));
-  startLabel.scale.set(16.0, 5.8, 1);
-  startLabel.position.set(0, 4.8, 0);
+  startLabel.scale.set(22.0, 8.0, 1);
+  startLabel.position.set(0, 5.2, 0);
   startLabel.renderOrder = 5;
   scene.add(startLabel);
   let showPreStartFav = true;
 
+  const drawSkewPlate = (ctx, x, y, w, h, skew, r = 12) => {
+    ctx.beginPath();
+    ctx.moveTo(x + skew + r, y);
+    ctx.lineTo(x + w + skew - r, y);
+    ctx.quadraticCurveTo(x + w + skew, y, x + w + skew - r * 0.2, y + r);
+    ctx.lineTo(x + w - skew - r * 0.2, y + h - r);
+    ctx.quadraticCurveTo(x + w - skew, y + h, x + w - skew - r, y + h);
+    ctx.lineTo(x - skew + r, y + h);
+    ctx.quadraticCurveTo(x - skew, y + h, x - skew + r * 0.2, y + h - r);
+    ctx.lineTo(x + skew - r * 0.2, y + r);
+    ctx.quadraticCurveTo(x + skew, y, x + skew + r, y);
+    ctx.closePath();
+  };
+
   const updateStartLabel = () => {
     const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-    const favStr = FAVORED === 'even' || skewDeg === 0 ? '0° 有利なし' : `${skewDeg}° ${FAVORED === 'com' ? '上有利 (本部船側)' : '下有利 (アウター側)'}`;
+    const favStr = FAVORED === 'even' || skewDeg === 0 ? 'EVEN  0° 有利なし' : `★ ${skewDeg}° ${FAVORED === 'com' ? '上有利 (本部船側)' : '下有利 (アウター側)'}`;
     const ctx = startCanvas.getContext('2d');
-    ctx.clearRect(0, 0, 768, 280);
-    // 上段: START LINE (高コントラストで大きく明瞭に描画)
-    ctx.fillStyle = 'rgba(180, 120, 0, 0.90)';
-    ctx.beginPath(); ctx.roundRect(24, 12, 720, 142, 20); ctx.fill();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; ctx.stroke();
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 104px Arial, sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('START LINE', 384, 86);
-    // 下段: Startlineの下に有利サイドをはっきり判読しやすいサイズで表記
+    ctx.clearRect(0, 0, 960, 350);
+
+    // ドロップシャドウ付きメインプレート (ネイビー×ゴールド×アンバーのレーシング中継風プレート)
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 8, 24, 0.72)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
+    const bgGrad = ctx.createLinearGradient(60, 16, 900, 176);
+    bgGrad.addColorStop(0, 'rgba(7, 20, 42, 0.96)');
+    bgGrad.addColorStop(0.5, 'rgba(15, 38, 72, 0.96)');
+    bgGrad.addColorStop(1, 'rgba(7, 20, 42, 0.96)');
+    drawSkewPlate(ctx, 56, 18, 848, 152, 18, 14);
+    ctx.fillStyle = bgGrad;
+    ctx.fill();
+    ctx.restore();
+
+    // 上部ゴールドアクセントバー＆左右レーシングシェブロン
+    ctx.save();
+    drawSkewPlate(ctx, 56, 18, 848, 152, 18, 14);
+    ctx.clip();
+    const topBarGrad = ctx.createLinearGradient(56, 18, 904, 18);
+    topBarGrad.addColorStop(0, '#f59e0b');
+    topBarGrad.addColorStop(0.5, '#fde047');
+    topBarGrad.addColorStop(1, '#f59e0b');
+    ctx.fillStyle = topBarGrad;
+    ctx.fillRect(30, 18, 900, 16);
+    // 左右の斜めストライプアクセント
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.22)';
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      const ox = 72 + i * 26;
+      ctx.moveTo(ox + 16, 34); ctx.lineTo(ox + 30, 34); ctx.lineTo(ox + 6, 170); ctx.lineTo(ox - 8, 170);
+      ctx.fill();
+      const rx = 860 - i * 26;
+      ctx.beginPath();
+      ctx.moveTo(rx + 16, 34); ctx.lineTo(rx + 30, 34); ctx.lineTo(rx + 6, 170); ctx.lineTo(rx - 8, 170);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 外枠(ゴールド＆ホワイトのダブルリム)
+    drawSkewPlate(ctx, 56, 18, 848, 152, 18, 14);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    drawSkewPlate(ctx, 64, 26, 832, 136, 16, 10);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // START LINE タイトル文字
+    ctx.save();
+    ctx.shadowColor = 'rgba(251, 191, 36, 0.45)';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 96px "Orbitron", "Montserrat", "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('START LINE', 480, 102);
+    ctx.restore();
+
+    // 下段: 有利サイドバッジ
     if (showPreStartFav) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-      ctx.beginPath(); ctx.roundRect(114, 168, 540, 96, 18); ctx.fill();
-      ctx.strokeStyle = '#fde047'; ctx.lineWidth = 5; ctx.stroke();
-      ctx.fillStyle = '#fde047'; ctx.font = 'bold 52px sans-serif';
-      ctx.fillText(favStr, 384, 218);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 8, 24, 0.75)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 6;
+      const subGrad = ctx.createLinearGradient(150, 188, 810, 298);
+      subGrad.addColorStop(0, 'rgba(10, 18, 36, 0.96)');
+      subGrad.addColorStop(0.5, 'rgba(24, 42, 74, 0.96)');
+      subGrad.addColorStop(1, 'rgba(10, 18, 36, 0.96)');
+      drawSkewPlate(ctx, 140, 188, 680, 108, 14, 14);
+      ctx.fillStyle = subGrad;
+      ctx.fill();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 5.5;
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#fde047';
+      ctx.font = '800 54px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(favStr, 480, 244);
+      ctx.restore();
     }
     startTex.needsUpdate = true;
   };
 
-  const lineLabel = (txt, bg, lx, lz) => {
-    const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
-    x.fillStyle = bg; x.fillRect(0, 0, 512, 128); x.strokeStyle = '#fff'; x.lineWidth = 8; x.strokeRect(4, 4, 504, 120);
-    x.fillStyle = '#fff'; x.font = 'bold 84px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 256, 68);
-    const s = new THREE.Sprite(new THREE.CanvasTexture(c) ? new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }) : undefined);
-    s.scale.set(21, 5.2, 1); s.position.set(lx, 5.0, lz); s.renderOrder = 5; scene.add(s); return s;
+  const lineLabel = (txt, _bg, lx, lz) => {
+    const c = document.createElement('canvas'); c.width = 768; c.height = 200; const x = c.getContext('2d');
+    x.save();
+    x.shadowColor = 'rgba(0, 8, 24, 0.75)';
+    x.shadowBlur = 16;
+    x.shadowOffsetY = 6;
+    const g = x.createLinearGradient(40, 16, 728, 184);
+    g.addColorStop(0, 'rgba(10, 15, 28, 0.96)');
+    g.addColorStop(0.5, 'rgba(26, 38, 62, 0.96)');
+    g.addColorStop(1, 'rgba(10, 15, 28, 0.96)');
+    drawSkewPlate(x, 42, 18, 684, 164, 18, 14);
+    x.fillStyle = g;
+    x.fill();
+    x.restore();
+
+    // 左右にチェッカーフラッグ柄のアクセント
+    x.save();
+    drawSkewPlate(x, 42, 18, 684, 164, 18, 14);
+    x.clip();
+    const sq = 22;
+    for (let r = 0; r < 8; r++) {
+      for (let col = 0; col < 4; col++) {
+        x.fillStyle = (r + col) % 2 === 0 ? 'rgba(255,255,255,0.88)' : 'rgba(15,23,42,0.88)';
+        x.fillRect(34 + col * sq, 14 + r * sq, sq, sq);
+        x.fillRect(726 - (col + 1) * sq, 14 + r * sq, sq, sq);
+      }
+    }
+    const topG = x.createLinearGradient(42, 18, 726, 18);
+    topG.addColorStop(0, '#38bdf8');
+    topG.addColorStop(0.5, '#fde047');
+    topG.addColorStop(1, '#38bdf8');
+    x.fillStyle = topG;
+    x.fillRect(30, 18, 710, 12);
+    x.restore();
+
+    drawSkewPlate(x, 42, 18, 684, 164, 18, 14);
+    x.strokeStyle = '#fde047';
+    x.lineWidth = 7;
+    x.stroke();
+
+    x.save();
+    x.shadowColor = 'rgba(56, 189, 248, 0.5)';
+    x.shadowBlur = 12;
+    x.fillStyle = '#ffffff';
+    x.font = '900 96px "Orbitron", "Montserrat", "Segoe UI", sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(txt, 384, 106);
+    x.restore();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = 4;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    s.scale.set(24, 6.25, 1); s.position.set(lx, 5.2, lz); s.renderOrder = 5; scene.add(s); return s;
   };
   const finLabel = lineLabel('FINISH', 'rgba(20,20,20,0.88)', 0, 0);
 
@@ -1113,47 +1290,130 @@ export function createWorld(scene) {
   };
   syncCourseObjects();
 
-  // マークの番号ラベル (遠くのマークほど番号がはっきり大きく見えるよう距離比例スケール + カメラ接近時は完全非表示化)
+  // マークの番号ラベル (遠くのマークほど番号がはっきり大きく見えるよう距離比例スケール + カメラ接近時はコンパクト化)
   const markSprites = {};
-  const label = (txt, key, y = 4.2) => {
-    const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(8, 18, 38, 0.88)'; x.beginPath(); x.arc(128, 128, 114, 0, Math.PI * 2); x.fill();
-    x.strokeStyle = '#ffd23f'; x.lineWidth = 14; x.stroke();
-    x.fillStyle = '#ffffff'; x.font = 'bold 126px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText(txt, 128, 134);
+  const label = (txt, key, y = 4.6) => {
+    const c = document.createElement('canvas'); c.width = 320; c.height = 320; const x = c.getContext('2d');
+    const cx0 = 160, cy0 = 160;
+    // ドロップシャドウ付き六角タクティカルメダリオン＋ダブルリング
+    x.save();
+    x.shadowColor = 'rgba(0, 8, 24, 0.78)';
+    x.shadowBlur = 18;
+    x.shadowOffsetY = 6;
+    const radGrad = x.createRadialGradient(cx0, cy0 - 28, 18, cx0, cy0, 138);
+    radGrad.addColorStop(0, 'rgba(22, 54, 98, 0.96)');
+    radGrad.addColorStop(0.65, 'rgba(9, 24, 48, 0.96)');
+    radGrad.addColorStop(1, 'rgba(4, 12, 26, 0.98)');
+    x.beginPath();
+    x.arc(cx0, cy0, 134, 0, Math.PI * 2);
+    x.fillStyle = radGrad;
+    x.fill();
+    x.restore();
+
+    // 外周ゴールドリング＆内側シアンリング
+    x.beginPath();
+    x.arc(cx0, cy0, 134, 0, Math.PI * 2);
+    x.strokeStyle = '#fbbf24';
+    x.lineWidth = 12;
+    x.stroke();
+
+    x.beginPath();
+    x.arc(cx0, cy0, 116, 0, Math.PI * 2);
+    x.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+    x.lineWidth = 4;
+    x.stroke();
+
+    // 上下のコンパスノッチ装飾
+    x.fillStyle = '#fde047';
+    for (let a = 0; a < 4; a++) {
+      x.save();
+      x.translate(cx0, cy0);
+      x.rotate((a * Math.PI) / 2);
+      x.beginPath();
+      x.moveTo(-10, -138); x.lineTo(10, -138); x.lineTo(0, -118);
+      x.closePath();
+      x.fill();
+      x.restore();
+    }
+
+    // マーク番号テキスト
+    x.save();
+    x.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    x.shadowBlur = 10;
+    x.fillStyle = '#ffffff';
+    const fontSize = txt.length >= 2 ? 122 : 148;
+    x.font = `900 ${fontSize}px "Orbitron", "Montserrat", "Segoe UI", sans-serif`;
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(txt, cx0, cy0 + 6);
+    x.restore();
+
     const tex = new THREE.CanvasTexture(c);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false, transparent: true, opacity: 0.94 }));
-    s.scale.set(4.5, 4.5, 1); s.position.y = y; s.renderOrder = 4; markObjs[key].add(s);
+    tex.anisotropy = 4;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false, transparent: true, opacity: 0.96 }));
+    s.scale.set(5.5, 5.5, 1); s.position.y = y; s.renderOrder = 4; markObjs[key].add(s);
     markSprites[key] = s;
   };
   label('1', 'm1'); label('1a', 'm1a'); label('2', 'm2'); label('3', 'm3'); label('4S', 'gL'); label('4P', 'gR');
 
-  // ---------- 次向かうマークの赤い矢印 + 上部「Next」文字列 (4ゲートは4S/4P両方に表示) ----------
+  // ---------- 次向かうマークの赤い矢印 + 上部「NEXT」バッジ (4ゲートは4S/4P両方に表示) ----------
   const makeNextTextTex = () => {
-    const c = document.createElement('canvas'); c.width = 256; c.height = 112; const x = c.getContext('2d');
-    x.fillStyle = 'rgba(220, 24, 24, 0.92)';
-    x.beginPath(); x.roundRect(12, 12, 232, 88, 22); x.fill();
-    x.strokeStyle = '#ffffff'; x.lineWidth = 8; x.stroke();
-    x.fillStyle = '#ffffff'; x.font = 'bold 64px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText('Next', 128, 58);
-    return new THREE.CanvasTexture(c);
+    const c = document.createElement('canvas'); c.width = 420; c.height = 160; const x = c.getContext('2d');
+    x.save();
+    x.shadowColor = 'rgba(0, 6, 20, 0.75)';
+    x.shadowBlur = 14;
+    x.shadowOffsetY = 5;
+    const g = x.createLinearGradient(24, 16, 396, 144);
+    g.addColorStop(0, 'rgba(225, 29, 72, 0.96)');
+    g.addColorStop(0.5, 'rgba(244, 63, 94, 0.96)');
+    g.addColorStop(1, 'rgba(190, 18, 60, 0.96)');
+    drawSkewPlate(x, 28, 18, 364, 124, 14, 16);
+    x.fillStyle = g;
+    x.fill();
+    x.restore();
+
+    drawSkewPlate(x, 28, 18, 364, 124, 14, 16);
+    x.strokeStyle = '#ffffff';
+    x.lineWidth = 7;
+    x.stroke();
+    drawSkewPlate(x, 36, 26, 348, 108, 12, 12);
+    x.strokeStyle = '#fde047';
+    x.lineWidth = 3;
+    x.stroke();
+
+    x.save();
+    x.shadowColor = 'rgba(0, 0, 0, 0.65)';
+    x.shadowBlur = 8;
+    x.fillStyle = '#ffffff';
+    x.font = '900 76px "Orbitron", "Montserrat", "Segoe UI", sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText('NEXT', 210, 82);
+    x.restore();
+    const tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = 4;
+    return tex;
   };
   const nextTex = makeNextTextTex();
   const makeTargetArrow = () => {
     const g = new THREE.Group();
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.96, depthWrite: false });
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.7, 4.5, 14), coneMat);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xff1e42, transparent: true, opacity: 0.96, depthWrite: false });
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.96, depthWrite: false });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.8, 4.6, 6), coneMat);
     cone.rotation.x = Math.PI;
     cone.position.y = -1.2;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.92, 3.6, 14), coneMat);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 3.6, 6), coneMat);
     shaft.position.y = 2.4;
-    const nextMat = new THREE.SpriteMaterial({ map: nextTex, transparent: true, opacity: 0.96, depthWrite: false });
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.45, 0.55, 6), ringMat);
+    collar.position.y = 0.95;
+    const nextMat = new THREE.SpriteMaterial({ map: nextTex, transparent: true, opacity: 0.98, depthWrite: false });
     const nextSp = new THREE.Sprite(nextMat);
-    nextSp.scale.set(6.8, 3.0, 1);
-    nextSp.position.y = 6.2;
+    nextSp.scale.set(8.6, 3.3, 1);
+    nextSp.position.y = 6.5;
     nextSp.renderOrder = 6;
-    g.add(cone, shaft, nextSp);
+    g.add(cone, shaft, collar, nextSp);
     g.userData.mat = coneMat;
+    g.userData.ringMat = ringMat;
     g.userData.nextMat = nextMat;
     g.visible = false;
     scene.add(g);
@@ -1517,47 +1777,47 @@ export function createWorld(scene) {
         return distFade;
       };
 
-      // 1) マーク番号ラベル: 遠方でも近くでもしっかり読めつつ、近づいた際に大きくなりすぎないよう距離に応じて3Dスケールを調整
+      // 1) マーク番号ラベル: 遠方でもはっきり大きく視認でき、近づいた際は大きくなりすぎないよう距離比例スケールを調整
       for (const [k, sp] of Object.entries(markSprites)) {
         const mo = markObjs[k];
         if (!mo.visible) { sp.visible = false; continue; }
         const isAct = activeMarkKeys.includes(k);
         const dCam = Math.hypot(mo.position.x - cx, mo.position.z - cz);
-        const s = clampN(1.1 + dCam * (isAct ? 0.046 : 0.036), 2.1, isAct ? 18.0 : 14.5);
+        const s = clampN(1.2 + dCam * (isAct ? 0.078 : 0.062), 2.3, isAct ? 46.0 : 36.0);
         sp.scale.set(s, s, 1);
-        sp.position.y = 2.4 + s * 0.55;
-        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 20 : 42, 20, true);
-        sp.material.opacity = 0.94 * v;
+        sp.position.y = 2.4 + s * 0.56;
+        const v = calcVis(mo.position.x, sp.position.y, mo.position.z, isAct ? 18 : 38, 18, true);
+        sp.material.opacity = 0.96 * v;
         sp.visible = v > 0.02;
       }
 
-      // 2) START LINE / FINISH ラベル: しっかり読める大きさを保ちつつ、接近時は距離に応じて3Dスケールを縮小し大きくなりすぎないようにする
+      // 2) START LINE / FINISH ラベル: 遠くからでもしっかり大きく読めつつ、接近時はコンパクトになるよう距離比例スケールを調整
       if (startLabel) {
         const dStart = Math.hypot(startLabel.position.x - cx, startLabel.position.z - cz);
-        const sw = clampN(2.4 + dStart * 0.155, 5.2, 22.0);
-        const sh = sw / 2.743;
+        const sw = clampN(2.6 + dStart * 0.22, 5.6, 58.0);
+        const sh = sw * (350 / 960);
         startLabel.scale.set(sw, sh, 1);
-        startLabel.position.y = 2.2 + sh * 0.60;
-        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 9, 10, false);
-        startLabel.material.opacity = 0.94 * v;
+        startLabel.position.y = 2.2 + sh * 0.58;
+        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 8, 9, false);
+        startLabel.material.opacity = 0.96 * v;
         startLabel.visible = courseVisible && v > 0.02;
       }
       if (finLabel) {
         const dFin = Math.hypot(finLabel.position.x - cx, finLabel.position.z - cz);
-        const fw = clampN(2.0 + dFin * 0.125, 4.2, 17.5);
-        const fh = fw * 0.25;
+        const fw = clampN(2.2 + dFin * 0.19, 4.8, 50.0);
+        const fh = fw * (200 / 768);
         finLabel.scale.set(fw, fh, 1);
-        finLabel.position.y = 2.0 + fh * 0.62;
-        const v = calcVis(finLabel.position.x, finLabel.position.y, finLabel.position.z, 9, 10, false);
-        finLabel.material.opacity = 0.94 * v;
+        finLabel.position.y = 2.0 + fh * 0.60;
+        const v = calcVis(finLabel.position.x, finLabel.position.y, finLabel.position.z, 8, 9, false);
+        finLabel.material.opacity = 0.96 * v;
         finLabel.visible = courseVisible && v > 0.02;
       }
 
-      // 3) マークの数字ラベル(またはFINISH)の「さらに上」に赤矢印＋Next表記を配置 (しっかり見えつつ接近時は大きくなりすぎないよう調整)
+      // 3) マークの数字ラベル(またはFINISH)の「さらに上」に赤矢印＋NEXT表記を配置 (遠方でも大きく明瞭に見え、接近時は控えめに縮小)
       for (const ar of targetArrows) {
         if (!ar.visible) continue;
         const dCam = Math.hypot(ar.position.x - cx, ar.position.z - cz);
-        const arScale = clampN(0.22 + dCam * 0.0074, 0.38, 2.3);
+        const arScale = clampN(0.24 + dCam * 0.0125, 0.42, 6.2);
         ar.scale.setScalar(arScale);
         if (ar.userData.isFinish) {
           const finTopY = finLabel ? (finLabel.position.y + finLabel.scale.y * 0.56) : 4.5;
@@ -1569,9 +1829,10 @@ export function createWorld(scene) {
           ar.position.y = spTopY + 3.85 * arScale + 0.35 * arScale * Math.sin(t * 3.2);
         }
         ar.rotation.y = t * 1.6;
-        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 20, 16, !ar.userData.isFinish);
+        const v = calcVis(ar.position.x, ar.position.y, ar.position.z, 18, 15, !ar.userData.isFinish);
         ar.userData.mat.opacity = 0.96 * v;
-        if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.96 * v;
+        if (ar.userData.ringMat) ar.userData.ringMat.opacity = 0.96 * v;
+        if (ar.userData.nextMat) ar.userData.nextMat.opacity = 0.98 * v;
       }
       // 磯波: 白波が寄せては引く
       foamTex.offset.x = t * 0.004; foamTex.offset.y = 0.12 * Math.sin(t * 0.7);
