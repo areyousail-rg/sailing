@@ -18,62 +18,70 @@ const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); retu
 export const POLE_MIN = (100 * Math.PI) / 180;
 
 // スナイプ級の実態に即した風域別ベストクローズ角度(TWA deg)
-// ・軽風(〜5.5kt): 艇速が低くセンターボードの揚力を得るためフッティング重視で 45° がベスト
-// ・中風(9kt前後): パワーと揚力のバランスが最適となり 40° がベスト
-// ・強風(13.5kt〜): ハルスピードに達しやすくデパワー・フェザリングで上れるため 38° がベスト
+// ・VMGが最大になるスイートスポットは 40°〜44° を維持
+// ・38°〜39° でもシバーせずに走ることができ、VMGは40°〜44°よりほんのわずかに遅い程度
 export function bestCloseDeg(windKt = BASE_WIND_KT) {
-  if (windKt <= 5.5) return 45.0;
-  if (windKt <= 9.0) return 45.0 - ((windKt - 5.5) / 3.5) * 5.0;   // 5.5kt:45° → 9.0kt:40°
-  if (windKt <= 13.5) return 40.0 - ((windKt - 9.0) / 4.5) * 2.0;  // 9.0kt:40° → 13.5kt:38°
-  return 38.0;
+  if (windKt <= 5.5) return 44.0;
+  if (windKt <= 9.0) return 44.0 - ((windKt - 5.5) / 3.5) * 2.5;   // 5.5kt:44° → 9.0kt:41.5°
+  if (windKt <= 13.5) return 41.5 - ((windKt - 9.0) / 4.5) * 1.5;  // 9.0kt:41.5° → 13.5kt:40°
+  return 40.0;
 }
 
 // スナイプ級のポーラー(TWA deg, windKt → m/s @ 基準9kt換算)
-// 35°〜45°のクローズ帯では V(θ)*cos(θ) ≈ 一定 をベースとし、目標への到達時間に大差がつかないようにしつつ、
-// 風域ごとのベスト角(強風38°・中風40°・軽風45°)でVMGが最大になり、軽風時の35°〜37°ピンチングは失速しやすくなる特性を再現
+// ・クローズ(35°〜45°): ベストVMGは40°〜44°、38°〜39°もシバーせずVMGよりほんのわずかに遅い程度で走れる
+// ・リーチング(60°〜135°): 実艇同様にラフ(のぼす: 120°→95°→75°)すると見かけ風速(AWS)が増してスロット効果で艇速が明確に速くなる
 const V45_CLOSE = 2.10;
 const VMG_CLOSE = V45_CLOSE * Math.cos((45 * Math.PI) / 180); // ≈ 1.4849 m/s
-const V35_BASE = VMG_CLOSE / Math.cos((35 * Math.PI) / 180);  // ≈ 1.8127 m/s
+const V33_BASE = VMG_CLOSE / Math.cos((33 * Math.PI) / 180);
 const POLAR = [
   [0, 0],
   [20, 0],
-  [26, 0.82],
-  [31, 1.38],
-  [35, V35_BASE],
+  [25, 0.86],
+  [29, 1.42],
+  [33, V33_BASE],
   [45, V45_CLOSE],
-  [48, 2.26],
-  [60, 2.85],
-  [75, 3.3],
-  [90, 3.55],
-  [110, 3.6],
-  [130, 3.4],
-  [150, 3.0],
+  [48, 2.34],
+  [55, 2.96],
+  [65, 3.76],
+  [75, 3.92],
+  [85, 3.86],
+  [95, 3.72],
+  [110, 3.52],
+  [125, 3.30],
+  [135, 3.12],
+  [150, 3.00],
   [160, 2.84],
-  [170, 2.9],
+  [170, 2.90],
   [180, 2.45],
 ];
 
 export function polar(deg, windKt = BASE_WIND_KT) {
-  if (deg >= 35 && deg <= 45) {
-    const opt = bestCloseDeg(windKt);
+  if (deg >= 33 && deg <= 45) {
+    const opt = bestCloseDeg(windKt); // 40°〜44°
     const vIso = VMG_CLOSE / Math.cos((deg * Math.PI) / 180);
-    // ベスト角度(opt)でわずかにピーク(+1.5%)を持ちつつ、35°〜45°全体ではVMG差をごく小さく保つ
-    const diff = deg - opt;
-    let vmgFactor = 1.015 - 0.00045 * diff * diff;
-    // 軽風〜微風(8.5kt未満)でベスト角より上りすぎた場合(特に35°〜37°付近)はセンターボードのストールで艇速が落ちる
-    if (deg < opt) {
-      const lightNess = clamp((9.0 - windKt) / 3.8, 0, 1); // 9ktで0、5.2kt以下で1
-      const pinchDeg = opt - deg;
-      // 中〜強風では35°でもほとんど減速せず(95%以上維持)、軽風で36°以下に上るときつくなる(約14〜18%減速、ただし止まらない)
-      const pinchLoss = pinchDeg * pinchDeg * (0.0007 + 0.0020 * lightNess);
-      vmgFactor -= pinchLoss;
+    // 40°〜44°のスイートスポットでVMGが最大(vmgFactor ≈ 1.015)
+    let vmgFactor = 1.015;
+    if (deg >= 40 && deg <= 44.5) {
+      const diff = deg - opt;
+      vmgFactor = 1.015 - 0.00035 * diff * diff;
+    } else if (deg >= 38 && deg < 40) {
+      // 38°〜39°はベストVMG(40°〜44°)よりほんのわずかに遅い程度(VMG比で約1.2%〜2.2%差)でしっかり上れる
+      const d40 = 40 - deg; // 0..2
+      vmgFactor = 1.002 - 0.0055 * d40;
+    } else if (deg < 38) {
+      // 37°以下はさらにピンチングとなり風域に応じて減速
+      const lightNess = clamp((9.0 - windKt) / 3.8, 0, 1);
+      const overPinch = 38 - deg;
+      vmgFactor = 0.991 - overPinch * overPinch * (0.0045 + 0.0045 * lightNess);
+    } else {
+      const overFoot = deg - 44.5;
+      vmgFactor = 1.012 - 0.0025 * overFoot * overFoot;
     }
-    return vIso * clamp(vmgFactor, 0.80, 1.02);
+    return vIso * clamp(vmgFactor, 0.78, 1.02);
   }
-  if (deg > 20 && deg < 35) {
-    // 35°での実効速度に滑らかに接続し、35°付近で急激に止まらないようにする
-    const v35 = polar(35, windKt);
-    if (deg >= 31) return 1.38 + ((deg - 31) / 4) * (v35 - 1.38);
+  if (deg > 20 && deg < 33) {
+    const v33 = polar(33, windKt);
+    if (deg >= 29) return 1.42 + ((deg - 29) / 4) * (v33 - 1.42);
   }
   for (let i = 1; i < POLAR.length; i++) {
     if (deg <= POLAR[i][0]) {
@@ -640,13 +648,13 @@ export class Boat {
     this.effTwaDeg = effTwaDeg;
     this.byTheLee = isByTheLee ? clamp((effTwaDeg - 180) / 20, 0, 1) : 0;
 
-    // トリム評価(オーバー/アンダー)とラフ・ストール (風域のベスト角度に応じてシバー開始角PINCHも35°〜39°に変化)
+    // トリム評価(オーバー/アンダー)とラフ・ストール (38°〜39°ではシバーせず、37°未満でシバーし始める)
     const localWindKt = BASE_WIND_KT * w.f;
     const optCloseDeg = bestCloseDeg(localWindKt);
     this.bestCloseDeg = optCloseDeg;
     const so = sheetOpt(twa); this.sOpt = so;
     const d = this.sheet - so;
-    const pinchDeg = clamp(optCloseDeg - 3.5, 34.5, 39.0); // 強風は34.5°までシバーせず、軽風は39°未満でシバーし始める
+    const pinchDeg = clamp(optCloseDeg - 6.0, 33.5, 37.0); // 38°・39°でもシバーせず走れるようシバー開始角を2°低く設定
     const PINCH = (pinchDeg * Math.PI) / 180;
     const pinch = twa < PINCH ? clamp((PINCH - twa) * 3.8, 0, 1) : 0;
     this.luff = clamp(Math.max(Math.max(0, -d - 0.05) * 3.2, pinch * 0.9), 0, 1);
@@ -663,6 +671,13 @@ export class Boat {
     // タック回頭中は惰性が残るため減速を大幅に抑える
     const rawPolarV = polar(twaDeg, localWindKt) * SPEED_SCALE;
     let polarV = turning ? Math.max(rawPolarV, V45_CLOSE * SPEED_SCALE * 0.74) : rawPolarV;
+    // リーチング(58°〜135°)でのぼした(ラフした)際、見かけ風速(AWS)の増加とスロット効果で艇速が一段伸びる実艇の特性
+    if (twaDeg >= 58 && twaDeg <= 135 && !this.pole) {
+      const reachSlot = Math.sin(((clamp(twaDeg, 60, 115) - 60) / 55) * Math.PI); // 60°〜115°(ピーク約85°付近)
+      const isLuffingUp = steer * this.tack < -0.02 ? clamp(-steer * this.tack, 0, 0.8) : 0;
+      const reachBoost = 1 + 0.045 * reachSlot + 0.038 * isLuffingUp * smoothstep(65, 130, twaDeg);
+      polarV *= reachBoost;
+    }
     // 180°近く〜180°を超えてバイザリー(180°〜200°)に入った際はメインセールがジブを隠し気流が剥離して艇速が大きく落ちる
     if (effTwaDeg > 176) {
       const over180 = Math.max(0, effTwaDeg - 180);
@@ -672,7 +687,8 @@ export class Boat {
     }
     // ランチャー: 下レグ(深い角度)でジブが開き、センターボード引き上げ(抵抗減)＆フォアステイ緩和で速くなる。リーチより上では逆効果
     const poleF = 1 + this.poleK * (0.072 * smoothstep(1.80, 2.55, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
-    let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : 0.18) * Math.abs(steer)) * this.throttle;
+    const steerDrag = (twaDeg >= 58 && twaDeg <= 135 && steer * this.tack < 0) ? 0.06 : 0.18; // リーチングでのぼす舵は失速しにくい
+    let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : steerDrag) * Math.abs(steer)) * this.throttle;
     // 波: 艇速がない時はしっかり波にはたかれ、艇速がある時や下レグでは気にならない程度に抑える
     {
       const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));
