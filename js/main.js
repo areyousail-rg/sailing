@@ -8,7 +8,7 @@ import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
 import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
-import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail } from './audio.js';
+import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
@@ -24,8 +24,8 @@ const rng = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
 
 // ---------- 設定(保存) ----------
 const VENUES = [
-  { id: 'hakkeijima', label: '八景島 (横浜)', icon: '', eyebrow: 'SNIPE CLASS ・ HAKKEIJIMA, YOKOHAMA', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
-  { id: 'enoshima', label: '江の島 (湘南)', icon: '', eyebrow: 'SNIPE CLASS ・ ENOSHIMA, SHONAN', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
+  { id: 'hakkeijima', label: '八景島', icon: '', eyebrow: '八景島沖レース海面', lat: 35.337, lon: 139.658, defaultWindDeg: 15, defaultWindKt: 9 },
+  { id: 'enoshima', label: '江の島', icon: '', eyebrow: '江の島沖レース海面', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
 ];
 const COURSE_MODES = [
   { id: 'trapezoid', label: 'トラペゾイド', icon: '' },
@@ -445,42 +445,19 @@ function updateNearBoatsHUD(b) {
   }
 }
 
-// ---------- 接近時の権利主張コール (スタボ！ / 下！ / 動物の鳴き声) ----------
-const hailBubblesBox = $('hailBubbles');
-const activeHails = [];
-const hailProjV3 = new THREE.Vector3();
+// ---------- 接近時の権利主張コール (動物キャラクターのみ・衝突コース時のみ) ----------
 let globalHailCD = 0;
+const isAnimalCrew = (t) => t === 'cat' || t === 'dog' || t === 'shiba' || t === 'duck';
 
-function formatHailText(crewType, callKind) {
-  const ruleWord = callKind === 'starboard' ? 'スタボ！' : '下！';
-  if (crewType === 'cat') return { main: 'ニャン！', sub: ruleWord };
-  if (crewType === 'dog' || crewType === 'shiba') return { main: 'ワン！', sub: ruleWord };
-  if (crewType === 'duck') return { main: 'グワッ！', sub: ruleWord };
-  return { main: ruleWord, sub: '' };
+function getBoatAnimalVoice(b) {
+  if (!b) return null;
+  if (isAnimalCrew(b.helmType)) return b.helmType;
+  if (isAnimalCrew(b.crewType)) return b.crewType;
+  return null;
 }
 
-function spawnHailBubble(rowBoat, callKind) {
-  if (!hailBubblesBox || !rowBoat) return;
-  const existing = activeHails.find((h) => h.boat === rowBoat);
-  if (existing) {
-    existing.ttl = 2.1;
-    return;
-  }
-  const el = document.createElement('div');
-  el.className = 'hailBubble';
-  const colHex = '#' + rowBoat.color.toString(16).padStart(6, '0');
-  const { main, sub } = formatHailText(rowBoat.helmType || 'human_m', callKind);
-  el.innerHTML = `<span class="hbSw" style="background:${colHex}"></span><span>${main}</span>${sub ? `<span class="hbSub">(${sub})</span>` : ''}`;
-  hailBubblesBox.appendChild(el);
-  activeHails.push({ boat: rowBoat, el, ttl: 2.1 });
-}
-
-function clearHailBubbles() {
-  while (activeHails.length > 0) {
-    const h = activeHails.pop();
-    if (h.el && h.el.parentNode) h.el.remove();
-  }
-}
+function clearHailBubbles() {}
+function updateHailBubbles() {}
 
 function checkRightOfWayHails(dt) {
   if (!player || state.ff || state.phase !== 'race' || cfg.bgmMode === 'off') return;
@@ -490,6 +467,7 @@ function checkRightOfWayHails(dt) {
   }
   if (globalHailCD > 0) return;
 
+  const isPreStart = state.t < 0;
   const n = boats.length;
   for (let i = 0; i < n; i++) {
     const a = boats[i];
@@ -499,91 +477,102 @@ function checkRightOfWayHails(dt) {
       if (b.dsq || b.finished || b.penalty) continue;
       const dx = b.x - a.x, dz = b.z - a.z;
       const distM = Math.hypot(dx, dz) / 1.5;
-      if (distM > 13.5 || distM < 1.2) continue;
+      if (distM > (isPreStart ? 7.2 : 11.0) || distM < 1.1) continue;
 
-      // 自艇が絡む接近、または自艇の近く(22m以内)で発生した接近のみ声を鳴らす
+      // 自艇が絡む接近、または自艇の近く(18m以内)で発生した接近のみ対象
       const involvesPlayer = a === player || b === player;
       const dPlayer = involvesPlayer ? distM : Math.min(Math.hypot(a.x - player.x, a.z - player.z), Math.hypot(b.x - player.x, b.z - player.z)) / 1.5;
-      if (!involvesPlayer && dPlayer > 22) continue;
+      if (!involvesPlayer && dPlayer > 18) continue;
 
-      // 接近中または至近距離(8.2m以内)か判定
+      // 最接近時間(tCPA)と最接近距離(dCPA)から「このままいくと明らかに衝突する軌道」か判定
       const avx = Math.sin(a.h) * a.v, avz = -Math.cos(a.h) * a.v;
       const bvx = Math.sin(b.h) * b.v, bvz = -Math.cos(b.h) * b.v;
-      const closingDot = dx * (bvx - avx) + dz * (bvz - avz);
-      if (closingDot >= -0.05 && distM > 8.2) continue;
+      const rvx = bvx - avx, rvz = bvz - avz;
+      const rv2 = rvx * rvx + rvz * rvz;
+      if (rv2 < 0.08) continue;
+      const tCPA = -(dx * rvx + dz * rvz) / rv2;
+      const maxT = isPreStart ? 2.0 : 3.4;
+      if (tCPA < 0.12 || tCPA > maxT) continue;
+      const cpaX = dx + rvx * tCPA, cpaZ = dz + rvz * tCPA;
+      const dCPA = Math.hypot(cpaX, cpaZ) / 1.5;
+      if (dCPA > (isPreStart ? 2.3 : 3.2)) continue;
 
       let rowBoat = null, gwBoat = null, callKind = null;
       if (a.tack !== b.tack) {
         // ルール10: ポート・スターボード (tack > 0 がスターボード艇)
-        rowBoat = a.tack > 0 ? a : b;
-        gwBoat = a.tack > 0 ? b : a;
+        const stbd = a.tack > 0 ? a : b;
+        const port = a.tack > 0 ? b : a;
+        if (stbd.v < 0.9 || port.v < 0.9) continue;
+
+        // スタボ艇の座標系でポート艇が前方〜斜め前にいて進路が交差しているか確認
+        const shx = Math.sin(stbd.h), shz = -Math.cos(stbd.h);
+        const srx = Math.cos(stbd.h), srz = Math.sin(stbd.h);
+        const p2sX = port.x - stbd.x, p2sZ = port.z - stbd.z;
+        const alongStbd = (p2sX * shx + p2sZ * shz) / 1.5;
+        const crossStbd = (p2sX * srx + p2sZ * srz) / 1.5;
+        if (alongStbd < 1.2 || alongStbd > 9.5 || Math.abs(crossStbd) > 6.5) continue;
+
+        // 1) スタボ艇自身がすでにベアしてポート艇の後ろを通ろうとしている場合はコールしない
+        if (stbd.steer > 0.10) continue;
+        const phx = Math.sin(port.h), phz = -Math.cos(port.h);
+        const stbdCpaRelX = (stbd.x + Math.sin(stbd.h) * stbd.v * tCPA) - (port.x + Math.sin(port.h) * port.v * tCPA);
+        const stbdCpaRelZ = (stbd.z - Math.cos(stbd.h) * stbd.v * tCPA) - (port.z - Math.cos(port.h) * port.v * tCPA);
+        const alongPortAtCPA = (stbdCpaRelX * phx + stbdCpaRelZ * phz) / 1.5;
+        // 最接近時にスタボ艇がポート艇の船尾側(後ろ)を通る軌道ならコールしない
+        if (alongPortAtCPA < -0.9) continue;
+
+        // 2) ポート艇にタックさせた結果、ポート艇が自艇の風下前(リーバウ)に入って自艇がバックウインドを浴びる不利な位置関係ならコールしない
+        // スタボタック(tack=+1)は -c かつ +a 方向へ走るため、相手が自分より少し左(-c側: dlC = stbd.c - port.c > 0)かつ少し風上〜前方(da = port.a - stbd.a)でタックするとバックウインドになる
+        const dlC = stbd.c - port.c;
+        const da = port.a - stbd.a;
+        const wouldGetBackwinded = dlC > 0.3 && dlC < 5.8 && da > -1.2 && da < 7.2;
+        if (wouldGetBackwinded && crossStbd < -0.6) continue;
+
+        rowBoat = stbd;
+        gwBoat = port;
         callKind = 'starboard';
       } else {
         // ルール11: 同一タックのオーバーラップ (風下艇が権利艇)
         const wf = a.windFrom ?? W0;
         const dwx = -Math.sin(wf), dwz = Math.cos(wf); // 風下ベクトル
         const rwx = Math.cos(wf), rwz = Math.sin(wf);
-        // 艇の進行方向に沿った前後差でオーバーラップ判定
         const hx = Math.sin(a.h), hz = -Math.cos(a.h);
         const along = (dx * hx + dz * hz) / 1.5;
         const cross = Math.abs(dx * rwx + dz * rwz) / 1.5;
-        if (Math.abs(along) < 5.5 && cross < 8.5) {
-          // 風下度合い: dw ベクトル方向の座標が大きい方がより風下
+        if (Math.abs(along) < 4.2 && cross < 5.2) {
           const leeA = a.x * dwx + a.z * dwz;
           const leeB = b.x * dwx + b.z * dwz;
-          if (Math.abs(leeA - leeB) > 1.2) {
-            rowBoat = leeA > leeB ? a : b;
-            gwBoat = leeA > leeB ? b : a;
-            callKind = 'leeward';
+          const leeGap = Math.abs(leeA - leeB) / 1.5;
+          if (leeGap > 0.9 && leeGap < 4.8) {
+            const leeBoat = leeA > leeB ? a : b;
+            const windBoat = leeA > leeB ? b : a;
+            // 風上艇が風下へ流れている/落としている、または風下艇と横方向に接近してぶつかりそうなときのみコール
+            const wvx = Math.sin(windBoat.h) * windBoat.v, wvz = -Math.cos(windBoat.h) * windBoat.v;
+            const lvx = Math.sin(leeBoat.h) * leeBoat.v, lvz = -Math.cos(leeBoat.h) * leeBoat.v;
+            const leeClosingSpeed = ((wvx - lvx) * dwx + (wvz - lvz) * dwz);
+            if (leeClosingSpeed > 0.16 && dCPA < 2.6) {
+              rowBoat = leeBoat;
+              gwBoat = windBoat;
+              callKind = 'leeward';
+            }
           }
         }
       }
 
-      if (rowBoat && gwBoat && callKind && rowBoat.hailCD <= 0) {
-        // 他艇が自艇に対してスタボ/下の権利を持つ時は優先的に声を出して主張する
-        if (!involvesPlayer && rng() < 0.45) continue;
-        rowBoat.hailCD = (involvesPlayer ? 5.2 : 7.5) + rng() * 2.5;
-        globalHailCD = involvesPlayer ? 1.25 : 2.0;
+      const animalVoice = getBoatAnimalVoice(rowBoat);
+      if (rowBoat && gwBoat && callKind && animalVoice && rowBoat.hailCD <= 0) {
+        if (!involvesPlayer && rng() < 0.65) continue;
+        rowBoat.hailCD = (involvesPlayer ? 8.5 : 12.0) + rng() * 3.5;
+        globalHailCD = involvesPlayer ? 3.2 : 4.8;
 
         const rx = Math.cos(player.h), rz = Math.sin(player.h);
         const pdx = rowBoat.x - player.x, pdz = rowBoat.z - player.z;
         const pDist = Math.hypot(pdx, pdz) || 1;
         const pan = rowBoat === player ? 0 : clamp(((pdx * rx + pdz * rz) / pDist) * 0.85, -0.88, 0.88);
-        playRightOfWayHail(rowBoat.helmType || 'human_m', callKind, pan);
-        spawnHailBubble(rowBoat, callKind);
+        playRightOfWayHail(animalVoice, callKind, pan);
         return;
       }
     }
-  }
-}
-
-function updateHailBubbles(dt) {
-  if (!hailBubblesBox) return;
-  if (state.phase !== 'race' || state.paused || cfg.bgmMode === 'off') {
-    for (const h of activeHails) h.el.style.display = 'none';
-    return;
-  }
-  const W = window.innerWidth, H = window.innerHeight;
-  for (let i = activeHails.length - 1; i >= 0; i--) {
-    const h = activeHails[i];
-    h.ttl -= dt;
-    if (h.ttl <= 0 || !h.boat || h.boat.dsq) {
-      if (h.el && h.el.parentNode) h.el.remove();
-      activeHails.splice(i, 1);
-      continue;
-    }
-    hailProjV3.set(h.boat.x, 3.6, h.boat.z);
-    hailProjV3.project(camera);
-    if (hailProjV3.z > 1) {
-      h.el.style.display = 'none';
-      continue;
-    }
-    const sx = clamp((hailProjV3.x * 0.5 + 0.5) * W, 64, W - 64);
-    const sy = clamp((-hailProjV3.y * 0.5 + 0.5) * H, 52, H - 72);
-    h.el.style.display = 'inline-flex';
-    h.el.style.left = `${sx}px`;
-    h.el.style.top = `${sy}px`;
-    h.el.style.opacity = h.ttl < 0.35 ? (h.ttl / 0.35).toFixed(2) : '1';
   }
 }
 
@@ -743,7 +732,7 @@ function handleCollision(e) {
 function startRace() {
   initAudio();
   clearHailBubbles();
-  playBgm(cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima');
+  playBgm(cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima');
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   randomizeStartLine();
@@ -773,52 +762,52 @@ function startRace() {
   toast(`スタート1分前 (${favLabel})`, 'info', 6500);
 }
 
-// ---------- スマブラ風オリエンテーション (HOW TO PLAY) ----------
+// ---------- オリエンテーション ----------
 const ORIENT_STEPS = [
   {
-    en: 'PRE-START & LINE BIAS',
+    en: '',
     title: 'スタート1分前・有利なサイドと海面を見極めよう',
     body: 'ゲームはレーススタート<strong>1分前</strong>から始まる！ <strong>画面左上のタイマー</strong>と、海上の<strong>「START LINE」下の有利サイド表記</strong>、海面のブローを判断して出たいポジションを確保しよう。',
     dur: 11.2,
   },
   {
-    en: 'SPEED & ANGLE CONTROL',
+    en: '',
     title: '角度を上したりセールを出してスピードを調整しよう',
     body: 'ポジションを確保するためには、<strong>左下の「◀ ▶」ボタン（←→キー）</strong>で風上へ角度を上したり、<strong>右下の「出す」ボタン（↓キー）</strong>でセールを緩めてスピードを調整しよう！',
     dur: 11.5,
   },
   {
-    en: 'CLEAR WATER START!',
-    title: '0:00に合わせてクリアウオーターでスタート！',
-    body: 'スタート時は他艇の風影に入らない<strong>クリアウオーター</strong>で出られるよう、<strong>左上タイマーの「0:00」</strong>に合わせてスタートラインぎりぎり手前から加速してスタートしよう！',
+    en: '',
+    title: '0:00に合わせてスタートラインぎりぎりから出られるように加速してスタートしよう',
+    body: '<strong>0:00</strong>に合わせてスタートラインぎりぎりから出られるように加速してスタートしよう',
     dur: 11.0,
   },
   {
-    en: 'CLOSE-HAULED & VMG',
+    en: '',
     title: 'クローズホールドは真風角40°〜44°でVMGを維持！',
     body: 'スタート後のクローズホールドでは<strong>下の計器バー中央「真風角」</strong>を確認！ <strong>40°〜44°</strong>がベストだが、<strong>ブローに入ったら「◀ ▶」で少し上し、抜けたら少し落とし気味</strong>で走ってVMGを維持しよう！',
     dur: 11.5,
   },
   {
-    en: 'TACTICS & TACKING',
+    en: '',
     title: 'ブロー・風の振れを見てタック判断しNextマークへ！',
     body: 'クローズ中は海面のブローや風の振れを確認して<strong>「◀ ▶」（または[T]キー）</strong>でタック判断をし、<strong>下計器バー右端「次のマーク」</strong>の矢印方向へ近づこう！',
     dur: 11.2,
   },
   {
-    en: 'DOWNWIND & LAUNCHER',
-    title: '上マーク回航後はランチャーUP！ 下マーク回航前はDOWN！',
-    body: '<strong>上マーク回航後</strong>の風下レグでは、<strong>画面左の「ランチャー」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>下マーク回航前</strong>にはもう一度「ランチャー」ボタンを押して忘れずにランチャーを下げよう。',
-    dur: 11.8,
+    en: '',
+    title: '上マーク回航後はランチャーUP！ 下マーク回航前はDOWNして回航！',
+    body: '<strong>上マーク回航後</strong>の風下レグでは、<strong>画面左の「ランチャー」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>下マーク回航前</strong>にはランチャーを下げ、クローズに上した時にマークが真横になる軌道できれいに回航しよう。',
+    dur: 13.6,
   },
   {
-    en: 'ROUNDING & FINAL LEG',
+    en: '',
     title: '下マーク回航後も有利な海面と艇速を維持しフィニッシュへ！',
     body: '下マーク回航後も有利な海面と艇速を維持して、チェッカーフラッグの<strong>「FINISH」ライン</strong>を目指して最後まで走り切ろう！',
     dur: 10.8,
   },
   {
-    en: 'POST-RACE REVIEW',
+    en: '',
     title: 'フィニッシュ後は「振り返り」ボタンで分析して次に繋げよう！',
     body: 'フィニッシュ後の<strong>結果画面にある「振り返り」ボタン</strong>を押すと分析画面が開く！ <strong>「▶ 再生」で各艇のコース取り</strong>を確認し、<strong>スタート順位・走行距離・平均艇速・平均角度</strong>を振り返って次のレースに繋げよう！',
     dur: 12.5,
@@ -988,7 +977,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
   } else if (stepIdx === 4) {
     updateOrientVisualPointer(['#instr .cell.mark', '#tLeft', '#tRight']);
   } else if (stepIdx === 5) {
-    if ((elapsed < 5.8 || (elapsed >= 6.4 && elapsed < 7.6)) && $('tPole')) $('tPole').classList.add('on');
+    if ((elapsed < 4.8 || (elapsed >= 5.2 && elapsed < 6.4)) && $('tPole')) $('tPole').classList.add('on');
     updateOrientVisualPointer(['#tPole']);
   } else if (stepIdx === 6) {
     updateOrientVisualPointer([
@@ -996,7 +985,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
     ]);
   } else if (stepIdx === 7) {
     const revDemo = $('orientReviewDemo');
-    if (elapsed < 5.5) {
+    if (elapsed < 5.2) {
       if (revDemo) revDemo.classList.add('hidden');
       // 実際の結果画面(#result)と「振り返り」ボタン(#reviewBtn)を表示して指し示す
       $('resultTitle').textContent = '1位 / 16艇';
@@ -1016,7 +1005,8 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
     } else {
       $('result').classList.add('hidden');
       if (revDemo) revDemo.classList.remove('hidden');
-      updateOrientVisualPointer(['#orientRevPlayTarget', '#orientRevStatsTarget']);
+      // 振り返り画面全体(.orientRevCard)を赤枠で囲う
+      updateOrientVisualPointer(['#orientReviewDemo .orientRevCard']);
     }
   }
 }
@@ -1072,7 +1062,7 @@ function setupOrientStepScene(stepIdx) {
     player.v = 3.05 * SPEED_SCALE; player.sheet = sheetOpt(0.73); player.pole = false; player.poleK = 0; player.leg = 0; player.started = true;
     cam.yaw = 0.15; cam.pitch = 0.04;
   } else if (stepIdx === 5) {
-    // STEP 6: 前半＝上マーク(1a)回航直後にランチャーUP ／ 後半＝下マーク(3)回航前にランチャーDOWN
+    // STEP 6: 前半＝上マーク(1a)回航直後にランチャーUP ／ 後半＝下マーク(3)回航前にランチャーDOWNしてきれいなアウト・イン・アウト回航
     state.t = 125;
     const m1a = MARKS.m1a || MARKS.m1;
     const p = toWorld(m1a.a - 7, m1a.c - 4);
@@ -1126,7 +1116,6 @@ function renderOrientStepUI() {
   if (titleEl) titleEl.textContent = st.title;
   if (bodyEl) bodyEl.innerHTML = st.body;
 
-  // スマブラ風スラッシュ＆カードインアニメーション
   const card = $('orientCard'), flash = $('orientFlash');
   if (card) { card.classList.remove('stepAnim'); void card.offsetWidth; card.classList.add('stepAnim'); }
   if (flash) { flash.classList.remove('slash'); void flash.offsetWidth; flash.classList.add('slash'); }
@@ -1157,7 +1146,7 @@ function toggleOrientPause() {
 
 function startOrientation() {
   initAudio();
-  stopBgm();
+  playBgm('orientation');
   state.phase = 'orientation'; state.t = -50; state.paused = false; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.ff = false; state.pAI = null;
   // オリエンテーション01で海上の有利サイド表記が分かりやすく出るよう、有利サイドあり(上有利または下有利)を保証
   for (let tries = 0; tries < 12; tries++) {
@@ -1257,28 +1246,68 @@ function orientationStep(dt, time) {
     cam.yaw = 0.15;
     cam.pitch = 0.04;
   } else if (idx === 5) {
-    // STEP 6: 前半(0〜5.8s)＝上マーク(1a)回航直後にランチャーUP ／ 後半(5.8s〜)＝下マーク(3)回航前にランチャーDOWN
-    if (orientState.elapsed >= 5.8 && !orientState.phase2) {
+    // STEP 6: 前半(0〜4.8s)＝上マーク(1a)回航直後にランチャーUP ／ 後半(4.8s〜)＝下マーク(3)回航前にランチャーDOWN → クローズの角度に上した時にマークが真横にあるきれいなアウト・イン・アウト回航
+    if (orientState.elapsed >= 4.8 && !orientState.phase2) {
       orientState.phase2 = true;
-      const m3 = MARKS.m3 || MARKS.gL;
-      const p2 = toWorld(m3.a + 38, m3.c + 5);
-      player.place(p2.x, p2.z, wrap(W0 + 2.75));
-      player.v = 3.3 * SPEED_SCALE;
       player.pole = true; player.poleK = 1;
       player.leg = Math.min(5, LEGS.length - 1);
       cam.inited = false;
     }
-    const tgtH = orientState.phase2 ? wrap(W0 + 2.75) : wrap(W0 + 2.66);
-    player.steer = clamp(wrap(tgtH - player.h) * 2.6, -1, 1);
-    player.sheet = sheetOpt(player.twa);
-    player.throttle = 1.0;
-    if (orientState.elapsed > 6.5 && !orientState.subDone) {
-      orientState.subDone = true;
-      player.setPole(false);
-      poleClank(false);
+    if (!orientState.phase2) {
+      const tgtH = wrap(W0 + 2.66);
+      player.steer = clamp(wrap(tgtH - player.h) * 2.6, -1, 1);
+      player.sheet = sheetOpt(player.twa);
+      player.throttle = 1.0;
+      cam.yaw = 0.56 + Math.sin(orientState.elapsed * 0.35) * 0.08;
+      cam.pitch = 0.03;
+    } else {
+      if (orientState.elapsed >= 5.5 && !orientState.subDone) {
+        orientState.subDone = true;
+        player.setPole(false);
+        poleClank(false);
+      }
+      // 下マーク(m3)のアウト・イン・アウト回航軌道:
+      // クローズホールド角度(theta1 = 0.73 rad ≒ 41.8°)に上し切った瞬間に、マークm3が左舷真横(90° abeam, 距離3.0m)に来る円弧軌道
+      const m3 = MARKS.m3 || MARKS.gL;
+      const theta0 = Math.PI - 0.12; // 進入角 (約173°)
+      const theta1 = 0.73;           // 脱出クローズホールド角 (約41.8°)
+      const R_turn = 8.4;            // 回航旋回半径 [m]
+      const R_abeam = 3.0;           // クローズに上した瞬間のマーク真横クリアランス [m]
+      const centerA = m3.a + (R_turn - R_abeam) * Math.sin(theta1);
+      const centerC = m3.c - (R_turn - R_abeam) * Math.cos(theta1);
+      const L_arc = R_turn * (theta0 - theta1);
+      const vRound = 3.22 * SPEED_SCALE;
+      const t2 = orientState.elapsed - 4.8;
+      const s = (t2 - 1.55) * vRound;
+      let desA, desC, theta, steerCmd = 0;
+      if (s < 0) {
+        theta = theta0;
+        const a0 = centerA - R_turn * Math.sin(theta0);
+        const c0 = centerC + R_turn * Math.cos(theta0);
+        desA = a0 + s * Math.cos(theta0);
+        desC = c0 + s * Math.sin(theta0);
+        steerCmd = 0;
+      } else if (s <= L_arc) {
+        theta = theta0 - s / R_turn;
+        desA = centerA - R_turn * Math.sin(theta);
+        desC = centerC + R_turn * Math.cos(theta);
+        steerCmd = -0.52;
+      } else {
+        theta = theta1;
+        const a1 = centerA - R_turn * Math.sin(theta1);
+        const c1 = centerC + R_turn * Math.cos(theta1);
+        desA = a1 + (s - L_arc) * Math.cos(theta1);
+        desC = c1 + (s - L_arc) * Math.sin(theta1);
+        steerCmd = 0;
+        player.leg = Math.min(6, LEGS.length - 1);
+      }
+      orientState._m3Sync = { a: desA, c: desC, h: wrap(W0 + theta), v: vRound, steer: steerCmd, twa: Math.abs(theta) };
+      player.steer = steerCmd;
+      player.sheet = sheetOpt(Math.abs(theta));
+      player.throttle = 1.0;
+      cam.yaw = -0.22;
+      cam.pitch = 0.05;
     }
-    cam.yaw = (orientState.phase2 ? 0.30 : 0.56) + Math.sin(orientState.elapsed * 0.35) * 0.10;
-    cam.pitch = 0.03;
   } else if (idx === 6) {
     // STEP 7: 下マーク回航後 → フィニッシュを目指し、フィニッシュラインを切った瞬間にホーンを鳴らす
     const tgtH = wrap(player.windFrom - player.tack * 0.72);
@@ -1314,8 +1343,24 @@ function orientationStep(dt, time) {
         b.z = pSync.z;
         b.ocs = false;
       }
+    } else if (idx === 5 && orientState.phase2 && b.isPlayer && orientState._m3Sync) {
+      const ms = orientState._m3Sync;
+      const pSync = toWorld(ms.a, ms.c);
+      b.x = pSync.x;
+      b.z = pSync.z;
+      b.a = ms.a;
+      b.c = ms.c;
+      b.h = ms.h;
+      b.v = ms.v;
+      b.steer = ms.steer;
+      b.rel = wrap(b.windFrom - b.h);
+      b.twa = Math.abs(b.rel);
+      b.effTwaDeg = (b.twa * 180) / Math.PI;
+      b.tack = b.rel >= 0 ? 1 : -1;
+      b.sOpt = sheetOpt(b.twa);
+      b.sheet = b.sOpt;
     }
-    updateProgress(b, state.t);
+    if (!(idx === 5 && orientState.phase2)) updateProgress(b, state.t);
     if (idx === 6) {
       // フィニッシュラインの表示が消えないよう finished フラグは抑止しつつ、バウがフィニッシュラインを切った瞬間にホーンを鳴らす
       b.finished = false;
@@ -1344,7 +1389,11 @@ function orientationStep(dt, time) {
 const SIGS = [[-60, 'down'], [0, 'gun']];
 function signals(prevT, t) {
   for (const [st, k] of SIGS) if (prevT < st && t >= st) {
-    if (k === 'gun') { signalHorn('short'); atGun(); } else signalHorn('long');
+    if (k === 'gun') {
+      signalHorn('short');
+      atGun();
+      if (state.phase === 'race') playBgm(cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima');
+    } else signalHorn('long');
   }
   const c = Math.ceil(-t);
   if (t < 0 && t > -6 && c !== state.count) { state.count = c; beep(c <= 1 ? 1200 : 880); }
@@ -1469,6 +1518,73 @@ function fastForwardFinishers() {
   state.ff = false;
 }
 
+// ---------- 戦績データ管理 (方式A: localStorage) ----------
+const RECORDS_KEY = 'snipe-records-v1';
+function loadRaceRecords() {
+  try {
+    const raw = localStorage.getItem(RECORDS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+function saveRaceRecord(entry) {
+  try {
+    const list = loadRaceRecords();
+    list.unshift(entry);
+    if (list.length > 100) list.length = 100;
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(list));
+  } catch (e) {}
+}
+function renderRecordsModal() {
+  const list = loadRaceRecords();
+  const sumEl = $('recordsSummary');
+  const bodyEl = $('recordsBody');
+  if (!sumEl || !bodyEl) return;
+
+  const total = list.length;
+  const validRanks = list.filter((r) => typeof r.rank === 'number' && r.rank >= 1);
+  const wins = validRanks.filter((r) => r.rank === 1).length;
+  const podiums = validRanks.filter((r) => r.rank <= 3).length;
+  const avgRank = validRanks.length > 0
+    ? (validRanks.reduce((acc, r) => acc + r.rank, 0) / validRanks.length).toFixed(1) + '位'
+    : '−';
+
+  sumEl.innerHTML =
+    `<div class="recStat"><span>総出走数</span><b>${total}回</b></div>` +
+    `<div class="recStat"><span>1位回数</span><b>${wins}回</b></div>` +
+    `<div class="recStat"><span>3位以内</span><b>${podiums}回</b></div>` +
+    `<div class="recStat"><span>平均着順</span><b>${avgRank}</b></div>`;
+
+  if (list.length === 0) {
+    bodyEl.innerHTML = `<tr><td colspan="7" class="recordsEmpty">まだ戦績記録がありません。レースをフィニッシュすると自動的に記録されます。</td></tr>`;
+    return;
+  }
+  bodyEl.innerHTML = list.map((r) => {
+    const rankStr = r.status === 'DSQ' ? 'DSQ' : r.status === 'DNF' ? 'DNF' : `${r.rank}位 / ${r.fleet || 16}艇`;
+    const isWin = r.rank === 1;
+    return `<tr class="${isWin ? 'me' : ''}">` +
+      `<td>${r.date || '−'}</td>` +
+      `<td>${r.venue || '−'}</td>` +
+      `<td>${r.course || '−'}</td>` +
+      `<td>${r.wind || '−'}</td>` +
+      `<td>${rankStr}</td>` +
+      `<td>${r.time || '−'}</td>` +
+      `<td>${r.avgKt ? r.avgKt + 'kt' : '−'}</td>` +
+      `</tr>`;
+  }).join('');
+}
+function openRecordsModal() {
+  renderRecordsModal();
+  const m = $('recordsModal');
+  if (m) m.classList.remove('hidden');
+}
+function closeRecordsModal() {
+  const m = $('recordsModal');
+  if (m) m.classList.add('hidden');
+}
+
 function showResult() {
   state.resultShown = true;
   updateSailingAudio(0, player, false);
@@ -1488,6 +1604,22 @@ function showResult() {
   if (recorder) {
     recorder.finalize(boats, state.t);
     const rec = recorder;
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}/${pad2(now.getMonth() + 1)}/${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+    const pSt = rec.stats && rec.stats.get ? rec.stats.get(player.id) : null;
+    const avgKt = pSt && pSt.raceT > 0 ? ((pSt.upVSum + pSt.dnVSum) / pSt.raceT / SPEED_SCALE / KT).toFixed(2) : null;
+    saveRaceRecord({
+      date: dateStr,
+      venue: cfg.venue === 'enoshima' ? '江の島' : '八景島',
+      course: cfg.courseMode === 'upwind' ? '上マークF' : 'トラペゾイド',
+      wind: `${compassDir(currentWindDeg)} ${BASE_WIND_KT}kt`,
+      rank: player.dsq ? null : p > 0 ? p : null,
+      fleet: boats.length,
+      status: player.dsq ? 'DSQ' : p > 0 ? 'FIN' : 'DNF',
+      time: player.dsq ? 'DSQ' : p > 0 ? fmtMs(player.finishTime) : 'DNF',
+      avgKt,
+    });
     let rb = $('reviewBtn');
     if (!rb) {
       rb = document.createElement('button');
@@ -1513,7 +1645,10 @@ function togglePause(p) {
     modal.classList.remove('hidden');
     toast('一時中断中', 'info', 2000);
   } else {
-    playBgm(cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima');
+    const bgmMode = state.t < 0
+      ? (cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima')
+      : (cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima');
+    playBgm(bgmMode);
     modal.classList.add('hidden');
     toast('再開', 'info', 1500);
   }
@@ -1871,7 +2006,15 @@ function buildChoices(containerId, key) {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'choice' + (cfg[key] === c.id ? ' sel' : ''); btn.id = `${containerId}-${c.id.replace(/[^a-z0-9]/gi, '_')}`;
     btn.innerHTML = `<span class="ic">${c.icon}</span><span class="lb">${c.label}</span>`;
-    btn.onclick = () => { cfg[key] = c.id; saveCfg(); buildChoices(containerId, key); updatePreview(); rebuildPlayerModel(); };
+    btn.onclick = () => {
+      initAudio();
+      playCrewSelectSound(c.id);
+      cfg[key] = c.id;
+      saveCfg();
+      buildChoices(containerId, key);
+      updatePreview();
+      rebuildPlayerModel();
+    };
     box.appendChild(btn);
   }
 }
@@ -1914,6 +2057,16 @@ function initMenu() {
     startBtnEl.onclick = startRace;
   }
   if ($('practiceBtn')) $('practiceBtn').onclick = startOrientation;
+  if ($('recordsBtn')) $('recordsBtn').onclick = openRecordsModal;
+  if ($('recordsCloseBtn')) $('recordsCloseBtn').onclick = closeRecordsModal;
+  if ($('recordsClearBtn')) {
+    $('recordsClearBtn').onclick = () => {
+      if (confirm('保存されている戦績記録をすべて消去しますか？')) {
+        try { localStorage.removeItem(RECORDS_KEY); } catch (e) {}
+        renderRecordsModal();
+      }
+    };
+  }
   if ($('orientPauseBtn')) $('orientPauseBtn').onclick = toggleOrientPause;
   if ($('orientExitBtn')) $('orientExitBtn').onclick = () => exitOrientation(false);
   $('againBtn').onclick = () => { clearHailBubbles(); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden'); state.phase = 'menu'; state.resultShown = false; document.body.classList.add('menuOpen'); cam.menuOffset = true; makeFleet(true); playBgm('menu'); };
