@@ -6,6 +6,7 @@ export const CREW_TYPES = [
   { id: 'human_f', label: '女性', icon: '' },
   { id: 'cat', label: 'ネコ', icon: '' },
   { id: 'dog', label: 'イヌ', icon: '' },
+  { id: 'duck', label: 'アヒル', icon: '' },
 ];
 
 // assets/crew/manifest.json から読み込んだ差し替えモデル
@@ -240,6 +241,7 @@ const ANIMAL = {
   cat: { body: 0xf0a24a, belly: 0xfff0dc, nose: 0xff8fa3 },
   dog: { body: 0xd98b3a, belly: 0xfff5e8, nose: 0x1e1b18 },
   shiba: { body: 0xd98b3a, belly: 0xfff5e8, nose: 0x1e1b18 },
+  duck: { body: 0xfffcf5, belly: 0xffffff, nose: 0xff9f1a },
   penguin: { body: 0x27323d, belly: 0xffffff, nose: 0xff9f1c },
   bear: { body: 0x8b5a3c, belly: 0xd8b48c, nose: 0x1a1a1a },
   rabbit: { body: 0xf6f1ee, belly: 0xffffff, nose: 0xff8fa3 },
@@ -322,7 +324,7 @@ export function buildFigure(type, style = {}) {
   const bodyM = smat(A.body, 0.72);
   const bellyM = smat(A.belly, 0.75);
 
-  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba';
+  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba' || type === 'duck';
   g.userData.isRoundPet = isRoundPet;
 
   // 1) 上半身グループ (風速に応じて腰から上を海側へ反らせてハイクアウトする)
@@ -332,14 +334,22 @@ export function buildFigure(type, style = {}) {
   g.userData.upper = upper;
 
   // 2) 下半身・まるっこい足:
-  // ネコ・イヌ(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
+  // ネコ・イヌ・アヒル(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
   // まるっこいお尻と球状の短いあんよを upper 下部に一体配置し、常に短い丸足の可愛いフォルムを保つ
   if (isRoundPet) {
     ell(upper, bodyM, 0.19, 0.10, 0.16, 0, 0.04, 0.0);
     for (const s of [-1, 1]) {
-      sph(upper, A.body, 0.068, 0.058, 0.068, s * 0.105, 0.015, -0.130);
-      sph(upper, A.belly, 0.052, 0.042, 0.035, s * 0.105, 0.012, -0.176);
-      sph(upper, type === 'cat' ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.009, -0.196);
+      if (type === 'duck') {
+        // アヒルのかわいいオレンジ色の水かきあんよ
+        sph(upper, A.nose, 0.072, 0.036, 0.088, s * 0.102, 0.012, -0.145);
+        sph(upper, 0xf2850c, 0.030, 0.022, 0.045, s * 0.102 - 0.028, 0.008, -0.185);
+        sph(upper, A.nose, 0.032, 0.024, 0.050, s * 0.102, 0.008, -0.192);
+        sph(upper, 0xf2850c, 0.030, 0.022, 0.045, s * 0.102 + 0.028, 0.008, -0.185);
+      } else {
+        sph(upper, A.body, 0.068, 0.058, 0.068, s * 0.105, 0.015, -0.130);
+        sph(upper, A.belly, 0.052, 0.042, 0.035, s * 0.105, 0.012, -0.176);
+        sph(upper, type === 'cat' ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.009, -0.196);
+      }
     }
   } else {
     ell(g, bodyM, 0.19, 0.11, 0.16, 0, 0.06, 0.01);
@@ -418,24 +428,42 @@ export function buildFigure(type, style = {}) {
   sph(head, 0x111111, 0.034, 0.045, 0.02, 0.09, 0.02, -hs[2] + 0.01);
   sph(head, 0xffffff, 0.011, 0.014, 0.01, -0.082, 0.04, -hs[2] - 0.005);
   sph(head, 0xffffff, 0.011, 0.014, 0.01, 0.098, 0.04, -hs[2] - 0.005);
-  if (type !== 'penguin') sph(head, A.nose, 0.032, 0.024, 0.026, 0, -0.04, -hs[2] - 0.005);
-  sph(head, 0xff9db0, 0.04, 0.025, 0.01, -0.15, -0.03, -hs[2] + 0.06); // ほっぺ
-  sph(head, 0xff9db0, 0.04, 0.025, 0.01, 0.15, -0.03, -hs[2] + 0.06);
-  // 前足(おてて): ネコ・イヌは丸い球状のおてて、他動物はカプセル前足
-  if (isRoundPet) {
-    for (const s of [-1, 1]) {
-      sph(upper, A.body, 0.066, 0.062, 0.072, s * 0.235, 0.265, -0.145);
-      sph(upper, A.belly, 0.050, 0.046, 0.042, s * 0.235, 0.260, -0.192);
+  if (type !== 'penguin' && type !== 'duck') sph(head, A.nose, 0.032, 0.024, 0.026, 0, -0.04, -hs[2] - 0.005);
+  sph(head, 0xff9db0, 0.042, 0.026, 0.012, -0.15, -0.03, -hs[2] + 0.06); // ほっぺ
+  sph(head, 0xff9db0, 0.042, 0.026, 0.012, 0.15, -0.03, -hs[2] + 0.06);
+  // 前足(おてて)/翼: 待機モーションで動かせるよう armL / armR グループ化
+  const armL = new THREE.Group(), armR = new THREE.Group();
+  armL.position.set(-0.22, 0.27, -0.08);
+  armR.position.set(0.22, 0.27, -0.08);
+  upper.add(armL); upper.add(armR);
+  upper.userData.armL = armL;
+  upper.userData.armR = armR;
+  if (type === 'duck') {
+    // アヒルのぷっくりした可愛い白い羽(つばさ)
+    for (const [grp, s] of [[armL, -1], [armR, 1]]) {
+      const w1 = sph(grp, A.body, 0.056, 0.105, 0.095, s * 0.025, -0.01, -0.045);
+      w1.rotation.z = -s * 0.35; w1.rotation.x = 0.35;
+      const w2 = sph(grp, A.belly, 0.042, 0.075, 0.078, s * 0.032, -0.025, -0.095);
+      w2.rotation.z = -s * 0.28; w2.rotation.x = 0.45;
+    }
+  } else if (isRoundPet) {
+    for (const [grp, s] of [[armL, -1], [armR, 1]]) {
+      sph(grp, A.body, 0.066, 0.062, 0.072, s * 0.015, -0.005, -0.065);
+      sph(grp, A.belly, 0.050, 0.046, 0.042, s * 0.015, -0.010, -0.112);
     }
   } else {
-    cap(upper, A.body, 0.048, 0.14, -0.22, 0.28, -0.13, Math.PI / 2.3, 0, -0.45);
-    cap(upper, A.body, 0.048, 0.14, 0.22, 0.28, -0.13, Math.PI / 2.3, 0, 0.45);
+    cap(armL, A.body, 0.048, 0.14, 0, 0.01, -0.05, Math.PI / 2.3, 0, -0.45);
+    cap(armR, A.body, 0.048, 0.14, 0, 0.01, -0.05, Math.PI / 2.3, 0, 0.45);
   }
+  const tailGrp = new THREE.Group();
+  tailGrp.position.set(0, 0.16, 0.23);
+  upper.add(tailGrp);
+  upper.userData.tail = tailGrp;
   switch (type) {
     case 'cat':
       cone(head, A.body, 0.075, 0.145, -0.145, 0.21, 0, 0, 0.35); cone(head, A.body, 0.075, 0.145, 0.145, 0.21, 0, 0, -0.35);
       cone(head, 0xff8fa3, 0.042, 0.095, -0.145, 0.20, -0.03, 0, 0.35); cone(head, 0xff8fa3, 0.042, 0.095, 0.145, 0.20, -0.03, 0, -0.35);
-      cap(upper, A.body, 0.036, 0.10, 0.0, 0.14, 0.24, 0.85, 0, 0);
+      cap(tailGrp, A.body, 0.036, 0.10, 0.0, -0.02, 0.01, 0.85, 0, 0);
       g.scale.setScalar(0.92); // もとのまるっこいフォルムが映えるサイズ感
       break;
     case 'dog':
@@ -453,10 +481,34 @@ export function buildFigure(type, style = {}) {
       sph(head, A.belly, 0.032, 0.022, 0.015, -0.088, 0.092, -hs[2] + 0.015);
       sph(head, A.belly, 0.032, 0.022, 0.015, 0.088, 0.092, -hs[2] + 0.015);
       // 背中にくるんと丸まった可愛い巻きしっぽ
-      sph(upper, A.body, 0.085, 0.095, 0.095, 0, 0.22, 0.255);
-      sph(upper, A.belly, 0.065, 0.065, 0.065, 0, 0.265, 0.245);
+      sph(tailGrp, A.body, 0.085, 0.095, 0.095, 0, 0.06, 0.025);
+      sph(tailGrp, A.belly, 0.065, 0.065, 0.065, 0, 0.105, 0.015);
       g.scale.setScalar(0.92);
       break;
+    case 'duck': {
+      // ぷっくり膨らんだ真っ白なもちもちほっぺ
+      sph(head, A.body, 0.152, 0.105, 0.105, -0.095, -0.042, -hs[2] + 0.085);
+      sph(head, A.body, 0.152, 0.105, 0.105, 0.095, -0.042, -hs[2] + 0.085);
+      // 可愛らしい山吹〜オレンジ色の平たく丸みのあるアヒルくちばし(上くちばし＋下くちばし＋口角の笑顔ライン)
+      const billTop = sph(head, A.nose, 0.118, 0.044, 0.105, 0, -0.038, -hs[2] - 0.018);
+      billTop.rotation.x = 0.06;
+      const billTip = sph(head, 0xffaa2b, 0.095, 0.034, 0.065, 0, -0.042, -hs[2] - 0.055);
+      billTip.rotation.x = 0.08;
+      const billBot = sph(head, 0xe8820c, 0.092, 0.028, 0.082, 0, -0.062, -hs[2] - 0.005);
+      billBot.rotation.x = 0.10;
+      // くちばしの小さな鼻孔
+      sph(head, 0xc96504, 0.010, 0.007, 0.012, -0.028, -0.020, -hs[2] - 0.045);
+      sph(head, 0xc96504, 0.010, 0.007, 0.012, 0.028, -0.020, -hs[2] - 0.045);
+      // 頭のてっぺんのふわふわアホ毛(冠羽3本)
+      cap(head, A.body, 0.028, 0.065, 0, 0.235, 0.01, -0.25, 0, 0);
+      cap(head, A.body, 0.022, 0.052, -0.032, 0.225, 0.015, -0.20, 0, 0.35);
+      cap(head, A.body, 0.022, 0.052, 0.032, 0.225, 0.015, -0.20, 0, -0.35);
+      // ピンと上を向いた可愛いアヒルしっぽ
+      cone(tailGrp, A.body, 0.085, 0.13, 0, 0.04, 0.03, 0.95, 0);
+      sph(tailGrp, A.belly, 0.075, 0.065, 0.075, 0, 0.01, 0.01);
+      g.scale.setScalar(0.92);
+      break;
+    }
     case 'penguin': {
       cone(head, A.nose, 0.04, 0.09, 0, -0.02, -hs[2] - 0.03, -Math.PI / 2, 0);
       sph(head, A.belly, 0.17, 0.15, 0.1, 0, -0.02, -hs[2] + 0.07);
