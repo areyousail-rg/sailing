@@ -68,6 +68,18 @@ function flagMesh(w, h, color, text) {
     x.restore();
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
+  } else if (text === 'JURY') {
+    // ジュリー(審判)艇の青い「Jury」旗 (参考画像4枚目準拠: 鮮やかな青地に白のJuryロゴ)
+    const c = document.createElement('canvas'); c.width = 192; c.height = 120; const x = c.getContext('2d');
+    x.fillStyle = '#0f3c8a'; x.fillRect(0, 0, 192, 120);
+    x.strokeStyle = '#1e40af'; x.lineWidth = 4; x.strokeRect(2, 2, 188, 116);
+    x.fillStyle = '#ffffff';
+    x.font = 'bold 64px "Georgia", "Times New Roman", serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText('Jury', 96, 62);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.82 });
   } else if (text) {
     const c = document.createElement('canvas'); c.width = 128; c.height = 80; const x = c.getContext('2d');
     x.fillStyle = color; x.fillRect(0, 0, 128, 80); x.fillStyle = '#fff'; x.font = 'bold 56px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 64, 44);
@@ -553,6 +565,82 @@ export function makeMotorboat(type, o = {}) {
       g2.add(p);
     }
     g2.position.y = -0.04;
+    g.add(g2);
+  } else if (type === 'jury') {
+    // ジュリー(審判)ボート (参考画像4枚目準拠: 白ハル＋白センターコンソール＋ステンレスグラブレール付き風防＋青い「Jury」旗＋青い審判ウェア＆ハットの審判員2名)
+    const L = 5.6, B = 2.18, H = 0.60;
+    const g2 = hullGroup(L, B, H, 0xf8fafc, 0x1e3a8a, { wasen: false, bottomColor: 0x162238 });
+    // 白いセンターコンソール + 透明ウインドシールド + ステンレスグラブレール枠
+    const cz = 0.35;
+    g2.add(box(0.84, 0.92, 0.78, white, 0, H + 0.44, cz));
+    const shield = box(0.76, 0.46, 0.04, glass, 0, H + 1.10, cz + 0.34);
+    shield.rotation.x = -0.18;
+    g2.add(shield);
+    // ウインドシールドを囲むステンレスグラブレール
+    const railPts = [
+      [-0.41, H + 0.86, cz + 0.28],
+      [-0.41, H + 1.38, cz + 0.24],
+      [0.41, H + 1.38, cz + 0.24],
+      [0.41, H + 0.86, cz + 0.28],
+    ];
+    g2.add(tube(railPts, 0.018, chrome));
+    // ステアリング舵輪 & スロットルレバー
+    g2.add(cyl(0.16, 0.03, blackM, -0.16, H + 0.82, cz - 0.41, Math.PI / 2.3, 0));
+    g2.add(box(0.08, 0.18, 0.10, blackM, 0.22, H + 0.94, cz - 0.20));
+    // バウおよびサイドのステンレスハンドレール
+    for (const sg of [-1, 1]) {
+      const br = [
+        [sg * 0.76, H + 0.08, 0.65],
+        [sg * 0.72, H + 0.34, 1.35],
+        [sg * 0.42, H + 0.38, 2.22],
+      ];
+      g2.add(tube(br, 0.016, chrome));
+    }
+    // 船尾の白いリーニングシート & 船外機
+    g2.add(box(0.96, 0.42, 0.46, white, 0, H + 0.20, -0.78));
+    g2.add(outboard(-L / 2 - 0.14));
+    // コンソール横に立つ審判員2名 (青いJuryシャツ・濃紺ライフベスト・白バケットハット/濃紺キャップ・サングラス)
+    const jurySkin = mat(0xd68e66, 0.8);
+    const juryBlueShirt = mat(0x2563eb, 0.68);
+    const juryNavyVest = mat(0x0f172a, 0.72);
+    const juryWhiteHat = mat(0xf8fafc, 0.75);
+    const juryDarkCap = mat(0x1e293b, 0.75);
+    for (const [idx, px, pz] of [[0, -0.24, cz - 0.56], [1, 0.26, cz - 0.52]]) {
+      const uGrp = new THREE.Group();
+      // 下半身(立位)
+      uGrp.add(box(0.26, 0.48, 0.20, mat(0x1e293b, 0.8), 0, 0.24, 0));
+      // 青い審判長袖シャツ + ライフベスト
+      uGrp.add(box(0.34, 0.46, 0.22, juryBlueShirt, 0, 0.68, 0));
+      uGrp.add(box(0.36, 0.34, 0.25, juryNavyVest, 0, 0.70, 0));
+      // 腕(コンソールレールを掴む姿勢)
+      for (const s of [-1, 1]) {
+        const arm = box(0.09, 0.36, 0.09, juryBlueShirt, s * 0.21, 0.68, 0.12);
+        arm.rotation.x = -0.65;
+        uGrp.add(arm);
+      }
+      // 頭部 + サングラス + ハット/キャップ
+      const hd = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), jurySkin);
+      hd.position.set(0, 1.03, 0);
+      uGrp.add(hd);
+      uGrp.add(box(0.16, 0.04, 0.04, blackM, 0, 1.04, 0.10));
+      if (idx === 0) {
+        // 白いサファリハット(バケットハット)
+        uGrp.add(cyl(0.18, 0.02, juryWhiteHat, 0, 1.10, 0));
+        uGrp.add(cyl(0.11, 0.09, juryWhiteHat, 0, 1.15, 0));
+      } else {
+        // 濃紺キャップ
+        uGrp.add(cyl(0.12, 0.08, juryDarkCap, 0, 1.12, 0));
+        uGrp.add(box(0.18, 0.018, 0.12, juryDarkCap, 0, 1.09, 0.10));
+      }
+      uGrp.position.set(px, H - 0.08, pz);
+      g2.add(uGrp);
+    }
+    // コンソール前方に高く掲げられた青い「Jury」旗ポール
+    const jFlags = flagCfg.length ? flagCfg : [{ color: '#0f3c8a', w: 1.38, h: 0.88, text: 'JURY', key: 'JURY' }];
+    const p = pole(2.45, jFlags);
+    p.position.set(-0.22, H + 0.92, cz + 0.38);
+    g2.add(p);
+    g2.position.y = -0.02;
     g.add(g2);
   }
   g.traverse((m) => { if (m.isMesh) { m.castShadow = false; } });
