@@ -449,7 +449,7 @@ export function makeMotorboat(type, o = {}) {
     pulpit(g, hb, 2.8, sh(2.8));
     g.add(outboard(-1.0, -L / 2 - 0.2, 1.25)); g.add(outboard(1.0, -L / 2 - 0.2, 1.25));
     for (const z of [-3.5, -1.0, 1.5]) for (const sg of [-1, 1]) g.add(fender(sg * (hb(z) + 0.05), sh(z) + 0.05, z));
-  } else { // rib (参考写真準拠: 濃紺のディープVハル＋濃紺インフレータブルチューブ・側面グレーラビングストレーキ・黒グラブロープ・濃紺センターコンソール＆舵輪＆黒背もたれシート・船尾中央の大型船外機・観覧乗員)
+  } else if (type === 'rib') { // rib (参考写真準拠: 濃紺のディープVハル＋濃紺インフレータブルチューブ・側面グレーラビングストレーキ・黒グラブロープ・濃紺センターコンソール＆舵輪＆黒背もたれシート・船尾中央の大型船外機・観覧乗員)
     const L = 6.8, B = 2.48;
     const g2 = new THREE.Group();
     const half = (z) => {
@@ -566,7 +566,7 @@ export function makeMotorboat(type, o = {}) {
     }
     g2.position.y = -0.04;
     g.add(g2);
-  } else if (type === 'jury') {
+  } else {
     // ジュリー(審判)ボート (参考画像4枚目準拠: 白ハル＋白センターコンソール＋ステンレスグラブレール付き風防＋青い「Jury」旗＋青い審判ウェア＆ハットの審判員2名)
     const L = 5.6, B = 2.18, H = 0.60;
     const g2 = hullGroup(L, B, H, 0xf8fafc, 0x1e3a8a, { wasen: false, bottomColor: 0x162238 });
@@ -598,7 +598,7 @@ export function makeMotorboat(type, o = {}) {
     }
     // 船尾の白いリーニングシート & 船外機
     g2.add(box(0.96, 0.42, 0.46, white, 0, H + 0.20, -0.78));
-    g2.add(outboard(-L / 2 - 0.14));
+    g2.add(outboard(0, -L / 2 - 0.14, 1.05));
     // コンソール横に立つ審判員2名 (青いJuryシャツ・濃紺ライフベスト・白バケットハット/濃紺キャップ・サングラス)
     const jurySkin = mat(0xd68e66, 0.8);
     const juryBlueShirt = mat(0x2563eb, 0.68);
