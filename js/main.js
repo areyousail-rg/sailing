@@ -153,7 +153,7 @@ function rateToSkill(r) {
 }
 
 // レートに応じた15艇のCPプロフィール生成:
-// ・犬・猫・柴犬はずっと登場し、アヒルは1500〜、タヌキは1600〜、ウサギは1700〜、イルカは1800〜登場
+// ・犬・猫・柴犬はずっと登場し、各種動物キャラの参戦基準は-50 (アヒル:1550解放/CP1450〜、タヌキ:1650解放/CP1550〜、ウサギ:1750解放/CP1650〜、イルカ:1850解放/CP1750〜)
 // ・動物ごとにそのレートの強さ(レベル)を持ち、人間はずっと登場して弱い船から強い船まで様々なレベルが存在
 // ・1500前後では弱いCP3艇と中くらいのレベル1艇がマストトップに黒球(hasBlackBall)を装着
 function buildCpFleetProfiles(effRate) {
@@ -164,21 +164,21 @@ function buildCpFleetProfiles(effRate) {
     { type: 'dog', rate: clamp(effRate - 40 + (rng() - 0.5) * 45, 1410, 1650) },
     { type: 'shiba', rate: clamp(effRate - 15 + (rng() - 0.5) * 45, 1440, 1680) },
   ];
-  if (effRate >= 1500) {
-    animalEntries.push({ type: 'duck', rate: 1525 + (rng() - 0.5) * 40 });
-    if (effRate < 1650 && rng() < 0.65) animalEntries.push({ type: 'duck', rate: 1555 + (rng() - 0.5) * 36 });
+  if (effRate >= 1450) {
+    animalEntries.push({ type: 'duck', rate: 1475 + (rng() - 0.5) * 40 });
+    if (effRate < 1600 && rng() < 0.65) animalEntries.push({ type: 'duck', rate: 1505 + (rng() - 0.5) * 36 });
   }
-  if (effRate >= 1600) {
-    animalEntries.push({ type: 'tanuki', rate: 1630 + (rng() - 0.5) * 40 });
-    if (effRate < 1750 && rng() < 0.65) animalEntries.push({ type: 'tanuki', rate: 1660 + (rng() - 0.5) * 36 });
+  if (effRate >= 1550) {
+    animalEntries.push({ type: 'tanuki', rate: 1580 + (rng() - 0.5) * 40 });
+    if (effRate < 1700 && rng() < 0.65) animalEntries.push({ type: 'tanuki', rate: 1610 + (rng() - 0.5) * 36 });
   }
-  if (effRate >= 1700) {
-    animalEntries.push({ type: 'rabbit', rate: 1730 + (rng() - 0.5) * 40 });
-    if (effRate < 1850 && rng() < 0.65) animalEntries.push({ type: 'rabbit', rate: 1765 + (rng() - 0.5) * 36 });
+  if (effRate >= 1650) {
+    animalEntries.push({ type: 'rabbit', rate: 1680 + (rng() - 0.5) * 40 });
+    if (effRate < 1800 && rng() < 0.65) animalEntries.push({ type: 'rabbit', rate: 1715 + (rng() - 0.5) * 36 });
   }
-  if (effRate >= 1800) {
-    animalEntries.push({ type: 'dolphin', rate: 1840 + (rng() - 0.5) * 45 });
-    if (rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1885 + (rng() - 0.5) * 45 });
+  if (effRate >= 1750) {
+    animalEntries.push({ type: 'dolphin', rate: 1790 + (rng() - 0.5) * 45 });
+    if (rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1835 + (rng() - 0.5) * 45 });
   }
 
   const profiles = [];
@@ -381,6 +381,14 @@ function computeRanks() {
   return sorted;
 }
 function updateLeaders(sorted) {
+  const isPreStart = state.t < 0;
+  const bp = $('boardPanel');
+  if (bp) bp.style.display = isPreStart ? 'none' : '';
+  if (isPreStart) {
+    hud.leaders.innerHTML = '';
+    hud.rank.textContent = '';
+    return;
+  }
   const rows = [];
   const top = sorted.slice(0, 8);
   if (!top.includes(player)) top.push(player);
@@ -787,7 +795,15 @@ function updateHUD(sorted) {
   } else {
     hud.big.style.opacity = 0;
   }
-  if (performance.now() - lastLeaders > 400) { lastLeaders = performance.now(); updateLeaders(sorted); }
+  const bp = $('boardPanel');
+  if (bp) bp.style.display = t < 0 ? 'none' : '';
+  if (t < 0) {
+    if (hud.rank.textContent !== '') hud.rank.textContent = '';
+    if (hud.leaders.innerHTML !== '') hud.leaders.innerHTML = '';
+  } else if (performance.now() - lastLeaders > 400 || hud.leaders.innerHTML === '') {
+    lastLeaders = performance.now();
+    updateLeaders(sorted);
+  }
 }
 
 // ---------- イベント処理 ----------
@@ -2517,7 +2533,8 @@ function initMenu() {
   }
   const startBtnEl = $('startBtn');
   if (startBtnEl) {
-    startBtnEl.textContent = 'レーススタート';
+    const lblEl = startBtnEl.querySelector('.startBtnLabel');
+    if (lblEl) lblEl.textContent = 'レーススタート';
     startBtnEl.onclick = startRace;
   }
   if ($('practiceBtn')) $('practiceBtn').onclick = startOrientation;
