@@ -638,7 +638,12 @@ export class Boat {
     }
     if (this.tacking) {
       this.tackTimer -= dt;
-      if (twa > 0.72 || this.tackTimer <= 0) { if (twa > 0.68) this.tacking = false; else if (this.tackTimer < -1.8) this.tacking = false; }
+      if (twa <= (10.5 * Math.PI) / 180 && !(this.maneuver && this.maneuver.kind === 'tack') && Math.abs(steer) < 0.35) {
+        this.tacking = false;
+      } else if (twa > 0.72 || this.tackTimer <= 0) {
+        if (twa > 0.68) this.tacking = false;
+        else if (this.tackTimer < -1.8) this.tacking = false;
+      }
     }
     this.rel = rel; this.twa = twa;
     // バイザリー判定: 風下走行中に風向が真後ろ(180°)を越えてブームと同じ側から吹いている状態(180°〜200°)
@@ -760,12 +765,12 @@ export class Boat {
         this.rollBias += Math.sin(t * 9.2 + this.id * 1.7) * 0.026 * this.wakeWave * (1 - Math.exp(-dt * 8.0));
       }
     }
-    // 完全風上(0°〜5° / 355°〜360°付近)に向くと風圧で少しずつバック(後退)する
-    if (twaDeg < 12 && !turning) {
-      const irons = clamp((10 - twaDeg) / 5, 0, 1); // 0°〜5°で最大1.0
-      target -= irons * 0.42 * SPEED_SCALE * w.f;
+    // 風上(真風角 ±10°以内)に向くと風圧でバック(後退)する
+    if (twaDeg <= 10.5 && !turning) {
+      const irons = clamp(0.46 + ((10.5 - twaDeg) / 10.5) * 0.54, 0.46, 1.0); // ±10°以内は確実にバックし、0°で最大1.0
+      target = -irons * 0.48 * SPEED_SCALE * w.f;
     }
-    const tau = target > this.v ? (this.tacking ? 1.5 : 2.2) : turning ? 8.5 : 1.5; // タック中の減速はごく緩やかに、立ち上がりは素早く
+    const tau = (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : 2.2) : turning ? 8.5 : 1.5; // ±10°では速やかに失速してバックへ遷移
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
 
     // 風下側への流され(リーウェイ＆風圧ドリフト):
