@@ -269,36 +269,36 @@ export function buildHull(accent = 0x2a77ff) {
   });
   addOrder(new THREE.Mesh(hoodBack, M.wall), -8);
 
-  // センターボードケース(ダガーボードトランク) & 幅広・高位置のアルミ製ダガーボード(参考画像3枚目準拠):
+  // センターボードケース(ダガーボードトランク) & アルミ製ダガーボード:
+  // クローズホールド時はケース内に深く下りており、リーチング〜ランチャーアップ時にケースのスリット(z=-0.26)に沿って真上に引き上がる構造
   const trunk = new THREE.Group();
-  const tw = 0.048, tz0 = -0.55, tz1 = 0.05, th = 0.18;
-  const trBox = mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, (tz0 + tz1) / 2);
+  const tw = 0.048, tz0 = -0.54, tz1 = 0.02, th = 0.18, tzMid = (tz0 + tz1) * 0.5; // tzMid = -0.26
+  const trBox = mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, tzMid);
   trBox.renderOrder = -8;
   trunk.add(trBox);
-  // 上面のシルバーアルミプレート
-  trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.014, 0.010, tz1 - tz0 + 0.012), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
-  // センターボードスリット開口部 (幅広のボードに合わせて長さ0.44m)
-  trunk.add(mesh(new THREE.BoxGeometry(0.024, 0.012, 0.44), M.black, 0, FLOOR_Y + th + 0.006, -0.27));
-  // ダガーボード(センターボード)本体: 画像のように前後幅が広く(0.42m)、トランク上から高く立ち上がり、上部に台形くり抜きハンドル枠とストッパーブロックを備える
+  // 上面のシルバーアルミプレート (z=-0.26中心でトランクと完全一致)
+  trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.014, 0.010, tz1 - tz0 + 0.012), M.alu, 0, FLOOR_Y + th + 0.005, tzMid));
+  // センターボードスリット開口部 (z=-0.26中心、長さ0.44m)
+  trunk.add(mesh(new THREE.BoxGeometry(0.024, 0.012, 0.44), M.black, 0, FLOOR_Y + th + 0.006, tzMid));
+  // ダガーボード(センターボード)本体: スリット中心(x=0, z=-0.26)に完全一致させ、上げた時もケースと一切ずれないよう垂直配置
   const cbBoard = new THREE.Group();
   const cbTopBaseY = FLOOR_Y + th;
-  // 1) 幅広のアルミ製メインプレート (前後幅0.42m、通常時でもケース上からしっかり高く出る + 下部もトランク内に深く収まる)
-  cbBoard.add(mesh(new THREE.BoxGeometry(0.016, 0.46, 0.42), M.alu, 0, cbTopBaseY + 0.04, -0.27));
-  // 2) 上部の台形くり抜きハンドルフレーム (前ピラー・斜め後ろピラー・上辺グリップバーで中央がくり抜かれた実艇形状)
-  const frontPillar = mesh(new THREE.BoxGeometry(0.016, 0.125, 0.068), M.alu, 0, cbTopBaseY + 0.325, -0.446);
+  // 1) 幅広のアルミ製メインプレート (前後幅0.41m: クローズ時(y=0)はケース内に収まり、上げた時(y=+0.23)も下端がケースのスリット内に残る)
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.016, 0.34, 0.41), M.alu, 0, cbTopBaseY - 0.155, tzMid));
+  // 2) 上部のくり抜きハンドルフレーム (前後ピラーと上辺グリップバーも z=-0.26 中心・傾きなしでスリットと完全整列)
+  const frontPillar = mesh(new THREE.BoxGeometry(0.016, 0.068, 0.064), M.alu, 0, cbTopBaseY + 0.048, tzMid - 0.172);
   cbBoard.add(frontPillar);
-  const rearPillar = mesh(new THREE.BoxGeometry(0.016, 0.135, 0.072), M.alu, 0, cbTopBaseY + 0.320, -0.115);
-  rearPillar.rotation.x = 0.28;
+  const rearPillar = mesh(new THREE.BoxGeometry(0.016, 0.068, 0.064), M.alu, 0, cbTopBaseY + 0.048, tzMid + 0.172);
   cbBoard.add(rearPillar);
-  const topBar = mesh(new THREE.BoxGeometry(0.018, 0.044, 0.415), M.alu, 0, cbTopBaseY + 0.392, -0.272);
-  topBar.rotation.x = 0.04;
+  const topBar = mesh(new THREE.BoxGeometry(0.018, 0.032, 0.41), M.alu, 0, cbTopBaseY + 0.092, tzMid);
   cbBoard.add(topBar);
-  // 3) 上端前後の茶/オレンジ色ストッパーブロック(左右両面) & 保持ラバーコード (参考画像準拠)
+  // 3) 上端前後の茶/オレンジ色ストッパーブロック(左右両面)
   const stopperMat = new THREE.MeshStandardMaterial({ color: 0xc25e28, roughness: 0.48, metalness: 0.05 });
-  cbBoard.add(mesh(new THREE.BoxGeometry(0.052, 0.036, 0.058), stopperMat, 0, cbTopBaseY + 0.395, -0.452));
-  cbBoard.add(mesh(new THREE.BoxGeometry(0.048, 0.032, 0.050), stopperMat, 0, cbTopBaseY + 0.380, -0.092));
-  cbBoard.add(rope([[0, cbTopBaseY + 0.39, -0.46], [0.025, cbTopBaseY + 0.14, -0.49], [0, cbTopBaseY + 0.02, -0.52]], 0x1e293b, 0.0045));
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.050, 0.030, 0.054), stopperMat, 0, cbTopBaseY + 0.092, tzMid - 0.175));
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.048, 0.028, 0.050), stopperMat, 0, cbTopBaseY + 0.092, tzMid + 0.175));
   trunk.add(cbBoard);
+  // ケース前端の保持ラバーコード(トランク側に固定し、ボードを上げた時に空中に浮かないようにする)
+  trunk.add(rope([[0, cbTopBaseY + 0.022, tzMid - 0.21], [0.022, cbTopBaseY + 0.014, tzMid - 0.25], [0, cbTopBaseY + 0.008, tz0 - 0.01]], 0x1e293b, 0.0045));
   g.userData.cbBoard = cbBoard;
   // センターケース後端(z=0.05〜0.19)の低い白いフロアブレース＆メインシートブロック台座 (画像3枚目)
   const trBrace = mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.11);
