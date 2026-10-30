@@ -6,10 +6,10 @@ export const CREW_TYPES = [
   { id: 'human_f', label: '女性', icon: '', unlockRate: 0, splashName: 'Female Sailor' },
   { id: 'cat', label: 'ネコ', icon: '', unlockRate: 0, splashName: 'Cat' },
   { id: 'dog', label: 'イヌ', icon: '', unlockRate: 0, splashName: 'Dog' },
-  { id: 'duck', label: 'アヒル', icon: '', unlockRate: 1600, splashName: 'Duck' },
-  { id: 'tanuki', label: 'タヌキ', icon: '', unlockRate: 1700, splashName: 'Tanuki' },
-  { id: 'rabbit', label: 'ウサギ', icon: '', unlockRate: 1800, splashName: 'Rabbit' },
-  { id: 'dolphin', label: 'イルカ', icon: '', unlockRate: 1900, splashName: 'Dolphin' },
+  { id: 'duck', label: 'アヒル', icon: '', unlockRate: 1550, splashName: 'Duck' },
+  { id: 'tanuki', label: 'タヌキ', icon: '', unlockRate: 1650, splashName: 'Tanuki' },
+  { id: 'rabbit', label: 'ウサギ', icon: '', unlockRate: 1750, splashName: 'Rabbit' },
+  { id: 'dolphin', label: 'イルカ', icon: '', unlockRate: 1850, splashName: 'Dolphin' },
 ];
 
 // assets/crew/manifest.json から読み込んだ差し替えモデル
