@@ -564,32 +564,32 @@ function makeWaterCutMat() {
           // ヒールしている側(風下チャイン)がより深く水を捉えて強い水切り波を生む
           float leeBoost = clamp(1.0 - side * uHeel * 2.2, 0.55, 1.55);
           vSideBoost = leeBoost;
-          // 船体水線すぐ脇(v=0)から外側斜め後方(v=1)へ広がるケルビンバウ波幅
-          float spreadW = (0.045 + (0.14 + 0.42 * pow(u, 0.82)) * (0.18 + 0.68 * spd + 0.34 * wav)) * leeBoost;
+          // 船体水線すぐ脇(v=0)から外側斜め後方(v=1)へ広がるケルビンバウ波幅 (ほんのわずかに大きめに調整)
+          float spreadW = (0.052 + (0.16 + 0.48 * pow(u, 0.82)) * (0.20 + 0.76 * spd + 0.38 * wav)) * leeBoost;
           // ヒールに伴う水線の横ずれ補正
           float heelShift = -uHeel * 0.14;
           p.x = side * (hx + v * spreadW) + heelShift;
           // バウ〜フォアフット(u < 0.42)で水を左右へ押し分けながら立ち上がる薄い水膜リップ
           float bowEnv = sin(clamp(u / 0.44, 0.0, 1.0) * 3.14159265);
-          float lipH = (1.0 - v) * (1.0 - v * 0.65) * bowEnv * (0.024 + 0.068 * spd + 0.075 * wav) * leeBoost;
+          float lipH = (1.0 - v) * (1.0 - v * 0.65) * bowEnv * (0.028 + 0.078 * spd + 0.086 * wav) * leeBoost;
           // 船体側面の水線メニスカス(水とハルの境界を自然に馴染ませる微かなせり上がり)
-          float chineLip = (1.0 - smoothstep(0.0, 0.38, v)) * (1.0 - u * 0.55) * (0.014 + 0.024 * spd);
-          float ripple = 0.008 * sin(u * 22.0 - uTime * (5.0 + 5.5 * spd) + v * 6.0) * spd * v;
+          float chineLip = (1.0 - smoothstep(0.0, 0.38, v)) * (1.0 - u * 0.55) * (0.016 + 0.028 * spd);
+          float ripple = 0.009 * sin(u * 22.0 - uTime * (5.0 + 5.5 * spd) + v * 6.0) * spd * v;
           p.y = 0.012 + lipH + chineLip + ripple;
-          p.z += v * (0.12 + 0.28 * spd) * u;
+          p.z += v * (0.14 + 0.32 * spd) * u;
         } else {
           // 2) ラダーブレード＆トランサム水切りストリーム
           float u = uv.x;
           float rSide = side; // -1 .. +1
           vSideBoost = 1.0 + uRudderDrag * 0.8;
           // ラダー前縁(u=0.04)で鋭く水を割り、後方へV字に広がる乱流シート
-          float halfW = 0.026 + (0.09 + 0.26 * pow(u, 0.78)) * (0.28 + 0.62 * spd + 0.45 * uRudderDrag + 0.22 * wav);
+          float halfW = 0.030 + (0.105 + 0.30 * pow(u, 0.78)) * (0.30 + 0.68 * spd + 0.50 * uRudderDrag + 0.25 * wav);
           // 舵角(uSteer)に応じてラダー直後の水流軌道がしなる
-          float deflect = -uSteer * pow(u, 1.28) * (0.30 + 0.22 * spd);
+          float deflect = -uSteer * pow(u, 1.28) * (0.32 + 0.24 * spd);
           p.x = deflect + rSide * halfW;
           // ラダーブレードが水を切る襟状の盛り上がり(ラダーカラー)
           float collarEnv = exp(-pow((u - 0.06) / 0.085, 2.0)) * (1.0 - abs(rSide) * 0.75);
-          float collarH = collarEnv * (0.025 + 0.055 * spd + 0.045 * uRudderDrag + 0.025 * wav);
+          float collarH = collarEnv * (0.028 + 0.062 * spd + 0.050 * uRudderDrag + 0.028 * wav);
           p.y = 0.014 + collarH;
         }
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -633,9 +633,9 @@ function makeWaterCutMat() {
           float bowCrest = smoothstep(0.38, 0.04, u) * smoothstep(0.55, 0.08, v) * (0.45 + 0.55 * streak);
           // ケルビン波の外縁に沿って走る細い水紋ライン
           float kelvinRidge = exp(-pow((v - (0.42 + 0.32 * u)) / 0.18, 2.0)) * (0.4 + 0.6 * n1);
-          float intensity = (bowCrest * 0.72 + kelvinRidge * 0.48 + edgeOut * streak * 0.35) * edgeIn * bowFade;
-          float act = clamp((spd * 0.72 + uWave * 0.52) * vSideBoost, 0.0, 1.25);
-          float alpha = clamp(intensity * act * 0.58 * uOpacity, 0.0, 0.68);
+          float intensity = (bowCrest * 0.75 + kelvinRidge * 0.52 + edgeOut * streak * 0.38) * edgeIn * bowFade;
+          float act = clamp((spd * 0.75 + uWave * 0.55) * vSideBoost, 0.0, 1.32);
+          float alpha = clamp(intensity * act * 0.66 * uOpacity, 0.0, 0.74);
           if (alpha < 0.01) discard;
           vec3 waterSheen = vec3(0.58, 0.84, 0.95);
           vec3 foamWhite = vec3(0.95, 0.99, 1.0);
@@ -653,8 +653,8 @@ function makeWaterCutMat() {
           float twinVortex = exp(-pow((rDist - (0.25 + 0.35 * u)) / 0.24, 2.0));
           float centerStream = (1.0 - smoothstep(0.0, 0.68, rDist)) * (0.45 + 0.55 * turb);
           float uEnv = smoothstep(0.0, 0.04, u) * pow(max(0.0, 1.0 - u), 1.25);
-          float rAct = clamp(spd * 0.68 + uRudderDrag * 0.75 + uWave * 0.25, 0.0, 1.35);
-          float alpha = clamp((collar * 0.78 + (twinVortex * 0.48 + centerStream * 0.52) * turb) * uEnv * rAct * 0.62 * uOpacity, 0.0, 0.72);
+          float rAct = clamp(spd * 0.72 + uRudderDrag * 0.78 + uWave * 0.28, 0.0, 1.40);
+          float alpha = clamp((collar * 0.80 + (twinVortex * 0.52 + centerStream * 0.55) * turb) * uEnv * rAct * 0.70 * uOpacity, 0.0, 0.78);
           if (alpha < 0.01) discard;
           vec3 col = mix(vec3(0.62, 0.86, 0.96), vec3(0.96, 0.99, 1.0), clamp(collar * 0.9 + turb * 0.5 + uRudderDrag * 0.4, 0.0, 1.0));
           gl_FragColor = vec4(col, alpha);
@@ -1076,9 +1076,9 @@ export class BoatModel {
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
     const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
-    this.body.position.y = 0.082 + Math.abs(b.heel) * 0.078 + heave;
+    this.body.position.y = 0.132 + Math.abs(b.heel) * 0.078 + heave;
     this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = 0.024 + pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.042;
+    this.body.rotation.x = 0.008 + pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.032;
     if (this.blackBall) this.blackBall.visible = !!b.hasBlackBall;
 
     if (this.rudderGroup) {
@@ -1300,14 +1300,17 @@ export class BoatModel {
       this.helm.userData.head.rotation.z = helmHeadTilt;
     }
 
-    // クルー(人間・ネコ・イヌ・アヒルとも): 120°〜150°では船の真ん中(x≈0)に座り、強風クローズ時は水平近くまでフルハイクアウト
+    // クルー(人間・ネコ・イヌ・アヒルとも):
+    // ランチャーアップ時(pk > 0)やフリー・ランニング時は実艇(写真1枚目)通りにセンターケース横の前方(z = -0.42)へ移動し、
+    // センターケース後端(z = 0.10)〜ブーム中央(z = -0.22)を通るメインシートがクルーに一切貫通しない位置でトリムする
     const crewPet = !!this.crew.userData.isRoundPet;
-    const baseCrewX = this.crewSide * (0.55 + crewLean * (crewPet ? 0.175 : 0.165));
+    const fwdShift = clamp(Math.max(pk, clamp((twaDeg - 102) / 28, 0, 1) * (1 - crewDeckFactor * 0.55)), 0, 1);
+    const baseCrewX = this.crewSide * ((0.55 - 0.17 * fwdShift) + crewLean * (crewPet ? 0.175 : 0.165));
     const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.04 - Math.max(0, crewLean - 0.85) * (crewPet ? 0.01 : 0.04) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
-    const baseCrewZ = -0.04;
+    const baseCrewZ = -0.04 - 0.38 * fwdShift;
     const actCrewX = sgn * 0.12;
     const actCrewY = 0.39 + 0.03 * Math.sin(t * 14);
-    const actCrewZ = -0.30;
+    const actCrewZ = -0.40;
     this.crewRig.position.set(
       baseCrewX + (actCrewX - baseCrewX) * crewPoleAct,
       baseCrewY + (actCrewY - baseCrewY) * crewPoleAct,
@@ -1410,18 +1413,18 @@ export class BoatModel {
       }
       const pow = this.slamBurstPow;
       const arc = Math.sin(u * Math.PI);
-      // 波にはたかれた瞬間だけ、バウ外側へ適度な濃さ・高さ(中間バランス)で白く上がって散る
-      const x = side * (0.43 + tier * 0.15 + u * (0.68 + tier * 0.42) * pow);
-      const y = 0.22 + arc * (0.48 + (1 - tier * 0.35) * 0.42) * pow - u * u * 0.18;
-      const z = -2.15 + tier * 0.45 + u * (1.16 + spdF * 0.48);
-      const sz = (0.16 + u * 0.27) * pow;
+      // 波にはたかれた瞬間だけ、バウ外側へ適度な濃さ・高さ(ほんのわずかに大きめ)で白く上がって散る
+      const x = side * (0.44 + tier * 0.16 + u * (0.76 + tier * 0.46) * pow);
+      const y = 0.23 + arc * (0.55 + (1 - tier * 0.35) * 0.48) * pow - u * u * 0.18;
+      const z = -2.15 + tier * 0.45 + u * (1.22 + spdF * 0.52);
+      const sz = (0.185 + u * 0.31) * pow;
       _spPos.set(x, y, z);
       _spEul.set(u * 2.1 + j, side * (0.45 + u), u * 1.65);
       _spQuat.setFromEuler(_spEul);
       _spScale.set(sz * 1.0, sz * 0.92, sz * 1.30);
       _spM4.compose(_spPos, _spQuat, _spScale);
       this.bowSprayMesh.setMatrixAt(idx, _spM4);
-      const fade = Math.pow(1 - u, 1.50) * Math.min(1, u * 7.0) * clamp(0.28 * pow, 0.14, 0.36);
+      const fade = Math.pow(1 - u, 1.48) * Math.min(1, u * 7.0) * clamp(0.33 * pow, 0.16, 0.42);
       _spCol.setRGB(0.91 * fade, 0.97 * fade, 1.0 * fade);
       this.bowSprayMesh.setColorAt(idx, _spCol);
     }
