@@ -978,9 +978,22 @@ export function createWorld(scene) {
   const buoy = (color) => {
     const g = new THREE.Group();
     const body = new THREE.Group();
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.8, 14), new THREE.MeshLambertMaterial({ color }));
-    cone.position.y = 0.9;
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.36, metalness: 0.04 });
+    // インフレータブル・テトラヘドロン(三角錐/円錐)マーク: 海面上にしっかり浮いて見えるよう底面を y=0 付近に配置し、下部の膨らみを持たせる
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.78, 2.95, 16), mat);
+    cone.position.y = 1.62;
     body.add(cone);
+    // 海面に接するインフレータブルチューブ基部のふっくらした立ち上がり (y=0.0〜0.32)
+    const baseCollar = new THREE.Mesh(new THREE.CylinderGeometry(1.78, 1.56, 0.34, 16), mat);
+    baseCollar.position.y = 0.16;
+    body.add(baseCollar);
+    // 水面との接地感を高めるごく薄い白波リング
+    const ringGeo = new THREE.RingGeometry(1.52, 1.88, 24);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, depthWrite: false });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.y = 0.02;
+    body.add(ring);
     g.add(body);
     g.userData.isMarkBuoy = true;
     g.userData.body = body;
@@ -1040,13 +1053,13 @@ export function createWorld(scene) {
     putBoat(makeMotorboat(s.type, { tube: s.tube ?? TUBES[i % 4], flags }), a0, c0, s.rot, true, i, s.markRef || null, s.da || 0, s.dc || 0);
   });
 
-  // ジュリー(審判)ボート (参考画像4枚目準拠: 青い「Jury」旗を掲げ、レース中の特定の様々なヨットの後方について追尾・監視する)
-  const juryBoats = [0, 1].map((ji) => {
+  // ジュリー(審判)ボート: 1艇のみ配置し、スタート時は遠く離れた海面で静かに待機して目立たないようにする
+  const juryBoats = [0].map((ji) => {
     const jb = makeMotorboat('jury', {
       flags: [{ color: '#0f3c8a', w: 1.38, h: 0.88, text: 'JURY', key: 'JURY' }],
     });
-    const initA = -42 - ji * 12;
-    const initC = ji === 0 ? -24 : 28;
+    const initA = -82;
+    const initC = -72;
     const p = toWorld(initA, initC);
     jb.position.set(p.x, 0, p.z);
     jb.rotation.y = Math.atan2(U.x, U.z);
@@ -1056,10 +1069,10 @@ export function createWorld(scene) {
     return {
       b: jb,
       idx: ji,
-      targetBoatIdx: ji === 0 ? 0 : 4,
-      nextSwitchT: 14 + ji * 9,
-      followDist: 17.5 + ji * 3.5,
-      latOffset: ji === 0 ? -5.5 : 6.0,
+      targetBoatIdx: 3,
+      nextSwitchT: 40,
+      followDist: 38.0,
+      latOffset: -18.0,
     };
   });
 
@@ -1256,7 +1269,7 @@ export function createWorld(scene) {
     }
     for (const jb of juryBoats) {
       jb.b.visible = courseVisible;
-      const initP = toWorld(-42 - jb.idx * 12, jb.idx === 0 ? -24 : 28);
+      const initP = toWorld(-82, -72);
       jb.b.position.x = initP.x;
       jb.b.position.z = initP.z;
       jb.b.rotation.y = head;
@@ -1665,40 +1678,40 @@ export function createWorld(scene) {
         cb.b.position.z = p.z;
         cb.b.rotation.y = head + cb.relRot + (cb.markRef ? 0.08 : 0.16) * Math.cos(t * spd + cb.ph);
       }
-      // ジュリー(審判)ボートの追尾演出: レース中の特定の様々なヨットの後方(約17〜24m後ろ)について航行し、一定時間ごとに追尾対象艇を切り替える
+      // ジュリー(審判)ボート(1艇): スタート前後(wt < 18)はスタートラインから遠く離れた風下外周で静かに待機し、レース中盤以降も遠巻きに穏やかに見守る
       if (boats && boats.length > 0 && courseVisible) {
         for (const jb of juryBoats) {
           jb.b.visible = true;
+          if (wt < 18) {
+            const holdP = toWorld(-82 + Math.sin(t * 0.16) * 2.0, -72 + Math.cos(t * 0.14) * 1.8);
+            jb.b.position.x += (holdP.x - jb.b.position.x) * clampN(dt * 0.8, 0, 0.08);
+            jb.b.position.z += (holdP.z - jb.b.position.z) * clampN(dt * 0.8, 0, 0.08);
+            jb.b.rotation.y = head + 0.05 * Math.sin(t * 0.2);
+            continue;
+          }
           if (t > jb.nextSwitchT) {
-            jb.nextSwitchT = t + 18 + ((jb.idx * 7 + Math.floor(t)) % 11);
-            // 0番ジュリー艇は自艇またはその近くの艇を優先しつつ様々なヨットへ切り替え、1番ジュリー艇はフリート内の別のヨットを追尾
+            jb.nextSwitchT = t + 36;
             const nB = boats.length;
-            if (jb.idx === 0 && Math.sin(t * 0.7) > -0.15) {
-              jb.targetBoatIdx = 0;
-            } else {
-              jb.targetBoatIdx = (jb.targetBoatIdx + 3 + jb.idx * 2) % nB;
-            }
+            jb.targetBoatIdx = Math.max(1, (jb.targetBoatIdx + 4) % nB);
           }
           const tgtB = boats[jb.targetBoatIdx % boats.length] || boats[0];
           if (tgtB) {
             const bFx = Math.sin(tgtB.h), bFz = -Math.cos(tgtB.h);
             const bRx = Math.cos(tgtB.h), bRz = Math.sin(tgtB.h);
-            // 対象ヨットの後方 followDist[m]、左右 latOffset[m] の位置を目標にして滑らかに追종
-            const swayLat = jb.latOffset + Math.sin(t * 0.35 + jb.idx * 2.1) * 3.5;
+            const swayLat = jb.latOffset + Math.sin(t * 0.18) * 2.2;
             const desX = tgtB.x - bFx * jb.followDist + bRx * swayLat;
             const desZ = tgtB.z - bFz * jb.followDist + bRz * swayLat;
             const dxJ = desX - jb.b.position.x;
             const dzJ = desZ - jb.b.position.z;
             const distJ = Math.hypot(dxJ, dzJ);
-            const stepRate = clampN(dt * (distJ > 35 ? 1.8 : 0.95), 0, 0.18);
+            const stepRate = clampN(dt * 0.36, 0, 0.045);
             jb.b.position.x += dxJ * stepRate;
             jb.b.position.z += dzJ * stepRate;
-            // 船首向き(powerboatsは+zがバウなので Math.atan2(vx, vz))を対象ヨットの進行方向へ滑らかに向ける
-            const desRotY = distJ > 8.0 ? Math.atan2(dxJ, dzJ) : Math.atan2(bFx, bFz);
+            const desRotY = distJ > 12.0 ? Math.atan2(dxJ, dzJ) : Math.atan2(bFx, bFz);
             let dRot = ((desRotY - jb.b.rotation.y + Math.PI) % (Math.PI * 2));
             if (dRot < 0) dRot += Math.PI * 2;
             dRot -= Math.PI;
-            jb.b.rotation.y += dRot * clampN(dt * 2.4, 0, 0.25);
+            jb.b.rotation.y += dRot * clampN(dt * 1.1, 0, 0.08);
           }
         }
       }
@@ -1717,10 +1730,11 @@ export function createWorld(scene) {
         const wsZ = waveSample(ox, oz, SEA.clock, 0, 1);
         const slZ = wsZ.slope;
         if (o.userData && o.userData.isMarkBuoy) {
-          // インフレータブルマークブイ: 波の通過に合わせて上下動＋前後左右に軽快に揺れる演出(上の番号ラベルは揺らさないようbodyのみ回転)
-          const waveY = wsX.hLong * 0.98 + (wsX.h - wsX.hLong) * 0.88;
-          const bobRip = 0.09 * Math.sin(t * 2.8 + ox * 0.17 + oz * 0.13) + 0.05 * Math.cos(t * 1.9 - oz * 0.21);
-          o.position.y = waveY + 0.04 + bobRip;
+          // インフレータブルマークブイ: 海面の描画シェーダ波高に合わせて水面上へくっきり浮かせ、波の通過に合わせて軽快に揺らす
+          const waveY = wsX.hLong * 1.0 + (wsX.h - wsX.hLong) * 0.95;
+          const vRip = 0.055 * Math.sin(ox * 0.42 + oz * 0.31 - SEA.clock * 3.1) + 0.042 * Math.cos(ox * 0.27 - oz * 0.48 + SEA.clock * 2.5);
+          const bobRip = 0.07 * Math.sin(t * 2.6 + ox * 0.17 + oz * 0.13) + 0.04 * Math.cos(t * 1.9 - oz * 0.21);
+          o.position.y = waveY + vRip + 0.18 + bobRip;
           const body = o.userData.body;
           if (body) {
             body.rotation.z = clampN(-Math.atan(slX) * 1.35 + 0.14 * Math.sin(t * 2.5 + ox * 0.19) + 0.06 * Math.cos(t * 3.6 + oz * 0.15), -0.34, 0.34);
