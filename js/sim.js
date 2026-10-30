@@ -476,19 +476,19 @@ export class Boat {
         // 3) 風軸を超えた後(crossed): タック後の重心移動で新タックから見てオーバーヒール(-s0 = +newTack)を起こし、その後フラットに起こす
         if (!crossed) {
           if (m.t < 0.28 || absRel > 0.38) {
-            rollCmd = m.s0 * 0.19;
+            rollCmd = m.s0 * 0.25;
             steer = m.dir * clamp(m.t / 0.28, 0.28, 1.0);
           } else {
             const unheelF = clamp((0.38 - absRel) / 0.28, 0, 1);
-            rollCmd = m.s0 * (0.14 * (1 - unheelF) - 0.16 * unheelF);
+            rollCmd = m.s0 * (0.18 * (1 - unheelF) - 0.21 * unheelF);
             steer = m.dir;
           }
         } else {
           m.tCross = (m.tCross || 0) + dt;
-          if (m.tCross < 0.72) {
-            rollCmd = -m.s0 * 0.24 * Math.sin(clamp(m.tCross / 0.72, 0.15, 1) * Math.PI * 0.82);
+          if (m.tCross < 0.75) {
+            rollCmd = -m.s0 * 0.32 * Math.sin(clamp(m.tCross / 0.75, 0.15, 1) * Math.PI * 0.82);
           } else {
-            rollCmd = -m.s0 * 0.20 * Math.max(0, 1 - (m.tCross - 0.72) / 0.65);
+            rollCmd = -m.s0 * 0.26 * Math.max(0, 1 - (m.tCross - 0.75) / 0.65);
           }
           steer = -clamp(err * 2.5, -1, 1);
           if (Math.abs(steer) < 0.5) steer = -0.5 * Math.sign(err || 1);
@@ -524,15 +524,15 @@ export class Boat {
       const absRelNow = Math.abs(wrap(w.from - this.h));
       if (this.tacking && this.tackTimer > 0.55) {
         const tc = 1.8 - this.tackTimer;
-        rollCmd = this.tack * 0.22 * Math.sin(clamp(tc / 1.25, 0, 1) * Math.PI);
+        rollCmd = this.tack * 0.30 * Math.sin(clamp(tc / 1.25, 0, 1) * Math.PI);
       } else if (turnUp > 0.18) {
         if (absRelNow < 0.36) {
-          rollCmd = -this.tack * clamp((0.36 - absRelNow) * 0.45, 0, 0.15);
+          rollCmd = -this.tack * clamp((0.36 - absRelNow) * 0.52, 0, 0.19);
         } else {
-          rollCmd = this.tack * clamp((turnUp - 0.15) * 0.22, 0, 0.17);
+          rollCmd = this.tack * clamp((turnUp - 0.15) * 0.27, 0, 0.22);
         }
       } else if (turnUp < -0.18) {
-        rollCmd = -this.tack * clamp((-turnUp - 0.15) * 0.22, 0, 0.17);
+        rollCmd = -this.tack * clamp((-turnUp - 0.15) * 0.25, 0, 0.20);
       }
     }
     this.rollBias += (rollCmd - this.rollBias) * (1 - Math.exp(-dt * 7.5));
@@ -790,11 +790,14 @@ export class Boat {
     const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
     const rawHeelPress = anglePress * windPress * speedPress;
     const strongWindBoost = smoothstep(8.8, 13.8, localWindKt) * 0.34 * anglePress;
+    const puffBoost = clamp((w.puff - 0.26) / 0.74, 0, 1);
     const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.28 + Math.abs(this.heel) * 1.45 + strongWindBoost, 0.05, 1.38);
     this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
-    const netHeel = Math.max(0.012, rawHeelPress * 0.24 - this.hike * 0.145);
-    const heelT = clamp(nt * clamp(netHeel, 0, 0.23) + this.rollBias, -0.32, 0.32);
-    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.2));
+    // ブロー(w.puff)に入った時は瞬間的にヒールが少し大きめに入るようにする
+    const puffHeelAdd = puffBoost * 0.088 * anglePress;
+    const netHeel = Math.max(0.014, rawHeelPress * 0.265 + puffHeelAdd - this.hike * 0.140);
+    const heelT = clamp(nt * clamp(netHeel, 0, 0.29) + this.rollBias, -0.39, 0.39);
+    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.6));
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
     this.snagCD = Math.max(0, (this.snagCD || 0) - dt);
