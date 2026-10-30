@@ -32,10 +32,44 @@ function loopSource(buf, rate = 1) {
   const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start(); return s;
 }
 
+let unlockListenersBound = false;
+function ensureAudioUnlockListeners() {
+  if (unlockListenersBound || typeof window === 'undefined') return;
+  unlockListenersBound = true;
+  const events = ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'mousemove', 'touchstart', 'touchend', 'keydown', 'wheel', 'click', 'focus'];
+  const tryUnlock = () => {
+    if (!ctx) initAudio();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    if (ctx.state === 'running') {
+      events.forEach((ev) => {
+        window.removeEventListener(ev, tryUnlock, true);
+        document.removeEventListener(ev, tryUnlock, true);
+      });
+    }
+  };
+  events.forEach((ev) => {
+    window.addEventListener(ev, tryUnlock, { capture: true, passive: true });
+    document.addEventListener(ev, tryUnlock, { capture: true, passive: true });
+  });
+}
+ensureAudioUnlockListeners();
+
 export function initAudio() {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  ensureAudioUnlockListeners();
+  if (ctx) { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); return; }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.onstatechange = () => {
+      if (ctx && ctx.state === 'running' && bgmMode && bgmVoiceEnabled) {
+        const curMode = bgmMode;
+        bgmMode = null;
+        playBgm(curMode);
+      }
+    };
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.25;
     master = ctx.createGain(); master.gain.value = 0.62; master.connect(comp); comp.connect(ctx.destination);
@@ -723,7 +757,7 @@ export function playBgm(mode = 'result') {
     return;
   }
   if (!ctx) { bgmMode = mode; return; }
-  if (ctx.state === 'suspended') ctx.resume();
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   if (bgmMode === mode && bgmTimer) return;
   stopBgm();
   bgmMode = mode;
@@ -745,7 +779,7 @@ export function playBgm(mode = 'result') {
   bgmBus = bus;
 
   const playNote = (freq, t0, dur, type, vol, lpFreq = 2400) => {
-    if (!ctx || !bgmBus || bgmBus !== bus || !bgmVoiceEnabled) return;
+    if (!ctx || ctx.state !== 'running' || !bgmBus || bgmBus !== bus || !bgmVoiceEnabled) return;
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     const lp = ctx.createBiquadFilter();
@@ -762,7 +796,7 @@ export function playBgm(mode = 'result') {
   };
 
   const playHat = (t0, vol = 0.035, open = false) => {
-    if (!ctx || !noiseBuf || !bgmBus || bgmBus !== bus || !bgmVoiceEnabled) return;
+    if (!ctx || ctx.state !== 'running' || !noiseBuf || !bgmBus || bgmBus !== bus || !bgmVoiceEnabled) return;
     const dur = open ? 0.14 : 0.045;
     const s = ctx.createBufferSource(); s.buffer = noiseBuf;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6200;
