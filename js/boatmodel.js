@@ -85,31 +85,32 @@ function sailGeometry(tack, head, clew, bulge, nu = 12, nv = 10, roach = 0, twis
         const rib = Math.exp(-du * du);
         roachZ += 0.018 * rib;
       }
-      // 各バテン(0.32, 0.56, 0.78)を境にセール面のツイスト角が段階的に変化し、中〜上部リーチが自然に開く
+      // 各バテン(0.32, 0.56, 0.78)を境にセール面のツイスト角が段階的に変化し、マストヘッド(u=1)では必ず0に収束させる
       const s1 = Math.max(0, u - 0.32), s2 = Math.max(0, u - 0.56), s3 = Math.max(0, u - 0.78);
-      battenFacetTwist = (0.16 * s1 + 0.21 * s2 + 0.26 * s3) * (1 - u * 0.88);
+      battenFacetTwist = (0.14 * s1 + 0.18 * s2 + 0.22 * s3) * (1 - u);
     }
     const rx = clew[0] + u * (head[0] - clew[0]), ry = clew[1] + u * (head[1] - clew[1]), rz = clew[2] + u * (head[2] - clew[2]) + roachZ;
     for (let j = 0; j <= nv; j++) {
       const v = j / nv;
-      // バテンが入る後半部(v > 0.42)はバテンで直線的に支えられ、バテンライン上でわずかに角度が変わる立体リッジを形成
+      // バテンが入る後半部(v > 0.42)はバテンで直線的に支えられ、バテンライン上でわずかに角度が変わる立体リッジを形成(マスト上部u→1では0に減衰)
       let battenRidge = 0;
       let aftFlatten = 1.0;
+      const headTaper = 1 - u;
       if (withBattens && v > 0.38) {
-        const vWeight = Math.pow((v - 0.38) / 0.62, 0.85);
+        const vWeight = Math.pow((v - 0.38) / 0.62, 0.85) * headTaper;
         aftFlatten = 1.0 - 0.12 * vWeight;
         for (let bi = 0; bi < LEECH_RIBBON_US.length; bi++) {
           const bu = LEECH_RIBBON_US[bi];
           const du = (u - bu) / 0.032;
-          battenRidge += 0.016 * Math.exp(-du * du) * Math.sin(Math.PI * Math.min(1, (v - 0.35) / 0.65));
+          battenRidge += 0.016 * Math.exp(-du * du) * Math.sin(Math.PI * Math.min(1, (v - 0.35) / 0.65)) * headTaper;
         }
         // バテンとバテンの間のパネルでわずかに面角度が切り替わるファセット効果
         const seg = u < 0.32 ? u / 0.32 : u < 0.56 ? (u - 0.32) / 0.24 : u < 0.78 ? (u - 0.56) / 0.22 : (u - 0.78) / 0.22;
         battenRidge -= 0.009 * Math.sin(Math.PI * seg) * vWeight;
       }
-      const b = bulge * Math.sin(Math.PI * v) * aftFlatten * (1 - 0.50 * u) * Math.sin(Math.PI * Math.min(1, 0.16 + u * 0.88));
-      // クローズ引き込み時にメインセール下部はセンター近くまで引き込まれつつ、中〜上部リーチがわずかに開くリアルなツイスト形状
-      const twistX = (twist * Math.pow(u, 1.12) * (1 - u * 0.78) * 1.95 + battenFacetTwist) * Math.pow(v, 1.08);
+      const b = bulge * Math.sin(Math.PI * v) * aftFlatten * (1 - 0.50 * u) * Math.sin(Math.PI * Math.min(1, 0.15 + u * 0.85));
+      // クローズ引き込み時にメインセール下部はセンター近くまで引き込まれつつ、中〜上部リーチがわずかに開き、マスト頂部(u=1)では0に収束するツイスト形状
+      const twistX = (twist * Math.pow(u, 1.15) * (1 - u) * 2.02 + battenFacetTwist) * Math.pow(v, 1.08);
       pos.push(lx + v * (rx - lx) + b + twistX + battenRidge, ly + v * (ry - ly), lz + v * (rz - lz));
       uv.push(v, u);
     }
@@ -674,6 +675,19 @@ export class BoatModel {
     this.cbBoard = hull.userData.cbBoard || null;
     const mast = new THREE.Mesh(mastGeo, spar); mast.position.set(0, 3.85, -0.9); this.body.add(mast);
     this.mast = mast;
+    // 初心者・中級CP艇のマストトップに取り付けられる黒い球体フロート(黒球: 沈防止浮力体・参考画像1枚目準拠)
+    const blackBallMat = new THREE.MeshStandardMaterial({ color: 0x16191f, roughness: 0.42, metalness: 0.08 });
+    const blackBallGrp = new THREE.Group();
+    const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 12), blackBallMat);
+    ballMesh.scale.set(0.95, 1.05, 0.95);
+    ballMesh.position.set(0, 3.22, 0.14);
+    const ballStem = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.14, 8), blackBallMat);
+    ballStem.rotation.x = Math.PI / 2;
+    ballStem.position.set(0, 3.22, 0.04);
+    blackBallGrp.add(ballMesh, ballStem);
+    blackBallGrp.visible = !!boat.hasBlackBall;
+    mast.add(blackBallGrp);
+    this.blackBall = blackBallGrp;
 
     // 舵 (白ラダーヘッド & 水線上のラダー上部) & アルミティラー + エクステンションバー
     // 海中のラダーブレード下部が見えてしまわないよう、トランサム水線上部(y=-0.06〜+0.46)のみを描画
@@ -929,8 +943,8 @@ export class BoatModel {
     const upperTension = Math.pow(1 - u, 0.80) * (1 - 0.12 * pk * u) + 0.46 * pk * Math.sin(Math.PI * u);
     const footProfile = Math.sin(Math.PI * Math.pow(v, 0.84 - 0.18 * pk));
     const b = camberSigned * footProfile * upperTension;
-    // クローズ走行時はジブの中〜上部リーチ(v→1, u≈0.25..0.85)が風下へわずかにツイストして開くリアルなスロット形状を表現
-    const jibLeechTwist = -sgn * closeF * (1 - pk) * 0.058 * Math.pow(u, 1.08) * (1 - u * 0.52) * Math.pow(v, 1.25);
+    // クローズ走行時はジブの中〜上部リーチ(v→1, u≈0.25..0.85)が風下へわずかにツイストして開くリアルなスロット形状を表現(マスト上端u=1では必ず0に収束)
+    const jibLeechTwist = -sgn * closeF * (1 - pk) * 0.062 * Math.pow(u, 1.05) * (1 - u) * Math.pow(v, 1.25);
     let px = lx + v * dx + nx * b + jibLeechTwist;
     let py = ly + v * (ry - ly);
     const pz = lz + v * dz + nz * b;
@@ -952,20 +966,21 @@ export class BoatModel {
       py -= 0.10 * pk * Math.sin(Math.PI * v) * Math.pow(1 - u, 1.3);
     }
 
-    // メインセール貫通防止ガード: マスト(z = -0.90)より後方へ重なる頂点は、メインセールの同高さ・同前後位置の風下変位より必ず外側に保つ
-    if (pk < 0.35 && zBody > -0.92) {
+    // メインセール貫通防止ガード: ジブの中〜下部リーチ側(u < 0.68 かつ v > 0.48)でマスト後方へ重なる頂点のみ外側に保ち、マスト上部のラフやヘッドは絶対に切り離さない
+    if (pk < 0.35 && u < 0.68 && v > 0.48 && zBody > -0.88) {
       const yBody = JIB_TACK_Y + py;
       const zMain = Math.max(0, zBody - (-0.90));
       const uMain = clamp((yBody - 1.02) / 5.73, 0, 1);
       const chordMain = Math.max(0.35, 2.88 * (1 - uMain) + 0.36 * 4 * uMain * (1 - uMain));
       const vMain = clamp(zMain / chordMain, 0, 1);
-      const bMain = 0.37 * Math.sin(Math.PI * vMain) * (1 - 0.50 * uMain) * Math.sin(Math.PI * Math.min(1, 0.16 + uMain * 0.88));
-      const twMain = MAIN_TWIST * Math.pow(uMain, 1.12) * (1 - uMain * 0.78) * 1.95 * Math.pow(vMain, 1.08);
+      const bMain = 0.37 * Math.sin(Math.PI * vMain) * (1 - 0.50 * uMain) * Math.sin(Math.PI * Math.min(1, 0.15 + uMain * 0.85));
+      const twMain = MAIN_TWIST * Math.pow(uMain, 1.15) * (1 - uMain) * 2.02 * Math.pow(vMain, 1.08);
       const boomAng = this.boomA || 0.03;
       const mainScale = this.mainSail ? Math.abs(this.mainSail.scale.x) : 1;
       const mainLeeDist = zMain * Math.sin(boomAng) + (bMain + twMain) * mainScale * Math.cos(boomAng);
       const leeSign = sgn > 0 ? -1 : 1; // スターボード(sgn=1)の風下は -x、ポート(sgn=-1)の風下は +x
-      const minOutboard = mainLeeDist + 0.032;
+      const blendW = clamp((0.68 - u) / 0.22, 0, 1) * clamp((v - 0.48) / 0.25, 0, 1);
+      const minOutboard = (mainLeeDist + 0.032) * blendW;
       if (leeSign * px < minOutboard) {
         px = leeSign * minOutboard;
       }
@@ -1042,15 +1057,16 @@ export class BoatModel {
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
     const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
     const heave = ws.hLong * 0.84 + (ws.h - ws.hLong) * 0.30 * chopRespond + 0.042 * Math.sin(ph * 1.35);
-    // 船尾(z=+2.36)のラダーが波で水面上に飛び出さないようピッチ角の前傾側(-0.045)を抑えつつ、波による上下・縦揺れを表現
-    const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * chopRespond), -0.045, 0.105);
+    // 船尾(z=+2.36)がもう少し海にしっかり浸かり、後方から見たときにトランサムと船体側面がリアルに見える喫水・トリム姿勢に調整
+    const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * chopRespond), -0.025, 0.115);
     // 横方向の傾き(三角波の交差波で左右にも揺さぶられる + 他艇の引き波通過時の揺れ)
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
     const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
-    this.body.position.y = 0.14 + Math.abs(b.heel) * 0.09 + heave;
+    this.body.position.y = 0.082 + Math.abs(b.heel) * 0.078 + heave;
     this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 14, 0, 0.25) * 0.032;
+    this.body.rotation.x = 0.024 + pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.042;
+    if (this.blackBall) this.blackBall.visible = !!b.hasBlackBall;
 
     if (this.rudderGroup) {
       this.rudderGroup.rotation.y = b.steer * 0.6;
@@ -1101,8 +1117,11 @@ export class BoatModel {
     this.mainPivot.rotation.y = this.boomRotY;
     // ジブ: クローズ時はわずかに深めのキャンバーと開いたリーチで引き込み、ランニングのランチャーアップ時は風とほぼ直角へ展開
     const pk = b.poleK || 0;
-    // ランチャーアップ時はセンターボードを少し引き上げ(+22cm)、フォアステイのテンションを緩めてマストをわずかに前傾させる
-    if (this.cbBoard) this.cbBoard.position.y = pk * 0.22;
+    // リーチング〜ランニングやランチャーアップ時はセンターボードを高く引き上げ、フォアステイのテンションを緩めてマストをわずかに前傾させる
+    if (this.cbBoard) {
+      const reachLift = clamp((twa - 1.10) / 1.15, 0, 1);
+      this.cbBoard.position.y = Math.max(reachLift * 0.22, pk * 0.30);
+    }
     if (this.mast) {
       this.mast.rotation.x = -0.018 * pk;
       this.mast.position.z = -0.90 - 0.028 * pk;
