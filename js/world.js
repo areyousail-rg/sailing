@@ -1483,10 +1483,10 @@ export function createWorld(scene) {
               }
               const sa = p.h - s * 0.42;
               tq.setFromAxisAngle(yAx, -sa);
-              ts.set(0.14 + p.age * 0.18, 1, 0.42 + p.age * 0.30);
+              ts.set(0.165 + p.age * 0.21, 1, 0.48 + p.age * 0.34);
               m4.compose(tv.set(px, bowY, pz), tq, ts);
               trail.setMatrixAt(k, m4);
-              const sprayBright = (0.048 * (p.cruiseFoam || 0) + 0.125 * (p.slamSpray || 0)) * bFade;
+              const sprayBright = (0.056 * (p.cruiseFoam || 0) + 0.145 * (p.slamSpray || 0)) * bFade;
               col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
               trail.setColorAt(k++, col);
             }
@@ -1498,7 +1498,7 @@ export function createWorld(scene) {
           // 3) わずかに立つ引き波(ケルビンV字波紋): 船体後方の離れた位置からごく控えめな水面光沢筋として左右交互に配置
           if (p.s > 0.18 && p.age > 0.16) {
             const sideS = i % 2 === 0 ? 1 : -1;
-            const wakeOff = 0.92 + p.age * (0.68 + p.s * 0.85);
+            const wakeOff = 0.94 + p.age * (0.74 + p.s * 0.92);
             const wx = p.midX + rx * sideS * wakeOff;
             const wz = p.midZ + rz * sideS * wakeOff;
             const relF = (wx - b.x) * curFx + (wz - b.z) * curFz;
@@ -1510,10 +1510,10 @@ export function createWorld(scene) {
               const wy = wsW.hLong * 0.95 + (wsW.h - wsW.hLong) * 0.55 + 0.015;
               const wa = p.h - sideS * 0.38;
               tq.setFromAxisAngle(yAx, -wa);
-              ts.set(0.050 + p.age * 0.035, 1, 0.85 + p.age * 0.45);
+              ts.set(0.060 + p.age * 0.042, 1, 0.96 + p.age * 0.52);
               m4.compose(tv.set(wx, wy, wz), tq, ts);
               trail.setMatrixAt(k, m4);
-              const wakeGlint = 0.026 * p.s * fade;
+              const wakeGlint = 0.032 * p.s * fade;
               col.setRGB(0.58, 0.78, 0.90).multiplyScalar(wakeGlint);
               trail.setColorAt(k++, col);
             }
@@ -1527,10 +1527,10 @@ export function createWorld(scene) {
             const wsR = waveSample(p.x, p.z, SEA.clock);
             const ry = wsR.hLong * 0.95 + (wsR.h - wsR.hLong) * 0.55 + 0.02;
             tq.setFromAxisAngle(yAx, -p.h + (i % 2 === 0 ? 0.14 : -0.14));
-            ts.set(0.15 + p.age * 0.14, 1, 0.36 + p.age * 0.22);
+            ts.set(0.175 + p.age * 0.16, 1, 0.42 + p.age * 0.26);
             m4.compose(tv.set(p.x, ry, p.z), tq, ts);
             trail.setMatrixAt(k, m4);
-            col.setRGB(0.86, 0.94, 0.99).multiplyScalar(0.14 * rFoam * rFade);
+            col.setRGB(0.86, 0.94, 0.99).multiplyScalar(0.165 * rFoam * rFade);
             trail.setColorAt(k++, col);
           } else {
             hide(k++);
@@ -1678,41 +1678,78 @@ export function createWorld(scene) {
         cb.b.position.z = p.z;
         cb.b.rotation.y = head + cb.relRot + (cb.markRef ? 0.08 : 0.16) * Math.cos(t * spd + cb.ph);
       }
-      // ジュリー(審判)ボート(1艇): スタート前後(wt < 18)はスタートラインから遠く離れた風下外周で静かに待機し、レース中盤以降も遠巻きに穏やかに見守る
+      // ジュリー(審判)ボート(1艇): ヨットの速さ程度(最大2.1m/s)で常にゆっくり航行し、コース外周(c=-84付近)を保ってヨットの近く(38m以内)には絶対に近づかない
       if (boats && boats.length > 0 && courseVisible) {
         for (const jb of juryBoats) {
           jb.b.visible = true;
-          if (wt < 18) {
-            const holdP = toWorld(-82 + Math.sin(t * 0.16) * 2.0, -72 + Math.cos(t * 0.14) * 1.8);
-            jb.b.position.x += (holdP.x - jb.b.position.x) * clampN(dt * 0.8, 0, 0.08);
-            jb.b.position.z += (holdP.z - jb.b.position.z) * clampN(dt * 0.8, 0, 0.08);
-            jb.b.rotation.y = head + 0.05 * Math.sin(t * 0.2);
-            continue;
+          const safeDt = clampN(dt || 0, 0, 0.05);
+          const maxStep = 2.1 * safeDt; // スナイプ級ヨットの巡航速度以下に厳密制限
+          let targetA = -82 + Math.sin(t * 0.12) * 2.5;
+          let targetC = -84 + Math.cos(t * 0.10) * 2.0;
+          if (wt >= 18) {
+            // 船団の後方かつ左外周(c = -84)の安全な見守り位置を算出 (船団の中を横切る動きは一切しない)
+            let sumA = 0, minC = -50, cnt = 0;
+            for (const b of boats) {
+              if (!b || b.dsq) continue;
+              const ba = b.a !== undefined ? b.a : (b.x * U.x + b.z * U.z);
+              const bc = b.c !== undefined ? b.c : (b.x * R.x + b.z * R.z);
+              sumA += ba;
+              if (bc < minC) minC = bc;
+              cnt++;
+            }
+            const avgA = cnt > 0 ? sumA / cnt : 0;
+            targetA = clampN(avgA - 36, -82, 210);
+            targetC = Math.min(-84, minC - 42) + Math.sin(t * 0.12) * 1.8;
           }
-          if (t > jb.nextSwitchT) {
-            jb.nextSwitchT = t + 36;
-            const nB = boats.length;
-            jb.targetBoatIdx = Math.max(1, (jb.targetBoatIdx + 4) % nB);
+          const desP = toWorld(targetA, targetC);
+          let dxJ = desP.x - jb.b.position.x;
+          let dzJ = desP.z - jb.b.position.z;
+          let distJ = Math.hypot(dxJ, dzJ);
+          let stepX = 0, stepZ = 0;
+          if (distJ > 0.05 && maxStep > 0) {
+            const moveLen = Math.min(maxStep, distJ * 0.35);
+            stepX = (dxJ / distJ) * moveLen;
+            stepZ = (dzJ / distJ) * moveLen;
           }
-          const tgtB = boats[jb.targetBoatIdx % boats.length] || boats[0];
-          if (tgtB) {
-            const bFx = Math.sin(tgtB.h), bFz = -Math.cos(tgtB.h);
-            const bRx = Math.cos(tgtB.h), bRz = Math.sin(tgtB.h);
-            const swayLat = jb.latOffset + Math.sin(t * 0.18) * 2.2;
-            const desX = tgtB.x - bFx * jb.followDist + bRx * swayLat;
-            const desZ = tgtB.z - bFz * jb.followDist + bRz * swayLat;
-            const dxJ = desX - jb.b.position.x;
-            const dzJ = desZ - jb.b.position.z;
-            const distJ = Math.hypot(dxJ, dzJ);
-            const stepRate = clampN(dt * 0.36, 0, 0.045);
-            jb.b.position.x += dxJ * stepRate;
-            jb.b.position.z += dzJ * stepRate;
-            const desRotY = distJ > 12.0 ? Math.atan2(dxJ, dzJ) : Math.atan2(bFx, bFz);
-            let dRot = ((desRotY - jb.b.rotation.y + Math.PI) % (Math.PI * 2));
-            if (dRot < 0) dRot += Math.PI * 2;
-            dRot -= Math.PI;
-            jb.b.rotation.y += dRot * clampN(dt * 1.1, 0, 0.08);
+          let nextX = jb.b.position.x + stepX;
+          let nextZ = jb.b.position.z + stepZ;
+
+          // 全ヨットとの距離をチェックし、42m以内にヨットがいる場合は外側へ避けるベクトルを加算 (ヨットの近くを通ることは絶対にないようにする)
+          const MIN_YACHT_CLEAR = 42.0;
+          let pushX = 0, pushZ = 0;
+          for (const b of boats) {
+            if (!b) continue;
+            const bx = nextX - b.x, bz = nextZ - b.z;
+            const dB = Math.hypot(bx, bz);
+            if (dB < MIN_YACHT_CLEAR) {
+              const ux = dB > 0.1 ? bx / dB : -R.x;
+              const uz = dB > 0.1 ? bz / dB : -R.z;
+              const strength = (MIN_YACHT_CLEAR - dB) / MIN_YACHT_CLEAR;
+              pushX += ux * strength * 3.0;
+              pushZ += uz * strength * 3.0;
+            }
           }
+          if (pushX !== 0 || pushZ !== 0) {
+            let totX = stepX + pushX * maxStep;
+            let totZ = stepZ + pushZ * maxStep;
+            const totLen = Math.hypot(totX, totZ);
+            if (totLen > maxStep && totLen > 1e-5) {
+              totX = (totX / totLen) * maxStep;
+              totZ = (totZ / totLen) * maxStep;
+            }
+            nextX = jb.b.position.x + totX;
+            nextZ = jb.b.position.z + totZ;
+            stepX = totX;
+            stepZ = totZ;
+          }
+          jb.b.position.x = nextX;
+          jb.b.position.z = nextZ;
+          const moveMag = Math.hypot(stepX, stepZ);
+          const desRotY = moveMag > 0.008 ? Math.atan2(stepX, stepZ) : head + 0.04 * Math.sin(t * 0.18);
+          let dRot = ((desRotY - jb.b.rotation.y + Math.PI) % (Math.PI * 2));
+          if (dRot < 0) dRot += Math.PI * 2;
+          dRot -= Math.PI;
+          jb.b.rotation.y += dRot * clampN(safeDt * 0.9, 0, 0.05);
         }
       }
       for (const ms of movingShips) {
