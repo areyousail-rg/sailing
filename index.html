@@ -6,30 +6,137 @@
   <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261030b">
+  <link rel="stylesheet" href="style.css?v=20261030c">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261030b",
-      "./js/sim.js": "./js/sim.js?v=20261030b",
-      "./js/review.js": "./js/review.js?v=20261030b",
-      "./js/ai.js": "./js/ai.js?v=20261030b",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261030b",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261030b",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261030b",
-      "./js/crew.js": "./js/crew.js?v=20261030b",
-      "./js/camera.js": "./js/camera.js?v=20261030b",
-      "./js/course.js": "./js/course.js?v=20261030b",
-      "./js/rules.js": "./js/rules.js?v=20261030b",
-      "./js/audio.js": "./js/audio.js?v=20261030b"
+      "./js/world.js": "./js/world.js?v=20261030c",
+      "./js/sim.js": "./js/sim.js?v=20261030c",
+      "./js/review.js": "./js/review.js?v=20261030c",
+      "./js/ai.js": "./js/ai.js?v=20261030c",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261030c",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261030c",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261030c",
+      "./js/crew.js": "./js/crew.js?v=20261030c",
+      "./js/camera.js": "./js/camera.js?v=20261030c",
+      "./js/course.js": "./js/course.js?v=20261030c",
+      "./js/rules.js": "./js/rules.js?v=20261030c",
+      "./js/audio.js": "./js/audio.js?v=20261030c"
     }
   }
   </script>
 </head>
 <body>
-  <div id="loading" class="overlay"><div class="spinner"></div><p>Loading <span id="loadPct">0</span>%</p><div class="loadBar"><div id="loadFill"></div></div></div>
+  <div id="loading" class="overlay">
+    <div class="loadingAnimeWrap" aria-hidden="true">
+      <svg class="loadingAnimeSvg" viewBox="0 0 360 210" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="laSky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#1e68b8"/>
+            <stop offset="58%" stop-color="#57b5f7"/>
+            <stop offset="100%" stop-color="#bce8ff"/>
+          </linearGradient>
+          <linearGradient id="laSea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0e6cc4"/>
+            <stop offset="100%" stop-color="#072c58"/>
+          </linearGradient>
+          <linearGradient id="laSailMain" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="68%" stop-color="#f0f7ff"/>
+            <stop offset="100%" stop-color="#cfe4fa"/>
+          </linearGradient>
+          <linearGradient id="laSailJib" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="100%" stop-color="#d5e8fc"/>
+          </linearGradient>
+          <clipPath id="laClip">
+            <rect x="0" y="0" width="360" height="210" rx="8"/>
+          </clipPath>
+        </defs>
+        <g clip-path="url(#laClip)">
+          <!-- 空と太陽・入道雲 -->
+          <rect width="360" height="210" fill="url(#laSky)"/>
+          <circle cx="296" cy="44" r="26" fill="#fff9d2" opacity="0.85"/>
+          <circle cx="296" cy="44" r="42" fill="#ffffff" opacity="0.22"/>
+          <!-- アニメ風の積乱雲・遠景シルエット -->
+          <g class="laClouds" fill="#ffffff" opacity="0.92">
+            <path d="M-10,128 Q18,102 48,116 Q72,90 106,108 Q132,98 152,122 L152,145 L-10,145 Z"/>
+            <path d="M210,130 Q235,104 266,115 Q294,88 330,108 Q352,102 372,126 L372,145 L210,145 Z" opacity="0.82"/>
+          </g>
+          <!-- 江の島・シーキャンドル風シルエット -->
+          <path d="M36,138 L52,124 L74,122 L95,130 L114,138 Z" fill="#2b5d7c" opacity="0.65"/>
+          <path d="M68,122 L70,107 L73,107 L75,122 Z" fill="#1e445e" opacity="0.75"/>
+          <line x1="71.5" y1="107" x2="71.5" y2="99" stroke="#1e445e" stroke-width="1.5"/>
+
+          <!-- 風のスピードライン -->
+          <g class="laWindLines" stroke="#ffffff" stroke-linecap="round">
+            <line class="laWind w1" x1="330" y1="34" x2="250" y2="34" stroke-width="2" opacity="0.65"/>
+            <line class="laWind w2" x1="350" y1="68" x2="285" y2="68" stroke-width="1.6" opacity="0.5"/>
+            <line class="laWind w3" x1="160" y1="48" x2="88" y2="48" stroke-width="1.8" opacity="0.55"/>
+            <line class="laWind w4" x1="320" y1="96" x2="245" y2="96" stroke-width="1.5" opacity="0.45"/>
+          </g>
+
+          <!-- 奥の海と波 -->
+          <rect x="0" y="135" width="360" height="75" fill="url(#laSea)"/>
+          <path class="laWaveBack" d="M-40,142 Q-10,135 20,142 T80,142 T140,142 T200,142 T260,142 T320,142 T380,142 L400,190 L-40,190 Z" fill="#1380dc" opacity="0.65"/>
+
+          <!-- 帆走するスナイプ級ヨット (アニメ風セルシェーディング) -->
+          <g class="laYachtGroup" transform="translate(182, 146)">
+            <g class="laYachtRock">
+              <!-- ジブセール (前帆) -->
+              <path d="M -10,-8 L -78,-14 L -16,-106 Q -2,-56 -10,-8 Z" fill="url(#laSailJib)" stroke="#13293d" stroke-width="2.2" stroke-linejoin="round"/>
+              <path d="M -78,-14 L -19,-18 Q -13,-54 -16,-106 Z" fill="#b7d7f7" opacity="0.45"/>
+              <!-- ジブのウインドウ -->
+              <polygon points="-38,-26 -22,-24 -20,-38 -35,-39" fill="#5aa9e6" opacity="0.45" stroke="#13293d" stroke-width="1"/>
+
+              <!-- メインセール (主帆) -->
+              <path d="M -4,-12 L -14,-124 Q 54,-82 70,-16 Q 32,-18 -4,-12 Z" fill="url(#laSailMain)" stroke="#13293d" stroke-width="2.4" stroke-linejoin="round"/>
+              <!-- セール陰影＆バテンライン -->
+              <path d="M -14,-124 Q 24,-78 16,-13 L -4,-12 Z" fill="#bddbfa" opacity="0.38"/>
+              <line x1="20" y1="-92" x2="36" y2="-90" stroke="#7ea8cc" stroke-width="1.6"/>
+              <line x1="34" y1="-66" x2="54" y2="-63" stroke="#7ea8cc" stroke-width="1.6"/>
+              <line x1="44" y1="-40" x2="65" y2="-38" stroke="#7ea8cc" stroke-width="1.6"/>
+              <!-- スナイプ級エンブレム(赤い鳥シルエット) & セール番号 -->
+              <path d="M 15,-76 L 34,-82 L 26,-73 L 37,-71 L 19,-67 L 23,-73 Z" fill="#d9383a"/>
+              <text x="16" y="-52" fill="#16324f" font-family="Arial, sans-serif" font-weight="900" font-size="10" transform="rotate(-7, 24, -52)">31804</text>
+
+              <!-- マスト＆ブーム -->
+              <line x1="-3" y1="-2" x2="-14" y2="-126" stroke="#1a2634" stroke-width="3.2" stroke-linecap="round"/>
+              <line x1="-4" y1="-12" x2="72" y2="-15" stroke="#2c3e50" stroke-width="3" stroke-linecap="round"/>
+
+              <!-- ハイクアウトするスキッパー＆クルー -->
+              <!-- クルー(前) -->
+              <circle cx="8" cy="-14" r="5.5" fill="#ffcf40" stroke="#13293d" stroke-width="1.8"/>
+              <path d="M 2,-9 Q 12,-9 16,1 L 2,1 Z" fill="#0e52b8" stroke="#13293d" stroke-width="1.8"/>
+              <!-- スキッパー(後) -->
+              <circle cx="28" cy="-13" r="5.8" fill="#ffffff" stroke="#13293d" stroke-width="1.8"/>
+              <path d="M 21,-8 Q 33,-8 36,2 L 20,2 Z" fill="#0e52b8" stroke="#13293d" stroke-width="1.8"/>
+
+              <!-- スナイプ船体 (ハル) -->
+              <path d="M -84,-6 L 62,-3 L 56,11 Q -8,14 -74,9 Z" fill="#ffffff" stroke="#13293d" stroke-width="2.4" stroke-linejoin="round"/>
+              <!-- 赤いシアーライン＆ボトム -->
+              <path d="M -81,-2 L 60,0 L 58,4 L -78,2 Z" fill="#e63946"/>
+              <path d="M -74,6 L 57,7 L 55,11 Q -8,14 -72,9 Z" fill="#d62828"/>
+
+              <!-- バウの白い波しぶき (アニメ風エフェクト) -->
+              <path class="laSpray" d="M -86,8 Q -98,-2 -108,6 Q -96,12 -82,12 Z" fill="#ffffff" opacity="0.92"/>
+              <circle class="laSprayDot d1" cx="-98" cy="-4" r="3" fill="#ffffff"/>
+              <circle class="laSprayDot d2" cx="-108" cy="1" r="2.2" fill="#ffffff"/>
+              <circle class="laSprayDot d3" cx="68" cy="8" r="3.5" fill="#ffffff" opacity="0.85"/>
+            </g>
+          </g>
+
+          <!-- 手前の波と白波キラキラ -->
+          <path class="laWaveFront" d="M-40,155 Q-5,146 30,155 T100,155 T170,155 T240,155 T310,155 T380,155 L400,215 L-40,215 Z" fill="#09529c" opacity="0.88"/>
+          <path class="laWaveFoam" d="M-30,156 Q5,149 40,156 T110,156 T180,156 T250,156 T320,156" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-dasharray="18 26" stroke-linecap="round" opacity="0.75"/>
+        </g>
+      </svg>
+    </div>
+    <p>Loading <span id="loadPct">0</span>%</p>
+    <div class="loadBar"><div id="loadFill"></div></div>
+  </div>
   <script>
   // 読み込み進捗: モジュール(three.js と js/*.js)の取得数から推定し、main.js の初期化完了で100%
   (function () {
@@ -152,7 +259,11 @@
           <div id="courseChoices" class="choices venueChoices"></div>
         </div>
       </div>
-      <div class="menuTopRow">
+      <div class="menuTopRow menuTopRow3">
+        <div class="menuGroup">
+          <h2>レート</h2>
+          <div id="rateChoices" class="choices venueChoices"></div>
+        </div>
         <div class="menuGroup">
           <h2>ペナルティ</h2>
           <div id="penaltyChoices" class="choices venueChoices"></div>
@@ -182,6 +293,10 @@
       </div>
       <div class="startActions">
         <button id="startBtn" class="cta startRaceBtn" type="button">レーススタート</button>
+        <div id="menuRateBadge" class="menuRateBadge" title="現在のレート">
+          <span class="mrbLabel">RATE</span>
+          <b id="menuRateVal">1500</b>
+        </div>
         <button id="practiceBtn" class="btnPractice" type="button">オリエンテーション</button>
         <button id="recordsBtn" class="btnPractice" type="button">戦績</button>
       </div>
@@ -209,6 +324,7 @@
               <th>コース</th>
               <th>風向・風速</th>
               <th>着順</th>
+              <th>レート変動</th>
               <th>タイム</th>
               <th>平均艇速</th>
             </tr>
@@ -307,13 +423,59 @@
   </section>
 
   <section id="result" class="overlay menu hidden">
-    <div class="card small">
+    <div class="card small resultCard">
       <h1 id="resultTitle">1位</h1>
+      <!-- スプラトゥーン風 レート変動演出ボックス -->
+      <div id="resRateBox" class="resRateBox hidden">
+        <div class="splatRateHead">
+          <span class="splatRateBadge">RATE / RACE POWER</span>
+          <span id="resRateCourseSub" class="splatRateSub">トラペゾイド</span>
+        </div>
+        <div class="splatRateMid">
+          <div class="splatRateScoreCol">
+            <span id="resRateVal" class="splatRateVal">1500</span>
+            <span id="resRateDelta" class="splatRateDelta plus">+100</span>
+          </div>
+          <div class="splatRateChips">
+            <span id="resRateEntryChip" class="splatChip entry">参加 −100</span>
+            <span id="resRateRewardChip" class="splatChip reward">順位 +200</span>
+          </div>
+        </div>
+        <div class="splatGaugeWrap">
+          <div class="splatGaugeTrack">
+            <div id="resRateBarBase" class="splatGaugeBase"></div>
+            <div id="resRateBarDiff" class="splatGaugeDiff plus"></div>
+          </div>
+          <div class="splatGaugeLabels">
+            <span id="resRateFloor">1500</span>
+            <span id="resRateTarget">NEXT UNLOCK 1600</span>
+            <span id="resRateCeil">1600</span>
+          </div>
+        </div>
+      </div>
       <div class="tableWrap"><table><thead><tr><th>順位</th><th>艇</th><th>タイム</th></tr></thead><tbody id="resultBody"></tbody></table></div>
       <button id="againBtn" class="cta" type="button">もう一度</button>
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261030b"></script>
+  <!-- スマブラ風 新キャラクター解放演出 (＊＊ Joins the Race!) -->
+  <section id="challengerOverlay" class="overlay challengerOverlay hidden" aria-live="polite">
+    <div class="challengerBurst"></div>
+    <div class="challengerSlash"></div>
+    <div class="challengerStage">
+      <div class="challengerModelWrap">
+        <canvas id="challengerCanvas" width="320" height="320"></canvas>
+      </div>
+      <div class="challengerBanner">
+        <div class="challengerEyebrow">NEW RACER UNLOCKED!</div>
+        <div id="challengerName" class="challengerName">Duck</div>
+        <div class="challengerSplashSub">Joins the Race!</div>
+        <p id="challengerJpNote" class="challengerJpNote">レート1600達成！「アヒル」が使用可能になりました</p>
+        <button id="challengerCloseBtn" class="cta challengerOkBtn" type="button">OK!</button>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="js/main.js?v=20261030c"></script>
 </body>
 </html>
