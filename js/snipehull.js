@@ -76,9 +76,17 @@ function braidTex() {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 function webbingTex() {
-  const c = document.createElement('canvas'); c.width = 16; c.height = 64; const x = c.getContext('2d');
-  x.fillStyle = '#e8e8e8'; x.fillRect(0, 0, 16, 64);
-  x.fillStyle = '#9a9a9a'; for (let i = 0; i < 64; i += 3) x.fillRect(0, i, 16, 1);
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d');
+  x.fillStyle = '#1e293b'; x.fillRect(0, 0, 64, 128);
+  // 両端の補強パイピングとイエローステッチライン(白フロア上でハイクベルトの輪郭がくっきり浮き立つ実艇仕様)
+  x.fillStyle = '#0f172a'; x.fillRect(0, 0, 9, 128); x.fillRect(55, 0, 9, 128);
+  x.fillStyle = '#facc15';
+  for (let y = 2; y < 128; y += 6) {
+    x.fillRect(10, y, 2, 3);
+    x.fillRect(52, y, 2, 3);
+  }
+  x.fillStyle = '#334155';
+  for (let y = 0; y < 128; y += 4) x.fillRect(14, y, 36, 1.5);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 // 実艇写真のトップサイド(船の横の部分)テクスチャ: ガンネル下の陰影・チャインの稜線・船尾クォーターの青いクラス/ビルダーロゴを再現
@@ -250,7 +258,7 @@ export const M = {
   rubber: new THREE.MeshStandardMaterial({ color: 0x262a30, roughness: 0.85 }),
   rail: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.26, metalness: 0.0 }),
   wood: new THREE.MeshStandardMaterial({ color: 0xb98a55, roughness: 0.55 }),
-  strap: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85, map: webbing }),
+  strap: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.68, map: webbing, side: THREE.DoubleSide }),
   foam: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 }),
 };
 const ropeMats = new Map();
@@ -458,22 +466,42 @@ export function buildHull(accent = 0x2a77ff) {
   const mastStepPost = mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.34, 12), M.alu, 0, FLOOR_Y + 0.17, -0.90);
   addOrder(mastStepPost, -8);
 
-  // コクピット前端の白い立体波除けカウル (スプラッシュコーミング / コンソールフード)
-  const hoodZ = lin(-1.12, -0.50, 14);
-  const hoodW = lin(-1, 1, 16);
+  // コクピット前端の白い立体波除けカウル & V字ウォーターブレイク (従来より一段高めで存在感のあるスナイプ実艇仕様)
+  const hoodZ = lin(-1.24, -0.50, 16);
+  const hoodW = lin(-1, 1, 18);
   const hoodArchAt = (z, x) => {
-    const t = clamp01((z - (-1.12)) / 0.62);
-    const halfW = Math.max(0.045, 0.045 + t * (COAM * 0.88 - 0.045));
+    const t = clamp01((z - (-1.24)) / 0.74);
+    const halfW = Math.max(0.048, 0.048 + t * (COAM * 0.94 - 0.048));
     const wn = clamp01(Math.abs(x) / halfW);
-    return Math.sin(t * Math.PI * 0.85) * (1 - 0.65 * wn * wn) * 0.095;
+    return Math.sin(t * Math.PI * 0.86) * (1 - 0.52 * wn * wn) * 0.138;
   };
   const hoodGeo = grid(hoodZ, hoodW, (z, w) => {
-    const t = (z - (-1.12)) / 0.62;
-    const halfW = 0.045 + t * (COAM * 0.88 - 0.045);
+    const t = (z - (-1.24)) / 0.74;
+    const halfW = 0.048 + t * (COAM * 0.94 - 0.048);
     const x = w * halfW;
     return [x, deckY(z, x) + hoodArchAt(z, x), z];
   });
   addOrder(new THREE.Mesh(hoodGeo, M.gel), -9);
+  // フォアデッキ上のV字ウォーターブレイク(波除け壁): バウ側頂点(z=-1.26, x=0)から左右コーミング前端(z=-0.52, x=±0.53)へ広がる高めの防波壁と上縁リップ
+  for (const sg of [-1, 1]) {
+    const bwUs = lin(0, 1, 16);
+    const bwVs = sg > 0 ? lin(0, 1, 4) : lin(1, 0, 4);
+    const bwWallGeo = grid(bwUs, bwVs, (u, v) => {
+      const z = -1.26 + u * (-0.52 - (-1.26));
+      const x = sg * (0.018 + Math.pow(u, 0.92) * (COAM * 0.94 - 0.018));
+      const baseY = deckY(z, x);
+      const wallH = (0.068 + 0.068 * Math.sin(u * Math.PI * 0.78)) * (0.65 + 0.35 * u);
+      return [x - sg * (1 - v) * 0.012, baseY + wallH * v, z];
+    });
+    addOrder(new THREE.Mesh(bwWallGeo, M.wall), -9);
+    const bwLipPts = bwUs.map((u) => {
+      const z = -1.26 + u * (-0.52 - (-1.26));
+      const x = sg * (0.018 + Math.pow(u, 0.92) * (COAM * 0.94 - 0.018));
+      const wallH = (0.068 + 0.068 * Math.sin(u * Math.PI * 0.78)) * (0.65 + 0.35 * u);
+      return new THREE.Vector3(x, deckY(z, x) + wallH + 0.004, z);
+    });
+    addOrder(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(bwLipPts), 24, 0.011, 8), M.gel), -9);
+  }
 
   // 実艇写真(2枚目)の「左右が大きくくり抜かれたアーチ型フロントフレーム (z = -0.52)」:
   // 全面を壁で塞がず、上縁のアーチビーム・左右外側のニー・中央のマストサポートV支柱だけで構成し、左右の大きな開口部からバウの空洞が覗く構造
@@ -488,7 +516,7 @@ export function buildHull(accent = 0x2a77ff) {
   };
   const archHeaderGeo = grid(lin(-1, 1, 32), lin(0, 1, 4), (w, v) => {
     const x = w * COAM;
-    const yTop = deckY(zFrame, x) + ( Math.abs(x) <= COAM * 0.88 ? hoodArchAt(zFrame, x) : 0 );
+    const yTop = deckY(zFrame, x) + ( Math.abs(x) <= COAM * 0.94 ? hoodArchAt(zFrame, x) : 0 );
     const yBot = Math.min(yTop - 0.024, openArchY(x));
     return [x, yBot + (yTop - yBot) * v, zFrame];
   });
@@ -502,23 +530,6 @@ export function buildHull(accent = 0x2a77ff) {
   }
   const centerPillar = mesh(new THREE.BoxGeometry(0.056, 0.26, 0.036), M.wall, 0, FLOOR_Y + 0.25, zFrame - 0.008);
   addOrder(centerPillar, -8);
-
-  // 写真2枚目通り: 中央支柱に掛かるオレンジ色・ブルー色のコントロールライン束と、空洞内へ伸びる黒いハイクアウトストラップ前端金具
-  for (let loopIdx = 0; loopIdx < 3; loopIdx++) {
-    const rx = 0.042 + loopIdx * 0.012;
-    const ry = 0.055 + loopIdx * 0.014;
-    const loopPts = lin(0, Math.PI * 2, 18).map((a) => new THREE.Vector3(
-      0.045 + Math.sin(a) * rx,
-      FLOOR_Y + 0.25 + Math.cos(a) * ry,
-      zFrame + 0.016 + Math.sin(a * 2) * 0.006
-    ));
-    g.add(rope(loopPts, 0xf97316, 0.0038));
-  }
-  g.add(rope([
-    [-0.08, FLOOR_Y + 0.34, zFrame + 0.01],
-    [-0.14, FLOOR_Y + 0.22, zFrame - 0.03],
-    [-0.19, FLOOR_Y + 0.14, zFrame - 0.02],
-  ], 0x38bdf8, 0.0036));
 
   // センターボードケース(ダガーボードトランク) & アルミ製ダガーボード:
   // クローズホールド時はケース内に深く下りており、リーチング〜ランチャーアップ時にケースのスリット(z=-0.26)に沿って真上に引き上がる構造
@@ -560,38 +571,79 @@ export function buildHull(accent = 0x2a77ff) {
   // トランク・コンソール周りのクリート
   for (const sg of [-1, 1]) {
     const c = camCleat(0.95); c.position.set(sg * 0.14, deckY(-0.52, sg * 0.14) + 0.055, -0.52); c.rotation.x = 0.25; g.add(c);
-    const c2 = camCleat(0.9); c2.position.set(sg * (COAM - 0.02), deckY(0.05, sg * COAM) + 0.005, 0.05); g.add(c2);
   }
 
-  // ハイクアウトストラップ(トーストラップ): 実艇写真(2枚目)通り、フロントフレームの空洞開口下部(z=-0.54)から後部コクピットまで伸びる左右ストラップ＆白い金具プレート
+  // ハイクベルト(ハイクアウトストラップ / トーストラップ):
+  // スナイプ実艇の構造を徹底再現:
+  //  1) 幅7.2cm・厚み1.8cmのパッド入りフラットベルトが左右2本、フロントフレーム(z=-0.53)から後部バルクヘッド(z=+1.56)まで走る
+  //  2) 床に張り付かず、すぐ足を掛けられるよう①フロントフレーム金具、②センターケース後端(z=0.04)のサスペンションライザー＆ショックコード、
+  //     ③コクピット中央(z=0.78)のコーミング吊りショックコード、④後部バルクヘッド金具＆調整ロープで床から約9〜14cm浮かせて保持
+  const strapW = 0.072, strapH = 0.018;
   for (const sg of [-1, 1]) {
-    const pts = [
-      [-0.54, 0.135],
-      [-0.36, 0.055],
-      [-0.14, 0.015],
-      [0.02, 0.005],
-      [0.24, 0.030],
-      [0.58, 0.072],
-      [0.96, 0.075],
-      [1.30, 0.058],
-      [1.52, 0.020],
-    ].map(([zz, hh]) => new THREE.Vector3(sg * (zz < 0 ? 0.18 - zz * 0.06 : 0.24), FLOOR_Y + 0.018 + hh, zz));
-    const cv = new THREE.CatmullRomCurve3(pts);
-    const t = new THREE.Mesh(new THREE.TubeGeometry(cv, 36, 0.011, 8), M.strap);
-    t.scale.set(1.35, 0.48, 1);
-    t.position.x = sg * 0.22 * (1 - 1.35);
-    g.add(t);
-    // フロントフレーム側の白いストラップ固定プレート (写真2枚目)
-    const anchorPlate = mesh(new THREE.BoxGeometry(0.036, 0.044, 0.012), M.wall, sg * 0.20, FLOOR_Y + 0.16, -0.53);
-    anchorPlate.rotation.x = -0.35;
+    const strapSample = (u) => {
+      const z = -0.53 + u * (1.56 - (-0.53));
+      const x = sg * (z < 0 ? 0.19 + (z + 0.53) * 0.095 : 0.24 - Math.max(0, z - 1.15) * 0.045);
+      const floorLocal = FLOOR_Y + Math.max(0, z - 0.9) * 0.04 + 0.008;
+      // クルー位置(z≈-0.25)とスキッパー位置(z≈0.85)で足を差し込みやすい高さ(床+9.5cm〜14.5cm)に浮くアーチ形状
+      const lift = 0.096 + 0.048 * Math.pow(1 - u, 2.2) + 0.026 * Math.sin(u * Math.PI * 1.65);
+      return [x, floorLocal + lift, z];
+    };
+    const sUs = lin(0, 1, 28);
+    // 上面 + 下面 + 左右側面を持つ立体フラットベルトメッシュ
+    const topRibbon = grid(sUs, [-0.5, 0.5], (u, w) => {
+      const [sx, sy, sz] = strapSample(u);
+      return [sx + w * strapW, sy + strapH * 0.5, sz];
+    }, null, [14, 6]);
+    const botRibbon = grid(sUs, [0.5, -0.5], (u, w) => {
+      const [sx, sy, sz] = strapSample(u);
+      return [sx + w * strapW, sy - strapH * 0.5, sz];
+    }, null, [14, 6]);
+    const sideOuter = grid(sUs, [0, 1], (u, v) => {
+      const [sx, sy, sz] = strapSample(u);
+      return [sx + sg * strapW * 0.5, sy + (v - 0.5) * strapH, sz];
+    }, null, [14, 6]);
+    const sideInner = grid(sUs, [1, 0], (u, v) => {
+      const [sx, sy, sz] = strapSample(u);
+      return [sx - sg * strapW * 0.5, sy + (v - 0.5) * strapH, sz];
+    }, null, [14, 6]);
+    for (const rGeo of [topRibbon, botRibbon, sideOuter, sideInner]) {
+      const mStrap = new THREE.Mesh(rGeo, M.strap);
+      mStrap.renderOrder = -6;
+      g.add(mStrap);
+    }
+    // 1) フロントフレーム側の白いストラップ固定プレート＆ステンレスアイ金具 (z = -0.53)
+    const [fx0, fy0, fz0] = strapSample(0);
+    const anchorPlate = mesh(new THREE.BoxGeometry(0.044, 0.052, 0.014), M.wall, fx0, fy0, -0.53);
+    anchorPlate.rotation.x = -0.28;
     g.add(anchorPlate);
+    g.add(mesh(new THREE.BoxGeometry(0.050, 0.014, 0.022), M.steel, fx0, fy0, -0.515));
+    // 2) センターケース後端(z = 0.04, u ≈ 0.273)からハイクベルトを宙に吊り上げるサスペンションライザー＆ショックコード
+    const [mx0, my0, mz0] = strapSample((0.04 - (-0.53)) / 2.09);
+    g.add(rope([[0, FLOOR_Y + 0.165, 0.03], [mx0 * 0.55, my0 + 0.018, mz0], [mx0, my0, mz0]], 0x0ea5e9, 0.0048));
+    // 3) コクピット中央(z = 0.78, u ≈ 0.627)でサイドコーミング下からベルトを浮かせて保持するバンジーコード
+    const [cx0, cy0, cz0] = strapSample((0.78 - (-0.53)) / 2.09);
+    g.add(rope([[sg * (COAM - 0.01), deckY(0.78, COAM) - 0.05, 0.78], [cx0 + sg * 0.10, cy0 + 0.012, cz0], [cx0, cy0, cz0]], 0xfacc15, 0.0042));
+    // 4) 後部バルクヘッド(z = 1.56)のステンレスアイプレート＆ハイクベルト調整ライン
+    const [ax0, ay0, az0] = strapSample(1);
+    g.add(mesh(new THREE.BoxGeometry(0.048, 0.038, 0.016), M.steel, ax0, ay0, ZC1 - 0.01));
+    g.add(rope([[ax0, ay0, az0 - 0.02], [ax0, ay0 - 0.02, ZC1 - 0.01]], 0xe11d48, 0.0048));
   }
 
-  // ジブリード & サイドステー金具 (広くなった船体幅に合わせて配置)
+  // 左右のジブカム(スイベル台座＋カムクリート＋フェアリードリング: x=±0.54, z=-0.06) & サイドステー金具
   for (const sg of [-1, 1]) {
-    const x = sg * 0.64;
-    g.add(mesh(new THREE.BoxGeometry(0.016, 0.008, 0.36), M.alu, x, deckY(-0.08, x) + 0.004, -0.08));
-    const jb = block(0.016); jb.position.set(x, deckY(-0.1, x) + 0.02, -0.1); g.add(jb);
+    const xCam = sg * 0.54, zCam = -0.06, yCam = deckY(zCam, xCam);
+    // ジブカム・スイベルマウント台座 (サイドデッキ内寄りに斜め内向きで設置)
+    const camBase = mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.024, 12), M.alu, xCam, yCam + 0.012, zCam);
+    g.add(camBase);
+    const jCam = camCleat(1.08);
+    jCam.position.set(xCam, yCam + 0.022, zCam);
+    jCam.rotation.y = -sg * 0.72; // コクピット内・ジブクリュー方向を向く角度
+    jCam.rotation.z = sg * 0.12;
+    g.add(jCam);
+    // ジブトラック & ブロック
+    const x = sg * 0.62;
+    g.add(mesh(new THREE.BoxGeometry(0.016, 0.008, 0.34), M.alu, x, deckY(-0.10, x) + 0.004, -0.10));
+    const jb = block(0.016); jb.position.set(x, deckY(-0.12, x) + 0.02, -0.12); g.add(jb);
     // シュラウド・チェーンプレート(ステンレス)
     const sx = sg * 0.72, sz = -0.75, sy = deckY(sz, sx);
     g.add(mesh(new THREE.BoxGeometry(0.028, 0.006, 0.075), M.steel, sx, sy + 0.003, sz));
