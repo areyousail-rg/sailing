@@ -1073,11 +1073,11 @@ export function playBgm(mode = 'result') {
 }
 
 // ---- 接近時の権利主張コール (動物キャラクターのみ鳴き声を鳴らし、人間は声を出さない) ----
-// crewType: 'cat' | 'dog' | 'duck' (human_m / human_f はスキップ)
+// crewType: 'cat' | 'dog' | 'duck' | 'tanuki' | 'rabbit' | 'dolphin' (human_m / human_f はスキップ)
 // callKind: 'starboard' (スタボ) | 'leeward' (下)
 export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard', pan = 0) {
   if (!bgmVoiceEnabled || muted) return;
-  if (crewType !== 'cat' && crewType !== 'dog' && crewType !== 'shiba' && crewType !== 'duck') return;
+  if (crewType !== 'cat' && crewType !== 'dog' && crewType !== 'shiba' && crewType !== 'duck' && crewType !== 'tanuki' && crewType !== 'rabbit' && crewType !== 'dolphin') return;
   initAudio();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
@@ -1196,6 +1196,66 @@ export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard'
       o1.start(ts); o2.start(ts);
       o1.stop(ts + dur + 0.03); o2.stop(ts + dur + 0.03);
     });
+    return;
+  }
+
+  if (crewType === 'tanuki') {
+    // タヌキ: 愛嬌のある「ポン！ポコッ！」(ぽんぽこ腹鼓＋可愛い鳴き声)
+    [0, 0.15].forEach((offset, idx) => {
+      const ts = t0 + offset;
+      const dur = 0.15;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle';
+      const f0 = idx === 0 ? 235 : 295;
+      o.frequency.setValueAtTime(f0 * 1.35, ts);
+      o.frequency.exponentialRampToValueAtTime(f0, ts + 0.035);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.18, ts + dur);
+      g.gain.setValueAtTime(0.0001, ts);
+      g.gain.linearRampToValueAtTime(0.45, ts + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ts + dur + 0.02);
+      o.connect(g); g.connect(out);
+      o.start(ts); o.stop(ts + dur + 0.03);
+    });
+    return;
+  }
+
+  if (crewType === 'rabbit') {
+    // ウサギ: 可愛らしい「ピョン！キュッ！」(高めのキュートなチャープ音)
+    [0, 0.13].forEach((offset, idx) => {
+      const ts = t0 + offset;
+      const dur = 0.12;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      const f0 = idx === 0 ? 740 : 880;
+      o.frequency.setValueAtTime(f0, ts);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.55, ts + 0.055);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.15, ts + dur);
+      g.gain.setValueAtTime(0.0001, ts);
+      g.gain.linearRampToValueAtTime(0.32, ts + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ts + dur + 0.02);
+      o.connect(g); g.connect(out);
+      o.start(ts); o.stop(ts + dur + 0.03);
+    });
+    return;
+  }
+
+  if (crewType === 'dolphin') {
+    // イルカ: 爽やかな「キュイーーッ！キュキュッ！」(ドルフィンホイッスル＆クリック)
+    [0, 0.12, 0.24].forEach((offset, idx) => {
+      const ts = t0 + offset;
+      const dur = idx === 2 ? 0.20 : 0.095;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      const f0 = idx === 0 ? 1320 : idx === 1 ? 1560 : 1420;
+      o.frequency.setValueAtTime(f0, ts);
+      o.frequency.exponentialRampToValueAtTime(f0 * (idx === 2 ? 1.65 : 1.38), ts + dur * 0.72);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.12, ts + dur);
+      g.gain.setValueAtTime(0.0001, ts);
+      g.gain.linearRampToValueAtTime(0.28, ts + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, ts + dur + 0.015);
+      o.connect(g); g.connect(out);
+      o.start(ts); o.stop(ts + dur + 0.025);
+    });
   }
 }
 
@@ -1206,7 +1266,7 @@ export function playCrewSelectSound(crewType = 'human_m') {
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
 
-  if (crewType === 'cat' || crewType === 'dog' || crewType === 'shiba' || crewType === 'duck') {
+  if (crewType === 'cat' || crewType === 'dog' || crewType === 'shiba' || crewType === 'duck' || crewType === 'tanuki' || crewType === 'rabbit' || crewType === 'dolphin') {
     playRightOfWayHail(crewType, 'starboard', 0);
     return;
   }
@@ -1245,6 +1305,97 @@ export function playCrewSelectSound(crewType = 'human_m') {
     o.connect(bp1); o.connect(bp2); bp1.connect(g); bp2.connect(g); g.connect(master);
     o.start(ts); o.stop(ts + syl.dur + 0.03);
   });
+}
+
+// スプラトゥーン風レートゲージのカウントアップ・効果音
+export function playRateTickSound(up = true, progress = 0.5, isFinish = false) {
+  if (!bgmVoiceEnabled || muted) return;
+  initAudio();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  const t0 = ctx.currentTime + 0.005;
+  if (isFinish) {
+    const chord = up ? [523.25, 659.25, 783.99, 1046.5] : [392.00, 349.23, 293.66];
+    chord.forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = up ? 'triangle' : 'sawtooth';
+      o.frequency.setValueAtTime(f, t0 + i * 0.035);
+      g.gain.setValueAtTime(0.0001, t0 + i * 0.035);
+      g.gain.linearRampToValueAtTime(0.16, t0 + i * 0.035 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.035 + 0.28);
+      o.connect(g); g.connect(master);
+      o.start(t0 + i * 0.035); o.stop(t0 + i * 0.035 + 0.30);
+    });
+    return;
+  }
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'square';
+  const f = up ? 480 + progress * 460 : 540 - progress * 220;
+  o.frequency.setValueAtTime(f, t0);
+  o.frequency.exponentialRampToValueAtTime(f * (up ? 1.12 : 0.92), t0 + 0.035);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.09, t0 + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.04);
+  o.connect(g); g.connect(master);
+  o.start(t0); o.stop(t0 + 0.045);
+}
+
+// スマブラ風「＊＊ Joins the Race!」新キャラ解放スプラッシュ効果音
+export function playChallengerSplashSound(crewType = 'duck') {
+  if (!bgmVoiceEnabled || muted) return;
+  initAudio();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  const t0 = ctx.currentTime + 0.01;
+  // 1) 強烈なスラッシュ風切り＋重低音ドン！インパクト
+  if (noiseBuf) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = 1.05;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(420, t0);
+    bp.frequency.exponentialRampToValueAtTime(3400, t0 + 0.07);
+    bp.frequency.exponentialRampToValueAtTime(280, t0 + 0.32);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.52, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+    s.connect(bp); bp.connect(g); g.connect(master);
+    s.start(t0, Math.random() * 0.5); s.stop(t0 + 0.36);
+  }
+  const sub = ctx.createOscillator(), sg = ctx.createGain();
+  sub.type = 'triangle';
+  sub.frequency.setValueAtTime(190, t0 + 0.05);
+  sub.frequency.exponentialRampToValueAtTime(42, t0 + 0.38);
+  sg.gain.setValueAtTime(0.0001, t0 + 0.05);
+  sg.gain.linearRampToValueAtTime(0.58, t0 + 0.062);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
+  sub.connect(sg); sg.connect(master);
+  sub.start(t0 + 0.05); sub.stop(t0 + 0.44);
+
+  // 2) ヒロイックなブラス・ファンファーレコード (D5 -> G5 -> A5 -> D6)
+  const fanfare = [
+    { dt: 0.06, notes: [293.66, 440.00, 587.33, 739.99], dur: 0.16 },
+    { dt: 0.22, notes: [392.00, 587.33, 783.99, 987.77], dur: 0.16 },
+    { dt: 0.38, notes: [293.66, 440.00, 587.33, 739.99, 1174.66], dur: 0.65 },
+  ];
+  fanfare.forEach((ch) => {
+    ch.notes.forEach((f, i) => {
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.type = 'sawtooth';
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(3200, t0 + ch.dt);
+      lp.frequency.exponentialRampToValueAtTime(1100, t0 + ch.dt + ch.dur);
+      o.frequency.setValueAtTime(f, t0 + ch.dt + i * 0.006);
+      og.gain.setValueAtTime(0.0001, t0 + ch.dt + i * 0.006);
+      og.gain.linearRampToValueAtTime(0.11, t0 + ch.dt + i * 0.006 + 0.015);
+      og.gain.exponentialRampToValueAtTime(0.0001, t0 + ch.dt + ch.dur);
+      o.connect(lp); lp.connect(og); og.connect(master);
+      o.start(t0 + ch.dt + i * 0.006); o.stop(t0 + ch.dt + ch.dur + 0.03);
+    });
+  });
+  // 少し遅れてその動物の鳴き声も再生
+  setTimeout(() => {
+    playRightOfWayHail(crewType, 'starboard', 0);
+  }, 340);
 }
 
 
