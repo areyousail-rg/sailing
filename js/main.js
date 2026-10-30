@@ -28,7 +28,7 @@ const VENUES = [
   { id: 'enoshima', label: '江の島', icon: '', eyebrow: '江の島沖レース海面', lat: 35.292, lon: 139.488, defaultWindDeg: 200, defaultWindKt: 9 },
 ];
 const COURSE_MODES = [
-  { id: 'trapezoid', label: 'トラペゾイド', icon: '' },
+  { id: 'trapezoid', label: 'トラペゾイド(IL2)', icon: '' },
   { id: 'upwind', label: '上マークフィニッシュ', icon: '' },
 ];
 const RATE_MODES = [
@@ -36,12 +36,12 @@ const RATE_MODES = [
   { id: 'off', label: 'OFF (CPレベル変動無)', icon: '' },
 ];
 const PENALTY_MODES = [
-  { id: 'off', label: 'ペナルティなし', icon: '' },
-  { id: 'on', label: 'ペナルティあり (360°/720°・DSQ)', icon: '' },
+  { id: 'off', label: '無', icon: '' },
+  { id: 'on', label: '有', icon: '' },
 ];
 const BGM_MODES = [
-  { id: 'on', label: 'BGM ON (音楽・声あり)', icon: '' },
-  { id: 'off', label: 'BGM OFF', icon: '' },
+  { id: 'on', label: 'ON', icon: '' },
+  { id: 'off', label: 'OFF', icon: '' },
 ];
 
 // ---------- レート＆キャラクター解放管理 (ブラウザ内 localStorage 保存) ----------
@@ -1141,12 +1141,15 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
     const revDemo = $('orientReviewDemo');
     if (elapsed < 5.2) {
       if (revDemo) revDemo.classList.add('hidden');
-      // 実際の結果画面(#result)と「振り返り」ボタン(#reviewBtn)を表示して指し示す
-      $('resultTitle').textContent = '1位 / 16艇';
-      $('resultBody').innerHTML =
-        '<tr class="me"><td>1</td><td>あなた</td><td>4:12.4</td></tr>' +
-        '<tr><td>2</td><td>JPN 29410</td><td>4:15.8</td></tr>' +
-        '<tr><td>3</td><td>ITA 31022</td><td>4:19.1</td></tr>';
+      // 実際の結果画面(#result)と「振り返り」ボタン(#reviewBtn)を表示して指し示す (毎フレームDOMを再生成して点滅するのを防ぐため初回のみ設定)
+      if (!orientState.resultPopulated) {
+        orientState.resultPopulated = true;
+        $('resultTitle').textContent = '1位 / 16艇';
+        $('resultBody').innerHTML =
+          '<tr class="me"><td>1</td><td>あなた</td><td>4:12.4</td></tr>' +
+          '<tr><td>2</td><td>JPN 29410</td><td>4:15.8</td></tr>' +
+          '<tr><td>3</td><td>ITA 31022</td><td>4:19.1</td></tr>';
+      }
       let rb = $('reviewBtn');
       if (!rb) {
         rb = document.createElement('button');
@@ -1159,8 +1162,8 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
     } else {
       $('result').classList.add('hidden');
       if (revDemo) revDemo.classList.remove('hidden');
-      // 振り返り画面全体(.orientRevCard)を赤枠で囲う
-      updateOrientVisualPointer(['#orientReviewDemo .orientRevCard']);
+      // 振り返り画面全体(.orientRevCard)はCSS側の固定赤枠で表示し、画面全体の点滅を防ぐため点滅オーバーレイは消去する
+      updateOrientVisualPointer([]);
     }
   }
 }
@@ -1168,6 +1171,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
 function setupOrientStepScene(stepIdx) {
   orientState.subDone = false;
   orientState.phase2 = false;
+  orientState.resultPopulated = false;
   clearOrientHighlight();
 
   if (!player) return;
@@ -1766,12 +1770,12 @@ function ensureChallengerPreview() {
   const dl = new THREE.DirectionalLight(0xfff4d0, 2.4);
   dl.position.set(2.5, 4.2, 3.5);
   sc.add(dl);
-  const cm = new THREE.PerspectiveCamera(34, 1, 0.1, 50);
-  cm.position.set(0, 0.58, 2.35);
-  cm.lookAt(0, 0.34, 0);
+  const cm = new THREE.PerspectiveCamera(36, 1, 0.1, 50);
+  cm.position.set(0, 0.48, 2.95);
+  cm.lookAt(0, 0.42, 0);
   const g = new THREE.Group();
   sc.add(g);
-  challengerPv = { r, sc, cm, g, fig: null, active: false };
+  challengerPv = { r, sc, cm, g, fig: null, baseScale: 1.0, active: false };
   return challengerPv;
 }
 
@@ -1794,17 +1798,23 @@ function showNextChallengerInQueue() {
     cpv.g.clear();
     const st = { skin: hexNum(cfg.skin), shirt: hexNum(cfg.shirt), hat: hexNum(cfg.hat), jacket: PLAYER_BIB };
     const fig = buildFigure(spec.id, st);
-    fig.position.set(0, 0.04, 0);
-    fig.scale.setScalar(1.38);
+    // 耳の長いウサギや尾びれのあるイルカ等も見切れないよう円形枠内に余裕をもって収める
+    const bScale = spec.id === 'rabbit' ? 0.90 : spec.id === 'dolphin' ? 0.96 : 1.02;
+    const yOff = spec.id === 'rabbit' ? -0.06 : -0.01;
+    fig.position.set(0, yOff, 0);
+    fig.scale.setScalar(bScale);
     fig.rotation.y = Math.PI + 0.28;
     cpv.g.add(fig);
     cpv.fig = fig;
+    cpv.baseScale = bScale;
+    cpv.baseY = yOff;
     cpv.active = true;
     cpv.r.render(cpv.sc, cpv.cm);
   }
+  buildChoices('helmChoices', 'helm');
+  buildChoices('crewChoices', 'crew');
   overlay.classList.remove('hidden');
-  playChallengerSplashSound();
-  playCrewSelectSound(spec.id);
+  playChallengerSplashSound(spec.id);
 }
 
 function runSplatoonRateAnimation(info, newlyUnlocked) {
@@ -1828,7 +1838,7 @@ function runSplatoonRateAnimation(info, newlyUnlocked) {
   const targetEl = $('resRateTarget');
   const ceilEl = $('resRateCeil');
 
-  if (subEl) subEl.textContent = isUpwind ? '上マークF (参加 −50 / 順位 +0〜100)' : 'トラペゾイド (参加 −100 / 順位 +0〜200)';
+  if (subEl) subEl.textContent = isUpwind ? '上マークF (参加 −50 / 順位 +0〜100)' : 'トラペゾイド(IL2) (参加 −100 / 順位 +0〜200)';
   if (entryEl) entryEl.textContent = `参加 −${entryCost}`;
   if (rewardEl) rewardEl.textContent = `${placeLabel} +${rankBonus}`;
 
@@ -1963,7 +1973,7 @@ function showResult() {
     saveRaceRecord({
       date: dateStr,
       venue: cfg.venue === 'enoshima' ? '江の島' : '八景島',
-      course: cfg.courseMode === 'upwind' ? '上マークF' : 'トラペゾイド',
+      course: cfg.courseMode === 'upwind' ? '上マークF' : 'トラペゾイド(IL2)',
       wind: `${compassDir(currentWindDeg)} ${BASE_WIND_KT}kt`,
       rank: player.dsq ? null : p > 0 ? p : null,
       fleet: boats.length,
@@ -2035,7 +2045,8 @@ function loop() {
   // スマブラ風新キャラ解放演出中の3Dモデル待機モーション
   if (challengerPv && challengerPv.active && challengerPv.fig) {
     animatePreviewFigure(challengerPv.fig, time * 1.35, 0.0, Math.PI + 0.25 + Math.sin(time * 1.4) * 0.22);
-    challengerPv.fig.scale.setScalar(1.38);
+    challengerPv.fig.scale.setScalar(challengerPv.baseScale || 1.0);
+    if (challengerPv.baseY !== undefined) challengerPv.fig.position.y = challengerPv.baseY + Math.sin(time * 3.0) * 0.012;
     challengerPv.r.render(challengerPv.sc, challengerPv.cm);
   }
   
@@ -2045,36 +2056,47 @@ function loop() {
   
   if (player) {
     cam.update(dt, time, player, boats);
-    // ドローンカメラ時に他艇(CP艇)が「カメラと自艇の直線上(手前側)」に入って自艇に重なった時だけ半透明化する
+    // ドローンカメラ時に他艇(CP艇)が「カメラと自艇の視線上(水平射影)」に入って自艇と重なった時だけ半透明化する
     if (models.length > 1) {
       const isDrone = cam.mode !== COCKPIT;
-      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
-      const px = player.x, py = 2.0, pz = player.z;
-      const rdx = px - cx, rdy = py - cy, rdz = pz - cz;
-      const rLen = Math.hypot(rdx, rdy, rdz) || 1;
-      const ux = rdx / rLen, uy = rdy / rLen, uz = rdz / rLen;
+      const cx = camera.position.x, cz = camera.position.z;
+      const px = player.x, pz = player.z;
+      const rdx = px - cx, rdz = pz - cz;
+      const rhLen = Math.hypot(rdx, rdz) || 1;
+      const uhx = rdx / rhLen, uhz = rdz / rhLen;
       for (let i = 1; i < models.length; i++) {
         const m = models[i], b = boats[i];
         if (!m || !b || !m.setOccludingAlpha) continue;
         let tgtAlpha = 1.0;
         if (isDrone) {
-          // カメラよりも手前かつ自艇よりも明確にカメラ側(along < rLen - 0.85)にあり、かつ視線コーン内で自艇シルエットに重なる艇のみ対象
-          const bx = b.x - cx, by = 2.1 - cy, bz = b.z - cz;
-          const along = bx * ux + by * uy + bz * uz;
-          if (along > 1.5 && along < rLen - 0.85) {
-            const ox = bx - ux * along, oy = by - uy * along, oz = bz - uz * along;
-            const perpH = Math.hypot(ox, oz);
-            const perpV = Math.abs(oy);
-            if (perpH < 1.35 && perpV < 2.15) {
-              const perp = Math.hypot(perpH, perpV * 0.55);
-              if (perp < 1.38) {
-                tgtAlpha = clamp((perp - 0.52) / 0.86, 0.28, 1.0);
-              }
+          // CP艇のバウ・中央・スターン・リーワード側セールの複数サンプル点で、カメラ〜自艇の視線セグメントとの水平距離を判定
+          const fx = Math.sin(b.h), fz = -Math.cos(b.h);
+          const rx = Math.cos(b.h), rz = Math.sin(b.h);
+          const leeSgn = -(b.tack || 1);
+          const pts = [
+            [b.x, b.z],
+            [b.x + fx * 1.9, b.z + fz * 1.9],
+            [b.x - fx * 1.9, b.z - fz * 1.9],
+            [b.x + fx * 0.8, b.z + fz * 0.8],
+            [b.x - fx * 0.8 + rx * leeSgn * 0.85, b.z - fz * 0.8 + rz * leeSgn * 0.85],
+          ];
+          let minPerpH = 999;
+          for (let k = 0; k < pts.length; k++) {
+            const sx = pts[k][0] - cx, sz = pts[k][1] - cz;
+            const along = sx * uhx + sz * uhz;
+            if (along > 0.8 && along < rhLen + 1.0) {
+              const clampedAlong = clamp(along, 1.0, rhLen + 0.4);
+              const ox = sx - uhx * clampedAlong, oz = sz - uhz * clampedAlong;
+              const perpH = Math.hypot(ox, oz);
+              if (perpH < minPerpH) minPerpH = perpH;
             }
+          }
+          if (minPerpH < 2.35) {
+            tgtAlpha = clamp(0.22 + (Math.max(0, minPerpH - 0.95) / 1.40) * 0.78, 0.22, 1.0);
           }
         }
         const curA = m._curOccAlpha ?? 1.0;
-        const nextA = curA + (tgtAlpha - curA) * (1 - Math.exp(-dt * 12));
+        const nextA = curA + (tgtAlpha - curA) * (1 - Math.exp(-dt * 14));
         m._curOccAlpha = nextA;
         m.setOccludingAlpha(nextA);
       }
@@ -2393,24 +2415,15 @@ function buildChoices(containerId, key) {
   const box = $(containerId); if (!box) return;
   box.innerHTML = '';
   for (const c of crewOptions) {
-    const unlocked = isCrewUnlocked(c.id);
+    // まだ解放されていない(プレイできない)キャラクターはスタート画面に表示しない
+    if (!isCrewUnlocked(c.id)) continue;
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'choice' + (cfg[key] === c.id ? ' sel' : '') + (unlocked ? '' : ' locked');
+    btn.className = 'choice' + (cfg[key] === c.id ? ' sel' : '');
     btn.id = `${containerId}-${c.id.replace(/[^a-z0-9]/gi, '_')}`;
-    if (unlocked) {
-      btn.innerHTML = `<span class="ic">${c.icon}</span><span class="lb">${c.label}</span>`;
-    } else {
-      btn.title = `レート${c.unlockRate}達成で使用可能（現在レート: ${rateData.rate}）`;
-      btn.innerHTML = `<span class="lb">🔒${c.label}</span><span class="lockTag">${c.unlockRate}〜</span>`;
-    }
+    btn.innerHTML = `<span class="ic">${c.icon}</span><span class="lb">${c.label}</span>`;
     btn.onclick = () => {
       initAudio();
-      if (!isCrewUnlocked(c.id)) {
-        beep(320);
-        alert(`「${c.label}」はレート ${c.unlockRate} 以上を達成すると解放されます！（現在レート: ${rateData.rate} / 最高レート: ${rateData.peakRate}）`);
-        return;
-      }
       playCrewSelectSound(c.id);
       cfg[key] = c.id;
       saveCfg();
@@ -2493,6 +2506,8 @@ function initMenu() {
     document.body.classList.add('menuOpen');
     cam.menuOffset = true;
     makeFleet(true);
+    buildChoices('helmChoices', 'helm');
+    buildChoices('crewChoices', 'crew');
     updateMenuRateUI();
     clock.getDelta();
     playBgm('menu');
