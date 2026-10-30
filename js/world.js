@@ -1016,14 +1016,12 @@ export function createWorld(scene) {
   }), MARKS.com.a, MARKS.com.c, -0.05);
   markObjs.com = com;
 
-  // 1マーク・2マークの風上側近めに配置する濃紺RIB観覧・コーチボート(参考写真準拠) ＋ コース外周の観覧艇
+  // 1マーク・2マークの風上側近めに配置する濃紺RIB観覧・コーチボート(各マーク1艇のみ) ＋ コース外周の観覧艇
   const specPositions = [
-    // 1マーク風上側近めの濃紺RIB観覧艇 (2艇)
-    { markRef: 'm1', da: 25, dc: 11, rot: 2.75, type: 'rib', tube: 0x263759, noFlag: true },
-    { markRef: 'm1', da: 31, dc: -14, rot: -2.65, type: 'rib', tube: 0x263759, noFlag: true },
-    // 2マーク風上側近めの濃紺RIB観覧艇 (2艇)
-    { markRef: 'm2', da: 24, dc: -9, rot: 2.55, type: 'rib', tube: 0x263759, noFlag: true },
-    { markRef: 'm2', da: 31, dc: 13, rot: -2.45, type: 'rib', tube: 0x263759, noFlag: true },
+    // 1マーク風上側近めの濃紺RIB観覧艇 (1艇のみ)
+    { markRef: 'm1', da: 26, dc: 10, rot: 2.75, type: 'rib', tube: 0x263759, noFlag: true },
+    // 2マーク風上側近めの濃紺RIB観覧艇 (1艇のみ)
+    { markRef: 'm2', da: 25, dc: -9, rot: 2.55, type: 'rib', tube: 0x263759, noFlag: true },
     // コース外周の観覧艇・サポート艇
     { a: 365, c: 52, rot: 1.2, type: 'cruiser' },
     { a: 180, c: 180, rot: -0.8, type: 'rib', tube: 0x263759 },
@@ -1041,12 +1039,37 @@ export function createWorld(scene) {
     const flags = s.type === 'rib' && !s.noFlag ? [{ color: i % 2 ? '#ffffff' : '#ffd23f', w: 0.8, h: 0.5 }] : [];
     putBoat(makeMotorboat(s.type, { tube: s.tube ?? TUBES[i % 4], flags }), a0, c0, s.rot, true, i, s.markRef || null, s.da || 0, s.dc || 0);
   });
-  // スタートライン(波の高さで消えたりちらついたりしないよう depthTest: false, renderOrder: 2 で常時安定描画)
+
+  // ジュリー(審判)ボート (参考画像4枚目準拠: 青い「Jury」旗を掲げ、レース中の特定の様々なヨットの後方について追尾・監視する)
+  const juryBoats = [0, 1].map((ji) => {
+    const jb = makeMotorboat('jury', {
+      flags: [{ color: '#0f3c8a', w: 1.38, h: 0.88, text: 'JURY', key: 'JURY' }],
+    });
+    const initA = -42 - ji * 12;
+    const initC = ji === 0 ? -24 : 28;
+    const p = toWorld(initA, initC);
+    jb.position.set(p.x, 0, p.z);
+    jb.rotation.y = Math.atan2(U.x, U.z);
+    scene.add(jb);
+    bob.push(jb);
+    jb.traverse((o) => { if (o.userData.flag) flagSway.push(o); });
+    return {
+      b: jb,
+      idx: ji,
+      targetBoatIdx: ji === 0 ? 0 : 4,
+      nextSwitchT: 14 + ji * 9,
+      followDist: 17.5 + ji * 3.5,
+      latOffset: ji === 0 ? -5.5 : 6.0,
+    };
+  });
+
+  // スタートライン: 船や本部船の手前に透けて見えないよう depthTest: true とし、波で隠れないよう細分化して海面波高に追従させる
   const pa0 = toWorld(MARKS.pin.a, MARKS.pin.c), pb0 = toWorld(MARKS.com.a, MARKS.com.c);
   const len = Math.hypot(pb0.x - pa0.x, pb0.z - pa0.z);
+  const lineGeo = new THREE.PlaneGeometry(len, 0.58, 64, 1);
   const lineMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(len, 0.58),
-    new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.62, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending })
+    lineGeo,
+    new THREE.MeshBasicMaterial({ color: 0xffe36a, transparent: true, opacity: 0.68, depthTest: true, depthWrite: false, side: THREE.DoubleSide })
   );
   lineMesh.rotation.x = -Math.PI / 2;
   lineMesh.renderOrder = 2;
@@ -1231,9 +1254,16 @@ export function createWorld(scene) {
       cb.b.position.x = p.x; cb.b.position.z = p.z;
       cb.b.rotation.y = head + cb.relRot;
     }
+    for (const jb of juryBoats) {
+      jb.b.visible = courseVisible;
+      const initP = toWorld(-42 - jb.idx * 12, jb.idx === 0 ? -24 : 28);
+      jb.b.position.x = initP.x;
+      jb.b.position.z = initP.z;
+      jb.b.rotation.y = head;
+    }
     const pa = toWorld(MARKS.pin.a, MARKS.pin.c), pb = toWorld(MARKS.com.a, MARKS.com.c);
     const lcx = (pa.x + pb.x) / 2, lcz = (pa.z + pb.z) / 2, lrot = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
-    lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0.12, lcz);
+    lineMesh.rotation.z = lrot; lineMesh.position.set(lcx, 0, lcz);
     lineMesh.visible = courseVisible;
     startLabel.position.set(lcx, 4.8, lcz);
     startLabel.visible = courseVisible;
@@ -1635,6 +1665,43 @@ export function createWorld(scene) {
         cb.b.position.z = p.z;
         cb.b.rotation.y = head + cb.relRot + (cb.markRef ? 0.08 : 0.16) * Math.cos(t * spd + cb.ph);
       }
+      // ジュリー(審判)ボートの追尾演出: レース中の特定の様々なヨットの後方(約17〜24m後ろ)について航行し、一定時間ごとに追尾対象艇を切り替える
+      if (boats && boats.length > 0 && courseVisible) {
+        for (const jb of juryBoats) {
+          jb.b.visible = true;
+          if (t > jb.nextSwitchT) {
+            jb.nextSwitchT = t + 18 + ((jb.idx * 7 + Math.floor(t)) % 11);
+            // 0番ジュリー艇は自艇またはその近くの艇を優先しつつ様々なヨットへ切り替え、1番ジュリー艇はフリート内の別のヨットを追尾
+            const nB = boats.length;
+            if (jb.idx === 0 && Math.sin(t * 0.7) > -0.15) {
+              jb.targetBoatIdx = 0;
+            } else {
+              jb.targetBoatIdx = (jb.targetBoatIdx + 3 + jb.idx * 2) % nB;
+            }
+          }
+          const tgtB = boats[jb.targetBoatIdx % boats.length] || boats[0];
+          if (tgtB) {
+            const bFx = Math.sin(tgtB.h), bFz = -Math.cos(tgtB.h);
+            const bRx = Math.cos(tgtB.h), bRz = Math.sin(tgtB.h);
+            // 対象ヨットの後方 followDist[m]、左右 latOffset[m] の位置を目標にして滑らかに追종
+            const swayLat = jb.latOffset + Math.sin(t * 0.35 + jb.idx * 2.1) * 3.5;
+            const desX = tgtB.x - bFx * jb.followDist + bRx * swayLat;
+            const desZ = tgtB.z - bFz * jb.followDist + bRz * swayLat;
+            const dxJ = desX - jb.b.position.x;
+            const dzJ = desZ - jb.b.position.z;
+            const distJ = Math.hypot(dxJ, dzJ);
+            const stepRate = clampN(dt * (distJ > 35 ? 1.8 : 0.95), 0, 0.18);
+            jb.b.position.x += dxJ * stepRate;
+            jb.b.position.z += dzJ * stepRate;
+            // 船首向き(powerboatsは+zがバウなので Math.atan2(vx, vz))を対象ヨットの進行方向へ滑らかに向ける
+            const desRotY = distJ > 8.0 ? Math.atan2(dxJ, dzJ) : Math.atan2(bFx, bFz);
+            let dRot = ((desRotY - jb.b.rotation.y + Math.PI) % (Math.PI * 2));
+            if (dRot < 0) dRot += Math.PI * 2;
+            dRot -= Math.PI;
+            jb.b.rotation.y += dRot * clampN(dt * 2.4, 0, 0.25);
+          }
+        }
+      }
       for (const ms of movingShips) {
         // 船首方向(+zがry回転した方向: sin(ry), cos(ry))へゆっくり巡航移動し、一定範囲で滑らかに往復/巡回
         const d = Math.sin(t * (ms.speed / ms.range) + ms.ph) * ms.range;
@@ -1687,14 +1754,14 @@ export function createWorld(scene) {
             f.position.y = botY;
           }
         } else if (fk === 'SNIPE') {
-          // 0秒(wt = 0)のスタート号砲とともにスナイプ級旗が降下する演出 (0.0s 〜 2.5s で降下完了)
+          // 0秒(wt = 0)のスタート号砲の瞬間にスナイプ級旗を勢いよくスパッと降下させる (0.0s 〜 0.26s で急速降下完了)
           if (wt < 0.0) {
             f.visible = true;
             f.position.y = topY;
-          } else if (wt < 2.5) {
+          } else if (wt < 0.26) {
             f.visible = true;
-            const prog = clampN(wt / 2.5, 0, 1);
-            const ease = prog * prog * (3 - 2 * prog);
+            const prog = clampN(wt / 0.26, 0, 1);
+            const ease = Math.pow(prog, 1.65);
             f.position.y = topY + (botY - topY) * ease;
           } else {
             f.visible = false;
@@ -1712,7 +1779,20 @@ export function createWorld(scene) {
       // スタート後しばらくしたら(wt > 12s〜18s)スタートライン帯とSTART LINEラベルをフェードアウトして消去
       const postStartFade = wt <= 12 ? 1.0 : clampN(1.0 - (wt - 12) / 6.0, 0, 1);
       lineMesh.visible = courseVisible && postStartFade > 0.01;
-      lineMesh.material.opacity = 0.62 * postStartFade;
+      lineMesh.material.opacity = 0.68 * postStartFade;
+      if (lineMesh.visible) {
+        // 波に隠れず、かつ船や本部船より手前に優先描画されない(depthTest: true)よう、ライン各頂点の高さを海面波高+0.16mに追従させる
+        const paL = toWorld(MARKS.pin.a, MARKS.pin.c), pbL = toWorld(MARKS.com.a, MARKS.com.c);
+        const posAttr = lineGeo.attributes.position;
+        for (let vi = 0; vi < posAttr.count; vi++) {
+          const uL = (posAttr.getX(vi) / len) + 0.5;
+          const wx = paL.x + (pbL.x - paL.x) * uL;
+          const wz = paL.z + (pbL.z - paL.z) * uL;
+          const wsL = waveSample(wx, wz, SEA.clock);
+          posAttr.setZ(vi, wsL.h + 0.16);
+        }
+        posAttr.needsUpdate = true;
+      }
 
       camera.getWorldDirection(camDir);
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
