@@ -2241,13 +2241,9 @@ function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
       wBand.position.set(dx, wy + 3, dz); hospGroup.add(wBand);
     }
   }
-  // 病院屋上のペントハウスと赤い病院マーク塔
+  // 病院屋上のペントハウス
   const hospTop = new THREE.Mesh(new THREE.BoxGeometry(48, 14, 52), new THREE.MeshLambertMaterial({ color: 0x0284c7 }));
   hospTop.position.set(0, 84, 0); hospGroup.add(hospTop);
-  const redCrossV = new THREE.Mesh(new THREE.BoxGeometry(2.5, 10, 3.2), new THREE.MeshBasicMaterial({ color: 0xdc2626 }));
-  redCrossV.position.set(25, 84, 0); hospGroup.add(redCrossV);
-  const redCrossH = new THREE.Mesh(new THREE.BoxGeometry(2.5, 3.2, 10), new THREE.MeshBasicMaterial({ color: 0xdc2626 }));
-  redCrossH.position.set(25, 84, 0); hospGroup.add(redCrossH);
   hospGroup.position.set(hospX, 0, hospZ);
   fukuura.add(hospGroup);
 
