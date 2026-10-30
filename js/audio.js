@@ -1095,107 +1095,146 @@ export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard'
   }
 
   if (crewType === 'cat') {
-    // 猫: かわいらしい「ニャン！」(2フォルマント通過のピッチスイープ)
-    const dur = 0.42;
+    // 猫: かわいらしい「ニャン♪」(ny -> a -> n の2フォルマント母音遷移＋丸みのある可愛い高音ピッチ)
+    const dur = 0.38;
     const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
     o1.type = 'sawtooth'; o2.type = 'triangle';
-    o1.frequency.setValueAtTime(510, t0);
-    o1.frequency.exponentialRampToValueAtTime(880, t0 + 0.14);
-    o1.frequency.exponentialRampToValueAtTime(620, t0 + dur);
-    o2.frequency.setValueAtTime(1020, t0);
-    o2.frequency.exponentialRampToValueAtTime(1760, t0 + 0.14);
-    o2.frequency.exponentialRampToValueAtTime(1240, t0 + dur);
+    o1.frequency.setValueAtTime(560, t0);
+    o1.frequency.exponentialRampToValueAtTime(940, t0 + 0.13);
+    o1.frequency.exponentialRampToValueAtTime(830, t0 + 0.25);
+    o1.frequency.exponentialRampToValueAtTime(680, t0 + dur);
+    o2.frequency.setValueAtTime(560, t0);
+    o2.frequency.exponentialRampToValueAtTime(940, t0 + 0.13);
+    o2.frequency.exponentialRampToValueAtTime(830, t0 + 0.25);
+    o2.frequency.exponentialRampToValueAtTime(680, t0 + dur);
 
-    const f1 = ctx.createBiquadFilter(), f2 = ctx.createBiquadFilter();
-    f1.type = 'bandpass'; f1.Q.value = 3.2;
-    f1.frequency.setValueAtTime(920, t0);
-    f1.frequency.exponentialRampToValueAtTime(1650, t0 + 0.15);
-    f1.frequency.exponentialRampToValueAtTime(1050, t0 + dur);
-    f2.type = 'peaking'; f2.frequency.value = 2650; f2.gain.value = 8; f2.Q.value = 2.0;
+    // 第1フォルマント (ny: 380Hz -> a: 1120Hz -> n: 440Hz)
+    const f1 = ctx.createBiquadFilter();
+    f1.type = 'bandpass'; f1.Q.value = 3.6;
+    f1.frequency.setValueAtTime(380, t0);
+    f1.frequency.exponentialRampToValueAtTime(1120, t0 + 0.07);
+    f1.frequency.setValueAtTime(1080, t0 + 0.23);
+    f1.frequency.exponentialRampToValueAtTime(440, t0 + dur);
+
+    // 第2フォルマント (ny: 2550Hz -> a: 2150Hz -> n: 1480Hz)
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'bandpass'; f2.Q.value = 4.0;
+    f2.frequency.setValueAtTime(2550, t0);
+    f2.frequency.exponentialRampToValueAtTime(2150, t0 + 0.08);
+    f2.frequency.setValueAtTime(2080, t0 + 0.23);
+    f2.frequency.exponentialRampToValueAtTime(1480, t0 + dur);
+
+    const mix = ctx.createGain();
+    const g1 = ctx.createGain(); g1.gain.value = 0.55;
+    const g2 = ctx.createGain(); g2.gain.value = 0.75;
+    o1.connect(g1); o2.connect(g2);
+    g1.connect(f1); g1.connect(f2);
+    g2.connect(f1); g2.connect(f2);
+    f1.connect(mix); f2.connect(mix);
 
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(0.38, t0 + 0.035);
-    g.gain.setValueAtTime(0.34, t0 + 0.22);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.03);
+    g.gain.linearRampToValueAtTime(0.42, t0 + 0.028);
+    g.gain.setValueAtTime(0.38, t0 + 0.22);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.025);
 
-    const g2 = ctx.createGain(); g2.gain.value = 0.45;
-    o1.connect(f1); o2.connect(g2); g2.connect(f1);
-    f1.connect(f2); f2.connect(g); g.connect(out);
+    mix.connect(g); g.connect(out);
     o1.start(t0); o2.start(t0);
-    o1.stop(t0 + dur + 0.05); o2.stop(t0 + dur + 0.05);
+    o1.stop(t0 + dur + 0.04); o2.stop(t0 + dur + 0.04);
     return;
   }
 
   if (crewType === 'dog' || crewType === 'shiba') {
-    // 犬: 元気な「ワン！ワン！」(2連バーク)
-    [0, 0.19].forEach((offset, idx) => {
-      const ts = t0 + offset;
-      const dur = idx === 0 ? 0.14 : 0.17;
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      const baseF = idx === 0 ? 310 : 340;
-      o.frequency.setValueAtTime(baseF, ts);
-      o.frequency.exponentialRampToValueAtTime(baseF * 1.68, ts + 0.042);
-      o.frequency.exponentialRampToValueAtTime(baseF * 0.72, ts + dur);
+    // 犬: かわいらしい単発の「ワン！」(w -> a -> n の母音フォルマント遷移＋明るい子犬風ピッチ)
+    const dur = 0.25;
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o1.type = 'sawtooth'; o2.type = 'triangle';
+    o1.frequency.setValueAtTime(410, t0);
+    o1.frequency.exponentialRampToValueAtTime(690, t0 + 0.065);
+    o1.frequency.exponentialRampToValueAtTime(590, t0 + 0.16);
+    o1.frequency.exponentialRampToValueAtTime(460, t0 + dur);
+    o2.frequency.setValueAtTime(410, t0);
+    o2.frequency.exponentialRampToValueAtTime(690, t0 + 0.065);
+    o2.frequency.exponentialRampToValueAtTime(590, t0 + 0.16);
+    o2.frequency.exponentialRampToValueAtTime(460, t0 + dur);
 
-      const f1 = ctx.createBiquadFilter();
-      f1.type = 'bandpass'; f1.Q.value = 2.4;
-      f1.frequency.setValueAtTime(720, ts);
-      f1.frequency.exponentialRampToValueAtTime(1380, ts + 0.045);
-      f1.frequency.exponentialRampToValueAtTime(640, ts + dur);
+    // 第1フォルマント (w: 350Hz -> a: 1180Hz -> n: 430Hz)
+    const f1 = ctx.createBiquadFilter();
+    f1.type = 'bandpass'; f1.Q.value = 3.2;
+    f1.frequency.setValueAtTime(350, t0);
+    f1.frequency.exponentialRampToValueAtTime(1180, t0 + 0.05);
+    f1.frequency.setValueAtTime(1120, t0 + 0.16);
+    f1.frequency.exponentialRampToValueAtTime(430, t0 + dur);
 
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, ts);
-      g.gain.linearRampToValueAtTime(0.42, ts + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, ts + dur + 0.02);
-      o.connect(f1); f1.connect(g); g.connect(out);
-      o.start(ts); o.stop(ts + dur + 0.03);
+    // 第2フォルマント (w: 780Hz -> a: 2150Hz -> n: 1380Hz)
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'bandpass'; f2.Q.value = 3.6;
+    f2.frequency.setValueAtTime(780, t0);
+    f2.frequency.exponentialRampToValueAtTime(2150, t0 + 0.055);
+    f2.frequency.setValueAtTime(2020, t0 + 0.16);
+    f2.frequency.exponentialRampToValueAtTime(1380, t0 + dur);
 
-      if (noiseBuf) {
-        const ns = ctx.createBufferSource(); ns.buffer = noiseBuf;
-        const nbp = ctx.createBiquadFilter(); nbp.type = 'bandpass'; nbp.frequency.value = 1100; nbp.Q.value = 1.5;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.0001, ts);
-        ng.gain.linearRampToValueAtTime(0.18, ts + 0.01);
-        ng.gain.exponentialRampToValueAtTime(0.0001, ts + 0.08);
-        ns.connect(nbp); nbp.connect(ng); ng.connect(out);
-        ns.start(ts, Math.random() * 0.8); ns.stop(ts + 0.09);
-      }
-    });
+    const g1 = ctx.createGain(); g1.gain.value = 0.55;
+    const g2 = ctx.createGain(); g2.gain.value = 0.70;
+    o1.connect(g1); o2.connect(g2);
+    g1.connect(f1); g1.connect(f2);
+    g2.connect(f1); g2.connect(f2);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.45, t0 + 0.018);
+    g.gain.setValueAtTime(0.40, t0 + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.02);
+
+    f1.connect(g); f2.connect(g); g.connect(out);
+    o1.start(t0); o2.start(t0);
+    o1.stop(t0 + dur + 0.03); o2.stop(t0 + dur + 0.03);
     return;
   }
 
   if (crewType === 'duck') {
-    // アヒル: かわいらしい「グワッ！グワッ！」(鼻にかかったフォルマント・クワック)
-    [0, 0.17].forEach((offset, idx) => {
-      const ts = t0 + offset;
-      const dur = idx === 0 ? 0.13 : 0.16;
-      const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
-      o1.type = 'sawtooth'; o2.type = 'square';
-      const f0 = idx === 0 ? 320 : 345;
-      o1.frequency.setValueAtTime(f0, ts);
-      o1.frequency.exponentialRampToValueAtTime(f0 * 1.32, ts + 0.03);
-      o1.frequency.exponentialRampToValueAtTime(f0 * 0.82, ts + dur);
-      o2.frequency.setValueAtTime(f0 * 1.01, ts);
-      o2.frequency.exponentialRampToValueAtTime(f0 * 1.33, ts + 0.03);
-      o2.frequency.exponentialRampToValueAtTime(f0 * 0.83, ts + dur);
+    // アヒル: かわいらしい単発の「ぐわっ♪」(gu -> wa! の2音節フォルマント遷移＋愛嬌のあるピッチ)
+    const dur = 0.24;
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o1.type = 'sawtooth'; o2.type = 'triangle';
+    // 「ぐ(gu)」(0〜0.055s) から 「わっ(wa!)」(0.055〜0.24s) へ跳ねる可愛いピッチ
+    o1.frequency.setValueAtTime(360, t0);
+    o1.frequency.exponentialRampToValueAtTime(420, t0 + 0.05);
+    o1.frequency.exponentialRampToValueAtTime(610, t0 + 0.105);
+    o1.frequency.exponentialRampToValueAtTime(480, t0 + dur);
+    o2.frequency.setValueAtTime(362, t0);
+    o2.frequency.exponentialRampToValueAtTime(422, t0 + 0.05);
+    o2.frequency.exponentialRampToValueAtTime(612, t0 + 0.105);
+    o2.frequency.exponentialRampToValueAtTime(482, t0 + dur);
 
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass'; bp.Q.value = 4.2;
-      bp.frequency.setValueAtTime(980, ts);
-      bp.frequency.exponentialRampToValueAtTime(1920, ts + 0.04);
-      bp.frequency.exponentialRampToValueAtTime(1120, ts + dur);
+    // 第1フォルマント (gu: 360Hz -> w: 520Hz -> a!: 1380Hz -> 920Hz)
+    const bp1 = ctx.createBiquadFilter();
+    bp1.type = 'bandpass'; bp1.Q.value = 3.8;
+    bp1.frequency.setValueAtTime(360, t0);
+    bp1.frequency.exponentialRampToValueAtTime(520, t0 + 0.055);
+    bp1.frequency.exponentialRampToValueAtTime(1380, t0 + 0.11);
+    bp1.frequency.exponentialRampToValueAtTime(920, t0 + dur);
 
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, ts);
-      g.gain.linearRampToValueAtTime(0.40, ts + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, ts + dur + 0.02);
+    // 第2フォルマント (gu: 1050Hz -> wa!: 2450Hz -> 1820Hz)
+    const bp2 = ctx.createBiquadFilter();
+    bp2.type = 'bandpass'; bp2.Q.value = 4.2;
+    bp2.frequency.setValueAtTime(1050, t0);
+    bp2.frequency.exponentialRampToValueAtTime(1280, t0 + 0.055);
+    bp2.frequency.exponentialRampToValueAtTime(2450, t0 + 0.11);
+    bp2.frequency.exponentialRampToValueAtTime(1820, t0 + dur);
 
-      o1.connect(bp); o2.connect(bp); bp.connect(g); g.connect(out);
-      o1.start(ts); o2.start(ts);
-      o1.stop(ts + dur + 0.03); o2.stop(ts + dur + 0.03);
-    });
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.30, t0 + 0.015);
+    g.gain.linearRampToValueAtTime(0.22, t0 + 0.05);
+    g.gain.linearRampToValueAtTime(0.46, t0 + 0.09);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.018);
+
+    o1.connect(bp1); o1.connect(bp2);
+    o2.connect(bp1); o2.connect(bp2);
+    bp1.connect(g); bp2.connect(g); g.connect(out);
+    o1.start(t0); o2.start(t0);
+    o1.stop(t0 + dur + 0.03); o2.stop(t0 + dur + 0.03);
     return;
   }
 
