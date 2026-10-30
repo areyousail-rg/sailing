@@ -12,17 +12,19 @@ export const ZC0 = -0.58, ZC1 = 1.66; // コクピット前端・後端
 
 export function halfBeam(z) {
   const u = uOf(z);
-  // スナイプ級特有の横に太くどっしりしたビーム(最大半幅0.90m＝全幅1.80m相当の視覚バランス)と張りのあるバウ・トランサム
-  if (u < 0.48) return 0.90 * Math.pow(Math.sin((u / 0.48) * Math.PI / 2), 0.62);
-  return 0.90 - 0.18 * Math.pow((u - 0.48) / 0.52, 1.65);
+  // スナイプ級特有の張りのある中央ビーム(最大半幅0.92m)と、後方から見たときに船体側面が自然に覗くスターンテーパー
+  if (u < 0.46) return 0.92 * Math.pow(Math.sin((u / 0.46) * Math.PI / 2), 0.60);
+  return 0.92 - 0.25 * Math.pow((u - 0.46) / 0.54, 1.42);
 }
 export function sheerY(z) {
   const u = uOf(z);
-  return 0.35 + 0.12 * Math.pow(Math.max(0, 1 - u / 0.45), 2) - 0.012 * u;
+  // 船尾(スターン)側が海面にしっかり浸かり、後ろから見た際に側面パネルとトランサムがリアルに見えるシアーライン
+  return 0.35 + 0.125 * Math.pow(Math.max(0, 1 - u / 0.45), 2) - 0.068 * Math.pow(Math.max(0, (u - 0.32) / 0.68), 1.32);
 }
 function bottomY(z) {
   const u = uOf(z);
-  return -0.22 + Math.pow(Math.max(0, 1 - u / 0.6), 2.2) * (sheerY(z) + 0.19) + Math.pow(Math.max(0, (u - 0.7) / 0.3), 2) * 0.08;
+  // 船尾ボトムも浮き上がらず海中にしっかり浸かるロッカー形状
+  return -0.23 + Math.pow(Math.max(0, 1 - u / 0.58), 2.2) * (sheerY(z) + 0.20) + Math.pow(Math.max(0, (u - 0.72) / 0.28), 2) * 0.045;
 }
 export function deckY(z, x) {
   const B = Math.max(halfBeam(z), 1e-3);
@@ -194,14 +196,14 @@ function fairlead(r = 0.015) {
 // ---------- 船体メッシュ本体 (実艇スナイプの純白FRPゲルコート・バウカウル・フラットデッキを忠実再現) ----------
 export function buildHull(accent = 0x2a77ff) {
   const g = new THREE.Group();
-  // 外板: 実艇写真通り、黒いふちや余計な模様のない艶やかな純白FRPハル(チャイン形状)
+  // 外板: 実艇写真通り、後ろから見た際にも傾斜したチャイン側面が立体的に見える純白FRPハル
   const ts = [0, 0.01, 0.04, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.88, 0.94, 0.98, 1];
-  const ws = [...ts.map((t) => -Math.pow(t, 1 / 2.3)).reverse(), ...ts.slice(1).map((t) => Math.pow(t, 1 / 2.3))];
+  const ws = [...ts.map((t) => -Math.pow(t, 1 / 1.92)).reverse(), ...ts.slice(1).map((t) => Math.pow(t, 1 / 1.92))];
   const zs = lin(-L, L, 70);
   const wsOut = [...ws].reverse();
   const hullGeo = grid(zs, wsOut, (z, w) => {
     const B = halfBeam(z), s = sheerY(z), bo = bottomY(z);
-    return [w * B, bo + (s - bo) * Math.pow(Math.abs(w), 2.3), z];
+    return [w * B, bo + (s - bo) * Math.pow(Math.abs(w), 1.92), z];
   });
   const addOrder = (m, order) => { m.renderOrder = order; g.add(m); return m; };
   addOrder(new THREE.Mesh(hullGeo, M.gel), -9);
@@ -209,7 +211,7 @@ export function buildHull(accent = 0x2a77ff) {
   // 船尾板 (トランサム): 上縁も後部デッキのキャンバー(deckY)に完全一致させ、スターン端の隙間を無くす
   const sh = new THREE.Shape(); const B = halfBeam(L), s = sheerY(L), bo = bottomY(L);
   sh.moveTo(-B, deckY(L, -B));
-  for (const w of ws) sh.lineTo(w * B, bo + (s - bo) * Math.pow(Math.abs(w), 2.3));
+  for (const w of ws) sh.lineTo(w * B, bo + (s - bo) * Math.pow(Math.abs(w), 1.92));
   for (let k = ws.length - 1; k >= 0; k--) {
     const x = ws[k] * B;
     sh.lineTo(x, deckY(L, x));
@@ -267,26 +269,39 @@ export function buildHull(accent = 0x2a77ff) {
   });
   addOrder(new THREE.Mesh(hoodBack, M.wall), -8);
 
-  // センターボードケース(ダガーボードトランク):
-  // 画像3枚目準拠: コクピット前部のみ(z = -0.54 〜 +0.04、長さ約0.58m)の低めの純白ケース(高さ th = 0.21m、サイドデッキより低い)
-  // 上面は明るいシルバーのリムで、中央の黒いスリットはごく短く(長さ0.32m)再現
+  // センターボードケース(ダガーボードトランク) & 幅広・高位置のアルミ製ダガーボード(参考画像3枚目準拠):
   const trunk = new THREE.Group();
-  const tw = 0.048, tz0 = -0.54, tz1 = 0.04, th = 0.18;
+  const tw = 0.048, tz0 = -0.55, tz1 = 0.05, th = 0.18;
   const trBox = mesh(new THREE.BoxGeometry(tw * 2, th, tz1 - tz0), M.wall, 0, FLOOR_Y + th / 2, (tz0 + tz1) / 2);
   trBox.renderOrder = -8;
   trunk.add(trBox);
   // 上面のシルバーアルミプレート
-  trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.012, 0.010, tz1 - tz0 + 0.01), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
-  // 短く細いセンターボードスリット開口部のみダークグレー (z = -0.45 〜 -0.13)
-  trunk.add(mesh(new THREE.BoxGeometry(0.022, 0.012, 0.32), M.black, 0, FLOOR_Y + th + 0.006, -0.29));
-  // ダガーボード(センターボード)本体上端とハンドルバー: ランチャーアップ時に少し引き上げられる可動グループ
+  trunk.add(mesh(new THREE.BoxGeometry(tw * 2 + 0.014, 0.010, tz1 - tz0 + 0.012), M.alu, 0, FLOOR_Y + th + 0.005, (tz0 + tz1) / 2));
+  // センターボードスリット開口部 (幅広のボードに合わせて長さ0.44m)
+  trunk.add(mesh(new THREE.BoxGeometry(0.024, 0.012, 0.44), M.black, 0, FLOOR_Y + th + 0.006, -0.27));
+  // ダガーボード(センターボード)本体: 画像のように前後幅が広く(0.42m)、トランク上から高く立ち上がり、上部に台形くり抜きハンドル枠とストッパーブロックを備える
   const cbBoard = new THREE.Group();
-  cbBoard.add(mesh(new THREE.BoxGeometry(0.015, 0.26, 0.26), M.alu, 0, FLOOR_Y + th - 0.12, -0.29));
-  cbBoard.add(mesh(new THREE.BoxGeometry(0.056, 0.026, 0.022), M.alu, 0, FLOOR_Y + th + 0.022, -0.36));
+  const cbTopBaseY = FLOOR_Y + th;
+  // 1) 幅広のアルミ製メインプレート (前後幅0.42m、通常時でもケース上からしっかり高く出る + 下部もトランク内に深く収まる)
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.016, 0.46, 0.42), M.alu, 0, cbTopBaseY + 0.04, -0.27));
+  // 2) 上部の台形くり抜きハンドルフレーム (前ピラー・斜め後ろピラー・上辺グリップバーで中央がくり抜かれた実艇形状)
+  const frontPillar = mesh(new THREE.BoxGeometry(0.016, 0.125, 0.068), M.alu, 0, cbTopBaseY + 0.325, -0.446);
+  cbBoard.add(frontPillar);
+  const rearPillar = mesh(new THREE.BoxGeometry(0.016, 0.135, 0.072), M.alu, 0, cbTopBaseY + 0.320, -0.115);
+  rearPillar.rotation.x = 0.28;
+  cbBoard.add(rearPillar);
+  const topBar = mesh(new THREE.BoxGeometry(0.018, 0.044, 0.415), M.alu, 0, cbTopBaseY + 0.392, -0.272);
+  topBar.rotation.x = 0.04;
+  cbBoard.add(topBar);
+  // 3) 上端前後の茶/オレンジ色ストッパーブロック(左右両面) & 保持ラバーコード (参考画像準拠)
+  const stopperMat = new THREE.MeshStandardMaterial({ color: 0xc25e28, roughness: 0.48, metalness: 0.05 });
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.052, 0.036, 0.058), stopperMat, 0, cbTopBaseY + 0.395, -0.452));
+  cbBoard.add(mesh(new THREE.BoxGeometry(0.048, 0.032, 0.050), stopperMat, 0, cbTopBaseY + 0.380, -0.092));
+  cbBoard.add(rope([[0, cbTopBaseY + 0.39, -0.46], [0.025, cbTopBaseY + 0.14, -0.49], [0, cbTopBaseY + 0.02, -0.52]], 0x1e293b, 0.0045));
   trunk.add(cbBoard);
   g.userData.cbBoard = cbBoard;
-  // センターケース後端(z=0.04〜0.18)の低い白いフロアブレース＆メインシートブロック台座 (画像3枚目)
-  const trBrace = mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.10);
+  // センターケース後端(z=0.05〜0.19)の低い白いフロアブレース＆メインシートブロック台座 (画像3枚目)
+  const trBrace = mesh(new THREE.BoxGeometry(0.07, 0.11, 0.14), M.wall, 0, FLOOR_Y + 0.055, 0.11);
   trBrace.renderOrder = -8;
   trunk.add(trBrace);
   g.add(trunk);
