@@ -882,14 +882,16 @@ export class BoatModel {
   setOccludingAlpha(alpha) {
     const a = clamp(alpha, 0.18, 1.0);
     if (this._occAlpha === undefined) this._occAlpha = 1.0;
-    if (Math.abs(a - this._occAlpha) < 0.01 && (a >= 0.99) === (this._occAlpha >= 0.99)) return;
+    if (Math.abs(a - this._occAlpha) < 0.008 && (a >= 0.98) === (this._occAlpha >= 0.98)) return;
     this._occAlpha = a;
     if (this.waterCutMat) this.waterCutMat.uniforms.uOpacity.value = a;
     if (!this._occMats) {
       this._occMats = [];
+      this._occMeshes = [];
       const matMap = new Map();
       this.body.traverse((obj) => {
         if (!obj.isMesh || !obj.material || obj === this.bowSprayMesh) return;
+        this._occMeshes.push({ mesh: obj, baseOrder: obj.renderOrder || 0 });
         const cloneMat = (m) => {
           if (matMap.has(m)) return matMap.get(m);
           const cm = (m === this.sailMat || m === this.jibMat) ? m : m.clone();
@@ -902,11 +904,22 @@ export class BoatModel {
       });
     }
     const isTrans = a < 0.98;
+    const transChanged = this._wasTrans !== isTrans;
+    this._wasTrans = isTrans;
     for (const item of this._occMats) {
-      item.mat.transparent = isTrans ? true : item.baseTrans;
+      const nextTrans = isTrans ? true : item.baseTrans;
+      if (item.mat.transparent !== nextTrans || transChanged) {
+        item.mat.transparent = nextTrans;
+        item.mat.needsUpdate = true;
+      }
       item.mat.opacity = item.baseOp * a;
       item.mat.depthWrite = !isTrans;
       item.mat.stencilWrite = !isTrans && item.baseStencil;
+    }
+    if (transChanged && this._occMeshes) {
+      for (const mItem of this._occMeshes) {
+        mItem.mesh.renderOrder = isTrans ? Math.max(6, mItem.baseOrder + 16) : mItem.baseOrder;
+      }
     }
   }
 
@@ -1117,10 +1130,10 @@ export class BoatModel {
     this.mainPivot.rotation.y = this.boomRotY;
     // ジブ: クローズ時はわずかに深めのキャンバーと開いたリーチで引き込み、ランニングのランチャーアップ時は風とほぼ直角へ展開
     const pk = b.poleK || 0;
-    // リーチング〜ランニングやランチャーアップ時はセンターボードを高く引き上げ、フォアステイのテンションを緩めてマストをわずかに前傾させる
+    // クローズホールド時(twa <= 1.28 かつ pk === 0)はセンターボードを完全に下ろし(y=0)、フリー〜ランチャーアップ時はケースのスリットに沿って真上に引き上げる
     if (this.cbBoard) {
-      const reachLift = clamp((twa - 1.10) / 1.15, 0, 1);
-      this.cbBoard.position.y = Math.max(reachLift * 0.22, pk * 0.30);
+      const reachLift = clamp((twa - 1.28) / 1.05, 0, 1);
+      this.cbBoard.position.y = Math.max(reachLift * 0.16, pk * 0.23);
     }
     if (this.mast) {
       this.mast.rotation.x = -0.018 * pk;
@@ -1216,15 +1229,23 @@ export class BoatModel {
     const crewPoleAct = clamp(Math.max(this.crewPoleTimer / 1.15, poleMoving), 0, 1);
 
     // クルー・スキッパーの乗船・ハイクアウト姿勢 ＆ 生き生きとしたセーリング待機モーション(呼吸・バランス揺れ・首振り・シート/ティラー操作・しっぽ振り)
-    // 下レグでは 120°〜150° はクルーは船の真ん中(0)に座り、150°以上で風下(-sgn)へ移動する
+    // クルー重心移動は5段階(上デッキ: +sgn / 上デッキと真ん中の間: +0.52*sgn / 真ん中: 0 / 下デッキと真ん中の間: -0.52*sgn / 下デッキ: -sgn)で滑らかに遷移する
     this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3));
-    const isDeepRun = twa >= (150 * Math.PI) / 180;
-    const isMidDown = twa >= (120 * Math.PI) / 180 && !isDeepRun;
-    const targetCrewSide = isDeepRun ? -sgn : isMidDown ? 0 : sgn;
-    this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 3.5));
+    const twaDeg = (twa * 180) / Math.PI;
     const hikeAmt = b.hike !== undefined ? b.hike : 0.35;
-    const lean = isDeepRun ? 0.12 : isMidDown ? 0.18 : clamp(0.10 + hikeAmt * 0.96, 0.10, 1.36);
-    const crewLean = ((isDeepRun || isMidDown) ? 0.08 : clamp(0.08 + hikeAmt * 1.06, 0.08, 1.44)) * (1 - 0.85 * crewPoleAct);
+    const isDeepRun = twaDeg >= 156;
+    const isLeeMid = twaDeg >= 138 && twaDeg < 156;
+    const isCenter = twaDeg >= 120 && twaDeg < 138;
+    const isWindMid = (twaDeg >= 102 && twaDeg < 120) || (twaDeg < 102 && hikeAmt < 0.24);
+    let targetCrewSide = sgn; // 上デッキ
+    if (isDeepRun) targetCrewSide = -sgn; // 下デッキ
+    else if (isLeeMid) targetCrewSide = -0.52 * sgn; // 下デッキと真ん中の間
+    else if (isCenter) targetCrewSide = 0; // 真ん中
+    else if (isWindMid) targetCrewSide = 0.52 * sgn; // 上デッキと真ん中の間
+    this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 4.2));
+    const lean = isDeepRun ? 0.12 : (isLeeMid || isCenter) ? 0.18 : clamp(0.10 + hikeAmt * 0.96, 0.10, 1.36);
+    const crewDeckFactor = clamp((Math.abs(this.crewSide) - 0.35) / 0.65, 0, 1);
+    const crewLean = ((isDeepRun || isLeeMid || isCenter) ? 0.08 : clamp(0.08 + hikeAmt * 1.06 * crewDeckFactor, 0.08, 1.44)) * (1 - 0.85 * crewPoleAct);
 
     const sideAbs = Math.abs(this.side);
     const crewSideAbs = Math.abs(this.crewSide);
