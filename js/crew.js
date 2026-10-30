@@ -2,11 +2,14 @@
 import * as THREE from 'three';
 
 export const CREW_TYPES = [
-  { id: 'human_m', label: '男性', icon: '' },
-  { id: 'human_f', label: '女性', icon: '' },
-  { id: 'cat', label: 'ネコ', icon: '' },
-  { id: 'dog', label: 'イヌ', icon: '' },
-  { id: 'duck', label: 'アヒル', icon: '' },
+  { id: 'human_m', label: '男性', icon: '', unlockRate: 0, splashName: 'Male Sailor' },
+  { id: 'human_f', label: '女性', icon: '', unlockRate: 0, splashName: 'Female Sailor' },
+  { id: 'cat', label: 'ネコ', icon: '', unlockRate: 0, splashName: 'Cat' },
+  { id: 'dog', label: 'イヌ', icon: '', unlockRate: 0, splashName: 'Dog' },
+  { id: 'duck', label: 'アヒル', icon: '', unlockRate: 1600, splashName: 'Duck' },
+  { id: 'tanuki', label: 'タヌキ', icon: '', unlockRate: 1700, splashName: 'Tanuki' },
+  { id: 'rabbit', label: 'ウサギ', icon: '', unlockRate: 1800, splashName: 'Rabbit' },
+  { id: 'dolphin', label: 'イルカ', icon: '', unlockRate: 1900, splashName: 'Dolphin' },
 ];
 
 // assets/crew/manifest.json から読み込んだ差し替えモデル
@@ -242,9 +245,11 @@ const ANIMAL = {
   dog: { body: 0xd98b3a, belly: 0xfff5e8, nose: 0x1e1b18 },
   shiba: { body: 0xd98b3a, belly: 0xfff5e8, nose: 0x1e1b18 },
   duck: { body: 0xfffcf5, belly: 0xffffff, nose: 0xff9f1a },
+  tanuki: { body: 0x9c6b3b, belly: 0xf7ebd2, nose: 0x24170f },
+  rabbit: { body: 0xfdfaf7, belly: 0xffffff, nose: 0xff8fa3 },
+  dolphin: { body: 0x38bdf8, belly: 0xf8fafc, nose: 0x0284c7 },
   penguin: { body: 0x27323d, belly: 0xffffff, nose: 0xff9f1c },
   bear: { body: 0x8b5a3c, belly: 0xd8b48c, nose: 0x1a1a1a },
-  rabbit: { body: 0xf6f1ee, belly: 0xffffff, nose: 0xff8fa3 },
   capybara: { body: 0xa87a4b, belly: 0xc29866, nose: 0x3a2a1a },
 };
 
@@ -324,7 +329,7 @@ export function buildFigure(type, style = {}) {
   const bodyM = smat(A.body, 0.72);
   const bellyM = smat(A.belly, 0.75);
 
-  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba' || type === 'duck';
+  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba' || type === 'duck' || type === 'tanuki' || type === 'rabbit' || type === 'dolphin';
   g.userData.isRoundPet = isRoundPet;
 
   // 1) 上半身グループ (風速に応じて腰から上を海側へ反らせてハイクアウトする)
@@ -334,7 +339,7 @@ export function buildFigure(type, style = {}) {
   g.userData.upper = upper;
 
   // 2) 下半身・まるっこい足:
-  // ネコ・イヌ・アヒル(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
+  // ネコ・イヌ・アヒル・タヌキ・ウサギ・イルカ(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
   // まるっこいお尻と球状の短いあんよを upper 下部に一体配置し、常に短い丸足の可愛いフォルムを保つ
   if (isRoundPet) {
     ell(upper, bodyM, 0.19, 0.10, 0.16, 0, 0.04, 0.0);
@@ -345,10 +350,18 @@ export function buildFigure(type, style = {}) {
         sph(upper, 0xf2850c, 0.030, 0.022, 0.045, s * 0.102 - 0.028, 0.008, -0.185);
         sph(upper, A.nose, 0.032, 0.024, 0.050, s * 0.102, 0.008, -0.192);
         sph(upper, 0xf2850c, 0.030, 0.022, 0.045, s * 0.102 + 0.028, 0.008, -0.185);
+      } else if (type === 'dolphin') {
+        // イルカのつるんと丸い下部ヒレ風あんよ
+        sph(upper, A.body, 0.064, 0.040, 0.082, s * 0.098, 0.012, -0.140);
+        sph(upper, A.belly, 0.048, 0.030, 0.052, s * 0.098, 0.008, -0.178);
+      } else if (type === 'tanuki') {
+        // タヌキのこげ茶色の丸あんよ
+        sph(upper, 0x3b2314, 0.068, 0.056, 0.070, s * 0.105, 0.015, -0.132);
+        sph(upper, 0x24170f, 0.052, 0.042, 0.038, s * 0.105, 0.011, -0.178);
       } else {
         sph(upper, A.body, 0.068, 0.058, 0.068, s * 0.105, 0.015, -0.130);
         sph(upper, A.belly, 0.052, 0.042, 0.035, s * 0.105, 0.012, -0.176);
-        sph(upper, type === 'cat' ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.009, -0.196);
+        sph(upper, (type === 'cat' || type === 'rabbit') ? 0xff8fa3 : 0x4a3525, 0.024, 0.020, 0.016, s * 0.105, 0.009, -0.196);
       }
     }
   } else {
@@ -446,6 +459,20 @@ export function buildFigure(type, style = {}) {
       const w2 = sph(grp, A.belly, 0.042, 0.075, 0.078, s * 0.032, -0.025, -0.095);
       w2.rotation.z = -s * 0.28; w2.rotation.x = 0.45;
     }
+  } else if (type === 'dolphin') {
+    // イルカの可愛い胸ビレ(フリッパー)
+    for (const [grp, s] of [[armL, -1], [armR, 1]]) {
+      const fl = sph(grp, A.body, 0.045, 0.115, 0.088, s * 0.035, -0.015, -0.045);
+      fl.rotation.z = -s * 0.48; fl.rotation.x = 0.32;
+      const flTip = sph(grp, A.nose, 0.032, 0.075, 0.068, s * 0.052, -0.035, -0.085);
+      flTip.rotation.z = -s * 0.42; flTip.rotation.x = 0.40;
+    }
+  } else if (type === 'tanuki') {
+    // タヌキのこげ茶色のおてて
+    for (const [grp, s] of [[armL, -1], [armR, 1]]) {
+      sph(grp, A.body, 0.065, 0.062, 0.070, s * 0.015, -0.005, -0.055);
+      sph(grp, 0x3b2314, 0.054, 0.048, 0.046, s * 0.015, -0.010, -0.108);
+    }
   } else if (isRoundPet) {
     for (const [grp, s] of [[armL, -1], [armR, 1]]) {
       sph(grp, A.body, 0.066, 0.062, 0.072, s * 0.015, -0.005, -0.065);
@@ -509,6 +536,74 @@ export function buildFigure(type, style = {}) {
       g.scale.setScalar(0.92);
       break;
     }
+    case 'tanuki': {
+      // タヌキ: 目の周りの可愛いこげ茶色のアイマスク模様 + クリーム色のほっぺ＆マズル + 頭の葉っぱ + 太いしましましっぽ
+      sph(head, A.belly, 0.165, 0.105, 0.095, -0.095, -0.040, -hs[2] + 0.082);
+      sph(head, A.belly, 0.165, 0.105, 0.095, 0.095, -0.040, -hs[2] + 0.082);
+      sph(head, A.belly, 0.110, 0.082, 0.095, 0, -0.052, -hs[2] + 0.048);
+      // 目の周りのこげ茶色たれパンダ風アイパッチ
+      const patchL = sph(head, 0x3b2314, 0.076, 0.068, 0.035, -0.092, 0.016, -hs[2] + 0.028);
+      patchL.rotation.z = 0.22;
+      const patchR = sph(head, 0x3b2314, 0.076, 0.068, 0.035, 0.092, 0.016, -hs[2] + 0.028);
+      patchR.rotation.z = -0.22;
+      // 大きく輝く黒目とハイライトをアイパッチの前面に再配置
+      sph(head, 0x111111, 0.035, 0.046, 0.022, -0.09, 0.02, -hs[2] - 0.004);
+      sph(head, 0x111111, 0.035, 0.046, 0.022, 0.09, 0.02, -hs[2] - 0.004);
+      sph(head, 0xffffff, 0.012, 0.015, 0.012, -0.082, 0.038, -hs[2] - 0.018);
+      sph(head, 0xffffff, 0.012, 0.015, 0.012, 0.098, 0.038, -hs[2] - 0.018);
+      // 黒いツヤ鼻
+      sph(head, A.nose, 0.038, 0.028, 0.032, 0, -0.034, -hs[2] - 0.016);
+      // 丸みのある可愛いタヌキ耳(縁がこげ茶色)
+      sph(head, 0x3b2314, 0.078, 0.088, 0.048, -0.165, 0.185, 0.01);
+      sph(head, 0x3b2314, 0.078, 0.088, 0.048, 0.165, 0.185, 0.01);
+      sph(head, A.belly, 0.046, 0.054, 0.032, -0.165, 0.180, -0.015);
+      sph(head, A.belly, 0.046, 0.054, 0.032, 0.165, 0.180, -0.015);
+      // 頭のてっぺんにちょこんと乗った緑の葉っぱ
+      const leaf = sph(head, 0x22c55e, 0.075, 0.018, 0.048, 0.01, 0.232, -0.02);
+      leaf.rotation.z = -0.18; leaf.rotation.y = 0.35;
+      // ぷっくり太いタヌキしっぽ
+      sph(tailGrp, A.body, 0.105, 0.105, 0.145, 0, 0.03, 0.06);
+      sph(tailGrp, 0x3b2314, 0.092, 0.092, 0.095, 0, 0.045, 0.125);
+      g.scale.setScalar(0.92);
+      break;
+    }
+    case 'rabbit': {
+      // ウサギ: ぷっくり白ほっぺ + 長くて可愛いピン耳(揺れる) + まんまる白ポンポンしっぽ
+      sph(head, A.body, 0.148, 0.098, 0.095, -0.092, -0.042, -hs[2] + 0.082);
+      sph(head, A.body, 0.148, 0.098, 0.095, 0.092, -0.042, -hs[2] + 0.082);
+      sph(head, A.belly, 0.095, 0.072, 0.082, 0, -0.048, -hs[2] + 0.042);
+      sph(head, A.nose, 0.032, 0.024, 0.028, 0, -0.032, -hs[2] - 0.014);
+      cap(head, A.body, 0.054, 0.25, -0.088, 0.32, 0.01, -0.08, 0, 0.14);
+      cap(head, A.body, 0.054, 0.25, 0.088, 0.32, 0.01, -0.08, 0, -0.14);
+      cap(head, 0xffb7c5, 0.030, 0.19, -0.088, 0.315, -0.022, -0.08, 0, 0.14);
+      cap(head, 0xffb7c5, 0.030, 0.19, 0.088, 0.315, -0.022, -0.08, 0, -0.14);
+      // ふわふわの丸いポンポンしっぽ
+      sph(tailGrp, 0xffffff, 0.098, 0.098, 0.098, 0, 0.02, 0.02);
+      g.scale.setScalar(0.92);
+      break;
+    }
+    case 'dolphin': {
+      // イルカ: 爽やかなマリンブルーのツヤ肌 + 白いおなか＆口元 + 可愛い吻(くちばし) + 背ビレ + 尾ビレ
+      sph(head, A.belly, 0.195, 0.115, 0.165, 0, -0.068, -hs[2] + 0.125);
+      // イルカの可愛い丸みのある口吻(ロストラム)
+      const snoutTop = sph(head, A.body, 0.096, 0.048, 0.115, 0, -0.036, -hs[2] - 0.022);
+      snoutTop.rotation.x = 0.08;
+      const snoutBot = sph(head, A.belly, 0.084, 0.035, 0.098, 0, -0.058, -hs[2] - 0.012);
+      snoutBot.rotation.x = 0.10;
+      // 頭頂部の小さな噴気孔アクセント
+      sph(head, A.nose, 0.022, 0.008, 0.016, 0, 0.224, -0.02);
+      // 背中の可愛い背ビレ
+      const dorsal = cone(upper, A.nose, 0.065, 0.16, 0, 0.33, 0.22, -0.58, 0);
+      dorsal.scale.x = 0.028;
+      // 水平に広がった可愛いイルカの尾ビレ(フルーク)
+      const flukeL = sph(tailGrp, A.body, 0.115, 0.026, 0.068, -0.072, 0.01, 0.055);
+      flukeL.rotation.y = 0.32;
+      const flukeR = sph(tailGrp, A.body, 0.115, 0.026, 0.068, 0.072, 0.01, 0.055);
+      flukeR.rotation.y = -0.32;
+      sph(tailGrp, A.nose, 0.048, 0.038, 0.075, 0, 0.01, 0.02);
+      g.scale.setScalar(0.92);
+      break;
+    }
     case 'penguin': {
       cone(head, A.nose, 0.04, 0.09, 0, -0.02, -hs[2] - 0.03, -Math.PI / 2, 0);
       sph(head, A.belly, 0.17, 0.15, 0.1, 0, -0.02, -hs[2] + 0.07);
@@ -521,13 +616,6 @@ export function buildFigure(type, style = {}) {
       sph(head, A.belly, 0.1, 0.08, 0.08, 0, -0.05, -hs[2] + 0.08);
       sph(upper, A.body, 0.07, 0.07, 0.07, 0, 0.12, 0.25);
       break;
-    case 'rabbit':
-      cap(head, A.body, 0.05, 0.28, -0.08, 0.34, 0.02, -0.1, 0, 0.12);
-      cap(head, A.body, 0.05, 0.28, 0.08, 0.34, 0.02, -0.1, 0, -0.12);
-      cap(head, 0xffb7c5, 0.025, 0.22, -0.08, 0.34, -0.02, -0.1, 0, 0.12);
-      cap(head, 0xffb7c5, 0.025, 0.22, 0.08, 0.34, -0.02, -0.1, 0, -0.12);
-      sph(upper, 0xffffff, 0.09, 0.09, 0.09, 0, 0.14, 0.24);
-      break;
     case 'capybara':
       sph(head, A.body, 0.14, 0.12, 0.14, 0, -0.04, -hs[2] + 0.1);
       sph(head, A.nose, 0.05, 0.035, 0.03, 0, -0.01, -hs[2] - 0.05);
@@ -535,4 +623,33 @@ export function buildFigure(type, style = {}) {
       break;
   }
   return g;
+}
+
+// スタート画面等のキャラクタープレビュー用・生き生きとした待機モーション更新ヘルパー
+export function animatePreviewFigure(fig, time, phaseOffset = 0, baseRotY = 0) {
+  if (!fig) return;
+  const t = time + phaseOffset;
+  const breath = Math.sin(t * 2.5) * 0.042 + Math.sin(t * 4.2) * 0.018;
+  fig.rotation.y = baseRotY + Math.sin(t * 0.9) * 0.10;
+  const upper = fig.userData && fig.userData.upper;
+  if (upper) {
+    upper.rotation.x = breath;
+    upper.rotation.z = Math.sin(t * 1.65) * 0.048;
+    if (upper.userData.armL && upper.userData.armR) {
+      const waveL = Math.sin(t * 2.9) * 0.18;
+      const waveR = Math.cos(t * 2.9 + 0.8) * 0.18;
+      upper.userData.armL.rotation.set(-0.10 + waveL, 0.06 * Math.cos(t * 2.1), -0.08 + 0.06 * Math.sin(t * 2.4));
+      upper.userData.armR.rotation.set(-0.10 + waveR, -0.06 * Math.sin(t * 2.1), 0.08 - 0.06 * Math.cos(t * 2.4));
+    }
+    if (upper.userData.tail) {
+      upper.userData.tail.rotation.y = Math.sin(t * 5.8) * 0.34;
+      upper.userData.tail.rotation.x = Math.cos(t * 3.8) * 0.14;
+    }
+  }
+  const head = fig.userData && fig.userData.head;
+  if (head) {
+    head.rotation.y = Math.sin(t * 1.15) * 0.24 + Math.sin(t * 2.3 + 0.6) * 0.10;
+    head.rotation.x = Math.sin(t * 1.55 + 0.4) * 0.11;
+    head.rotation.z = Math.cos(t * 1.85) * 0.075;
+  }
 }
