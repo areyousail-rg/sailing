@@ -258,17 +258,19 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 #preview{width:136px;height:96px;border-radius:var(--r);background:#090d12;border:1px solid var(--line)}
 .note{font-size:.7rem;color:var(--mute);text-align:center;line-height:1.4}
 
-/* ボタン & レーススタート横レート表示 */
+/* ボタン & レーススタートボタン内レート表示 */
 .cta{margin-top:12px;width:100%;padding:10px 14px;font-size:.95rem;font-weight:700;letter-spacing:.06em;color:var(--accent-ink);border:none;border-radius:var(--r);cursor:pointer;background:var(--accent)}
 .cta:hover{background:#f7c614}
 .cta:active{background:#d4a500}
 .startActions{display:flex;gap:8px;margin-top:2px;align-items:stretch}
-.startActions .cta{margin-top:0;flex:1.9}
-.startRaceBtn{padding:12px 14px;font-size:1.05rem;letter-spacing:.08em}
+.startActions .cta{margin-top:0;flex:2.1}
+.startRaceBtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:10px 14px;font-size:1.05rem;letter-spacing:.08em}
 .startRaceBtn .smashSub{display:none!important}
-.menuRateBadge{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 12px;background:linear-gradient(135deg,#152231 0%,#0d151f 100%);border:1px solid var(--accent);border-left:3px solid var(--accent);border-radius:var(--r);min-width:82px;flex-shrink:0}
-.menuRateBadge .mrbLabel{font-size:.54rem;font-weight:800;letter-spacing:.14em;color:var(--accent);line-height:1}
-.menuRateBadge b{font-family:var(--f-num);font-size:1.18rem;font-weight:800;color:#fff;line-height:1.15;font-variant-numeric:tabular-nums}
+.startBtnLabel{white-space:nowrap}
+.menuRateBadge{display:inline-flex;align-items:baseline;gap:5px;padding:3px 9px;background:rgba(12,18,24,.90);border:1px solid rgba(255,255,255,.22);border-radius:3px;flex-shrink:0}
+.menuRateBadge.hidden{display:none!important}
+.menuRateBadge .mrbLabel{font-size:.58rem;font-weight:800;letter-spacing:.12em;color:var(--accent);line-height:1}
+.menuRateBadge b{font-family:var(--f-num);font-size:1.02rem;font-weight:800;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .btnPractice{flex:.95;padding:9px 10px;font-size:.82rem;font-weight:700;letter-spacing:.04em;color:var(--txt);background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);cursor:pointer;white-space:nowrap}
 .btnPractice:hover{background:var(--bg-3);border-color:var(--mute)}
 .weatherInfoBottom{font-size:.64rem;color:var(--mute);font-variant-numeric:tabular-nums;padding:6px 0 0;border-top:1px solid var(--line);line-height:1.45;white-space:normal;overflow:visible;word-break:break-word}
@@ -416,10 +418,10 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   #preview{width:92px;height:66px}
   .colors input[type=text]{width:56px;padding:4px 5px;font-size:.78rem}
   .startActions{margin-top:0;gap:5px}
-  .startActions .cta{padding:9px 8px;font-size:.94rem;letter-spacing:.06em}
-  .menuRateBadge{padding:3px 7px;min-width:62px}
+  .startActions .cta{padding:8px 8px;font-size:.9rem;letter-spacing:.04em;gap:6px}
+  .menuRateBadge{padding:2px 6px;min-width:0}
   .menuRateBadge .mrbLabel{font-size:.46rem}
-  .menuRateBadge b{font-size:.96rem}
+  .menuRateBadge b{font-size:.86rem}
   .btnPractice{padding:8px 6px;font-size:.72rem}
   .weatherInfoBottom{font-size:.52rem;padding-top:4px}
 }
