@@ -2510,21 +2510,38 @@ function initMenu() {
 
 (async function boot() {
   if (window.__setLoad) window.__setLoad(92);
-  const extra = await loadCustomCrew();
-  crewOptions = [...CREW_TYPES, ...extra];
+  let extra = [];
+  try {
+    extra = await Promise.race([
+      loadCustomCrew(),
+      new Promise((resolve) => setTimeout(() => resolve([]), 2500))
+    ]);
+  } catch (e) {
+    extra = [];
+  }
+  crewOptions = [...CREW_TYPES, ...(Array.isArray(extra) ? extra : [])];
   if (!crewOptions.find((c) => c.id === cfg.helm) || !isCrewUnlocked(cfg.helm)) cfg.helm = 'human_m';
   if (!crewOptions.find((c) => c.id === cfg.crew) || !isCrewUnlocked(cfg.crew)) cfg.crew = 'cat';
   const q = new URLSearchParams(location.search);
   if (q.has('venue') && VENUES.find((v) => v.id === q.get('venue'))) cfg.venue = q.get('venue');
 
   // Loading表示中に気象データを先行取得して、Loading解除直後の非同期makeFleet再生成によるカクつきを防ぐ
-  await fetchRealWeather(cfg.venue);
+  try {
+    await Promise.race([
+      fetchRealWeather(cfg.venue),
+      new Promise((resolve) => setTimeout(resolve, 2500))
+    ]);
+  } catch (e) {}
   if (window.__setLoad) window.__setLoad(96);
 
-  applyVenue();
-  makeFleet();
-  initMenu();
-  initTouch();
+  try {
+    applyVenue();
+    makeFleet();
+    initMenu();
+    initTouch();
+  } catch (e) {
+    console.error('Boot init error:', e);
+  }
 
   // WebGLシェーダおよびテクスチャをLoading画面の裏で事前コンパイル＆ウォームアップ描画し、Loading直後のカクつきを解消
   try {
@@ -2539,13 +2556,17 @@ function initMenu() {
   if (window.__setLoad) window.__setLoad(100);
   clock.getDelta();
   loop();
+  const hideLoading = () => {
+    const ld = $('loading');
+    if (ld) ld.classList.add('hidden');
+  };
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       clock.getDelta();
-      const ld = $('loading');
-      if (ld) ld.classList.add('hidden');
+      hideLoading();
     });
   });
+  setTimeout(hideLoading, 400);
 
   window.__game = { state, get boats() { return boats; }, get player() { return player; }, simStep, cam };
   if (q.has('auto')) {
