@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { createWorld, MOBILE } from './world.js';
 import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
-import { Recorder, openReview } from './review.js';
+import { Recorder, openReview, serializeReviewSnapshot, deserializeReviewSnapshot, buildFallbackReviewFromRecord } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew, animatePreviewFigure } from './crew.js';
@@ -249,12 +249,12 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
   if (world.setCourseVisible) world.setCourseVisible(state.phase !== 'menu');
   // スタートライン半幅 LINE_HALF = 50 (全幅100m) に合わせ、全体としてはライン全域に散らばりつつ、
-  // 有利サイド(FAVORED==='com': 上有利+c / FAVORED==='pin': 下有利-c)から出るCP艇がやや多くなるよう自然に偏らせる
+  // 本部船側(c = +20〜+46.5)にもCP艇がしっかり残ってスタートするよう上側スロットと下流れ補償を強化
   const endTargets = FAVORED === 'pin'
-    ? [-45.5, -41.0, -36.5, 45.0, 39.5]
+    ? [-45.5, -40.5, 46.2, 41.8, 36.5, 30.5]
     : FAVORED === 'com'
-      ? [45.5, 41.5, 37.5, 33.0, -44.0]
-      : [45.5, 40.5, 35.0, -45.0, -39.5];
+      ? [46.5, 43.0, 39.2, 35.0, 29.8, -44.0]
+      : [46.2, 42.0, 37.2, 31.5, -45.0, -39.5];
   for (let i = endTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
     [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
@@ -263,15 +263,14 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const nMid = N_BOATS - 1 - endTargets.length;
   for (let i = 0; i < nMid; i++) {
     const t = i / Math.max(1, nMid - 1);
-    // 極端に偏りすぎないよう指数0.72の緩やかなカーブで有利サイド側へ密度を寄せる
     const u = FAVORED === 'com'
-      ? Math.pow(t, 0.72)
+      ? Math.pow(t, 0.68)
       : FAVORED === 'pin'
         ? 1 - Math.pow(1 - t, 0.72)
-        : t;
-    const minC = FAVORED === 'com' ? -29 : -33;
-    const maxC = FAVORED === 'pin' ? 25 : 29;
-    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 2.4);
+        : Math.pow(t, 0.85);
+    const minC = FAVORED === 'com' ? -26 : -31;
+    const maxC = FAVORED === 'pin' ? 25 : 27;
+    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 2.2);
   }
   for (let i = midTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
@@ -281,9 +280,9 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
     // スタートに失敗して第二線からスタートするCP艇(secondRow: 2艇)と、
-    // 本部船の上で待って結局スタートに失敗し第二線から出るCP艇(highComFail: 2艇)を設定
+    // 本部船の上で待って結局スタートに失敗し第二線から出るCP艇(highComFail: 1艇)を設定
     const startRole =
-      (kIdx === 14 || kIdx === 15) ? 'highComFail' :
+      (kIdx === 15) ? 'highComFail' :
       (kIdx === 11 || kIdx === 13) ? 'secondRow' :
       'firstRow';
     if (startRole === 'highComFail') {
@@ -291,12 +290,13 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
       const c0 = LINE_HALF + 20 + (i % 2) * 5.5;
       return { a: a0, c: c0, targetC: LINE_HALF - 5.5, startRole };
     }
-    const isUpperEnd = targetC >= 30;
-    const baseA0 = isUpperEnd ? -20 - (i % 2) * 2.2 : -21 - (i % 3) * 2.4;
-    const a0 = startRole === 'secondRow' ? baseA0 - 8.5 : baseA0;
-    // 1分間のスターボードタック前進と1.5倍の下流れによる左(-c)への移動量を見越し、
-    // 上端狙い(targetC>=30)のCP艇は本部船(c=+50)より右側に平行レーンで初期配置する
-    const c0 = targetC + Math.abs(a0) * 0.86 + 15;
+    const isUpperEnd = targetC >= 22;
+    const baseA0 = isUpperEnd ? -18 - (i % 2) * 2.0 : -20 - (i % 3) * 2.2;
+    const a0 = startRole === 'secondRow' ? baseA0 - 8.0 : baseA0;
+    // 1分間のスターボードタック前進と低速下流れによる左(-c)への移動量を見越し、
+    // 本部船側狙い(targetC>=22)のCP艇は最初から十分な右(+c)余裕を持たせて配置する
+    const driftMargin = isUpperEnd ? 22 : 16;
+    const c0 = targetC + Math.abs(a0) * 0.90 + driftMargin;
     return { a: a0, c: c0, targetC, startRole };
   });
   // 自艇はゲーム開始直後、スタートラインからもうすこし後ろ(a=-44)かつ本部船(c=LINE_HALF)の右側(c=LINE_HALF+36)に配置
@@ -1788,8 +1788,9 @@ function fastForwardFinishers() {
   state.ff = false;
 }
 
-// ---------- 戦績データ管理 (方式A: localStorage) ----------
+// ---------- 戦績データ管理 (方式A: localStorage + 振り返りスナップショット保存) ----------
 const RECORDS_KEY = 'snipe-records-v1';
+const REVIEWS_KEY = 'snipe-reviews-v1';
 function loadRaceRecords() {
   try {
     const raw = localStorage.getItem(RECORDS_KEY);
@@ -1799,13 +1800,58 @@ function loadRaceRecords() {
     return [];
   }
 }
-function saveRaceRecord(entry) {
+function loadReviewSnapshots() {
   try {
+    const raw = localStorage.getItem(REVIEWS_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveReviewSnapshot(revId, snap) {
+  if (!revId || !snap) return;
+  try {
+    const map = loadReviewSnapshots();
+    map[revId] = snap;
+    // localStorage容量を圧迫しないよう直近15レース分のフルリプレイを保持
+    const keys = Object.keys(map).sort();
+    while (keys.length > 15) {
+      const oldKey = keys.shift();
+      delete map[oldKey];
+    }
+    localStorage.setItem(REVIEWS_KEY, JSON.stringify(map));
+  } catch (e) {}
+}
+function saveRaceRecord(entry, revSnap = null) {
+  try {
+    const revId = `rv_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const recordWithId = { ...entry, revId };
+    if (revSnap) saveReviewSnapshot(revId, revSnap);
     const list = loadRaceRecords();
-    list.unshift(entry);
+    list.unshift(recordWithId);
     if (list.length > 100) list.length = 100;
     localStorage.setItem(RECORDS_KEY, JSON.stringify(list));
   } catch (e) {}
+}
+function openReviewFromRecord(r) {
+  if (!r) return;
+  const fallbackOpts = {
+    marks: MARKS,
+    courseMode: String(r.course || '').includes('上マーク') ? 'upwind' : 'trapezoid',
+    legs: LEGS,
+    speedScale: SPEED_SCALE,
+    kt: KT,
+    returnBgm: state.phase === 'menu' ? 'menu' : 'result',
+  };
+  const snaps = loadReviewSnapshots();
+  const snap = r.revId && snaps[r.revId] ? snaps[r.revId] : null;
+  const restored = snap
+    ? deserializeReviewSnapshot(snap, fallbackOpts)
+    : buildFallbackReviewFromRecord(r, fallbackOpts);
+  if (restored && restored.rec) {
+    openReview(restored.rec, restored.o);
+  }
 }
 function renderRecordsModal() {
   const list = loadRaceRecords();
@@ -1830,10 +1876,10 @@ function renderRecordsModal() {
     `<div class="recStat"><span>平均着順</span><b>${avgRank}</b></div>`;
 
   if (list.length === 0) {
-    bodyEl.innerHTML = `<tr><td colspan="8" class="recordsEmpty">まだ戦績記録がありません。レースをフィニッシュすると自動的に記録されます。</td></tr>`;
+    bodyEl.innerHTML = `<tr><td colspan="9" class="recordsEmpty">まだ戦績記録がありません。レースをフィニッシュすると自動的に記録されます。</td></tr>`;
     return;
   }
-  bodyEl.innerHTML = list.map((r) => {
+  bodyEl.innerHTML = list.map((r, idx) => {
     const rankStr = r.status === 'DSQ' ? 'DSQ' : r.status === 'DNF' ? 'DNF' : `${r.rank}位 / ${r.fleet || 16}艇`;
     const isWin = r.rank === 1;
     let rateCellHtml = '<span class="rateDeltaZero">OFF</span>';
@@ -1852,8 +1898,16 @@ function renderRecordsModal() {
       `<td>${rateCellHtml}</td>` +
       `<td>${r.time || '−'}</td>` +
       `<td>${r.avgKt ? r.avgKt + 'kt' : '−'}</td>` +
+      `<td><button type="button" class="btnSec btnSm recRevBtn" data-idx="${idx}">振り返り</button></td>` +
       `</tr>`;
   }).join('');
+  for (const btn of bodyEl.querySelectorAll('.recRevBtn')) {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const idx = +btn.dataset.idx;
+      if (list[idx]) openReviewFromRecord(list[idx]);
+    };
+  }
 }
 function openRecordsModal() {
   renderRecordsModal();
@@ -2073,8 +2127,10 @@ function showResult() {
     const now = new Date();
     const pad2 = (n) => String(n).padStart(2, '0');
     const dateStr = `${now.getFullYear()}/${pad2(now.getMonth() + 1)}/${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-    const pSt = rec.stats && rec.stats.get ? rec.stats.get(player.id) : null;
-    const avgKt = pSt && pSt.raceT > 0 ? ((pSt.upVSum + pSt.dnVSum) / pSt.raceT / SPEED_SCALE / KT).toFixed(2) : null;
+    const pSt = rec.d && rec.d.get ? rec.d.get(player.id) : null;
+    const avgKt = pSt && pSt.avgV > 0 ? (pSt.avgV / SPEED_SCALE / KT).toFixed(2) : null;
+    const revOpts = { nameOf, playerId: player.id, marks: MARKS, courseMode: COURSE_MODE, legs: LEGS, lineA, speedScale: SPEED_SCALE, kt: KT };
+    const revSnap = serializeReviewSnapshot(rec, revOpts);
     saveRaceRecord({
       date: dateStr,
       venue: cfg.venue === 'enoshima' ? '江の島' : '八景島',
@@ -2087,7 +2143,7 @@ function showResult() {
       rateAfter: rateAfterRec,
       time: player.dsq ? 'DSQ' : p > 0 ? fmtMs(player.finishTime) : 'DNF',
       avgKt,
-    });
+    }, revSnap);
     let rb = $('reviewBtn');
     if (!rb) {
       rb = document.createElement('button');
@@ -2095,7 +2151,7 @@ function showResult() {
       const again = $('againBtn');
       if (again && again.parentNode) again.parentNode.insertBefore(rb, again); else $('result').appendChild(rb);
     }
-    rb.onclick = () => openReview(rec, { nameOf, playerId: player.id, marks: MARKS, courseMode: COURSE_MODE, legs: LEGS, lineA, speedScale: SPEED_SCALE, kt: KT });
+    rb.onclick = () => openReview(rec, revOpts);
     // 振り返りデータを確定した後は recorder を切り離し、背景の3D艇群を早送り前の位置へ戻してライブで次々とフィニッシュさせる
     recorder = null;
   }
@@ -2163,31 +2219,33 @@ function loop() {
   }
   
   for (const m of models) m.sync(dt, time);
-  const isPostFinishView = state.phase === 'race' && state.pFinish !== null && !player.dsq && (state.t - state.pFinish > 0.6 || state.resultShown);
+  // フィニッシュ船のカメラマン視点への切り替えは、リザルト画面が表示されてから(state.resultShown === true)にする
+  const isPostFinishView = state.phase === 'race' && state.resultShown;
   if (models[0]) models[0].setFirstPerson(!isPostFinishView && cam.mode === COCKPIT);
   world.wake.update(boats, state.paused ? 0 : dt);
   
   if (player) {
     if (isPostFinishView && world.markObjs && world.markObjs.fcom) {
-      // フィニッシュ後の背景映像: フィニッシュ船(fcom)の上(大型望遠一眼レフを構えるたぬきの斜め後ろ)から、
-      // フィニッシュラインおよび3マーク側(自分以降にフィニッシュしてくる後続艇群)を望むアングルに固定
+      // フィニッシュ後の背景映像(リザルト画面表示後):
+      // フィニッシュ船(fcom)のオープンバウデッキに立つ「大型望遠一眼レフを構えたたぬきカメラマン」のすぐ斜め後ろから、
+      // たぬきカメラマンを画面右手前にしっかり映しつつ、フィニッシュライン〜3マーク側(自分以降にフィニッシュしてくる後続艇群)を望むアングル
       const fc = world.markObjs.fcom;
       if (fc.userData && fc.userData.tanukiCam) {
         const tk = fc.userData.tanukiCam;
-        tk.rotation.y = 1.18 + Math.sin(time * 0.85) * 0.16;
+        tk.rotation.y = (Math.PI - 0.32) + Math.sin(time * 0.85) * 0.12;
         if (tk.userData.head) tk.userData.head.rotation.y = Math.sin(time * 1.4) * 0.08;
       }
       const isUpwindFin = COURSE_MODE === 'upwind';
-      // たぬきカメラマン(local: -0.26, 0.66, -0.25)が画面右手前に写り込み、その奥にフィニッシュライン〜3マーク側の後続艇群が広がる位置
-      const camLocal = isUpwindFin ? new THREE.Vector3(0.48, 2.02, -1.18) : new THREE.Vector3(0.52, 2.05, 0.92);
+      // たぬきカメラマン(local: 0.22, 0.76, 1.88)のすぐ左後ろ(local: -0.14, 1.38, 1.15)にカメラを置き、屋根に遮られずカメラマンと3マーク側を同時に捉える
+      const camLocal = isUpwindFin ? new THREE.Vector3(-0.12, 1.38, 1.12) : new THREE.Vector3(-0.14, 1.38, 1.15);
       fc.updateMatrixWorld(true);
       const camWorld = camLocal.applyMatrix4(fc.matrixWorld);
       camera.position.copy(camWorld);
       // 視線ターゲット: 3マーク〜フィニッシュラインの中間(後続艇が3マークを回ってフィニッシュへ向かってくる海面)
       const lookCourse = isUpwindFin
         ? toWorld(MARKS.m1.a - 36, (MARKS.m1.c + MARKS.fcom.c) * 0.42 + Math.sin(time * 0.45) * 3.5)
-        : toWorld((MARKS.fm.a * 0.52 + MARKS.m3.a * 0.48), (MARKS.fm.c * 0.55 + MARKS.m3.c * 0.45) + Math.sin(time * 0.45) * 3.5);
-      camera.lookAt(lookCourse.x, 1.45, lookCourse.z);
+        : toWorld((MARKS.fm.a * 0.56 + MARKS.m3.a * 0.44), (MARKS.fm.c * 0.56 + MARKS.m3.c * 0.44) + Math.sin(time * 0.45) * 3.5);
+      camera.lookAt(lookCourse.x, 1.35, lookCourse.z);
     } else {
       cam.update(dt, time, player, boats);
     }
@@ -2622,7 +2680,10 @@ function initMenu() {
   if ($('recordsClearBtn')) {
     $('recordsClearBtn').onclick = () => {
       if (confirm('保存されている戦績記録をすべて消去しますか？')) {
-        try { localStorage.removeItem(RECORDS_KEY); } catch (e) {}
+        try {
+          localStorage.removeItem(RECORDS_KEY);
+          localStorage.removeItem(REVIEWS_KEY);
+        } catch (e) {}
         renderRecordsModal();
       }
     };
