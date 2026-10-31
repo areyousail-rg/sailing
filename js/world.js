@@ -973,36 +973,147 @@ export function createWorld(scene) {
   bakeStatic(enoshimaGroup);
   bakeStatic(hakkeijimaGroup);
 
-  // ---------- マーク類 ----------
+  // ---------- マーク類 (実艇画像5枚目準拠: 全マーク統一の光沢オレンジPVCインフレータブル円錐ティアドロップ型ブイ) ----------
   const bob = [];
   const markObjs = {};
-  const buoy = (color) => {
+  let _unifiedBuoyGeo = null;
+  let _unifiedBuoyMat = null;
+  const getUnifiedBuoyAssets = () => {
+    if (_unifiedBuoyGeo && _unifiedBuoyMat) return { geo: _unifiedBuoyGeo, mat: _unifiedBuoyMat };
+    // 1) プロファイル: 下部がふっくら膨らみ、上に向かって滑らかな円錐状に絞られる実物インフレータブルブイ形状 (高さ約2.15m・最大半径約1.08m)
+    const profilePts = [
+      [0.00, -0.12],
+      [0.86, -0.10],
+      [1.02, 0.00],
+      [1.08, 0.16],
+      [1.06, 0.32],
+      [0.98, 0.50],
+      [0.88, 0.68],
+      [0.74, 0.94],
+      [0.58, 1.22],
+      [0.42, 1.50],
+      [0.27, 1.76],
+      [0.15, 1.96],
+      [0.08, 2.08],
+      [0.00, 2.12],
+    ].map(([r, y]) => new THREE.Vector2(r, y));
+    const geo = new THREE.LatheGeometry(profilePts, 36);
+    // インフレータブルビニール特有の空気圧によるわずかな縦ジワ・たるみ凹凸を下部〜中腹に付与
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      const r = Math.hypot(px, pz);
+      if (r > 0.05 && py > -0.02 && py < 1.65) {
+        const ang = Math.atan2(pz, px);
+        const lowEnv = Math.sin(Math.PI * clampN((py + 0.02) / 0.85, 0, 1));
+        const midEnv = Math.sin(Math.PI * clampN((py - 0.25) / 1.35, 0, 1));
+        const crease = 1.0
+          + 0.020 * lowEnv * Math.sin(ang * 9.0 + py * 6.2)
+          + 0.012 * lowEnv * Math.cos(ang * 14.0 - py * 8.5)
+          + 0.008 * midEnv * Math.sin(ang * 4.0);
+        pos.setX(i, px * crease);
+        pos.setZ(i, pz * crease);
+      }
+    }
+    geo.computeVertexNormals();
+
+    // 2) PVCターポリン生地の質感テクスチャ (鮮やかなオレンジ色・中腹の熱溶着シームライン・下部のシワ陰影・4面パネル継ぎ目)
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0.0, '#ff6d14');
+    grad.addColorStop(0.55, '#ff5e06');
+    grad.addColorStop(0.88, '#f24f00');
+    grad.addColorStop(1.0, '#d94300');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 512);
+
+    // 縦パネルの溶着シーム (4本)
+    for (const sx of [64, 192, 320, 448]) {
+      ctx.strokeStyle = 'rgba(180, 48, 0, 0.34)';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, 512); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 165, 95, 0.28)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx + 2, 0); ctx.lineTo(sx + 2, 512); ctx.stroke();
+    }
+    // 中腹(画像の水平シーム位置)の円周熱溶着ライン
+    const seamY = 342;
+    ctx.fillStyle = 'rgba(175, 42, 0, 0.38)';
+    ctx.fillRect(0, seamY - 3, 512, 6);
+    ctx.fillStyle = 'rgba(255, 175, 110, 0.32)';
+    ctx.fillRect(0, seamY - 5, 512, 2);
+
+    // 下部(水面〜シーム下)のビニール特有の斜め・縦のシワ陰影
+    for (let i = 0; i < 28; i++) {
+      const wx = (i * 18.3) % 512;
+      const wy0 = 335 + (i % 5) * 14;
+      const wy1 = 465 + (i % 4) * 10;
+      const dx = ((i % 3) - 1) * 14;
+      ctx.strokeStyle = 'rgba(155, 36, 0, 0.22)';
+      ctx.lineWidth = 3.0;
+      ctx.beginPath(); ctx.moveTo(wx, wy0); ctx.quadraticCurveTo(wx + dx * 0.6, (wy0 + wy1) * 0.5, wx + dx, wy1); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 168, 100, 0.20)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(wx + 2, wy0); ctx.quadraticCurveTo(wx + dx * 0.6 + 2, (wy0 + wy1) * 0.5, wx + dx + 2, wy1); ctx.stroke();
+    }
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+
+    const mat = new THREE.MeshPhysicalMaterial({
+      map: tex,
+      roughness: 0.22,
+      metalness: 0.03,
+      clearcoat: 0.82,
+      clearcoatRoughness: 0.18,
+    });
+    _unifiedBuoyGeo = geo;
+    _unifiedBuoyMat = mat;
+    return { geo, mat };
+  };
+
+  const buoyHandleMat = new THREE.MeshStandardMaterial({ color: 0x181c22, roughness: 0.55, metalness: 0.15 });
+  const buoy = () => {
     const g = new THREE.Group();
     const body = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.36, metalness: 0.04 });
-    // インフレータブル・テトラヘドロン(三角錐/円錐)マーク: 海面上にしっかり浮いて見えるよう底面を y=0 付近に配置し、下部の膨らみを持たせる
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.78, 2.95, 16), mat);
-    cone.position.y = 1.62;
-    body.add(cone);
-    // 海面に接するインフレータブルチューブ基部のふっくらした立ち上がり (y=0.0〜0.32)
-    const baseCollar = new THREE.Mesh(new THREE.CylinderGeometry(1.78, 1.56, 0.34, 16), mat);
-    baseCollar.position.y = 0.16;
-    body.add(baseCollar);
-    // 水面との接地感を高めるごく薄い白波リング
-    const ringGeo = new THREE.RingGeometry(1.52, 1.88, 24);
+    const { geo, mat } = getUnifiedBuoyAssets();
+    const mesh = new THREE.Mesh(geo, mat);
+    body.add(mesh);
+
+    // 下部側面の黒いPVCグラブハンドル＆補強パッチ (画像5枚目準拠)
+    for (const ang of [0.35, 1.85, 3.50, 5.00]) {
+      const hr = 1.03, hy = 0.34;
+      const patch = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.035), buoyHandleMat);
+      patch.position.set(Math.sin(ang) * hr, hy, Math.cos(ang) * hr);
+      patch.rotation.y = ang;
+      patch.rotation.x = -0.16;
+      body.add(patch);
+    }
+    // 頂部の黒いバルブ・アイパッチ
+    const topCap = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.085, 0.04, 12), buoyHandleMat);
+    topCap.position.y = 2.11;
+    body.add(topCap);
+
+    // 水面との接地感を高めるごく控えめな白波リング
+    const ringGeo = new THREE.RingGeometry(0.98, 1.18, 24);
     ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, depthWrite: false });
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.position.y = 0.02;
     body.add(ring);
+
     g.add(body);
     g.userData.isMarkBuoy = true;
     g.userData.body = body;
     return g;
   };
   const place = (key, obj) => { const p = toWorld(MARKS[key].a, MARKS[key].c); obj.position.set(p.x, 0, p.z); scene.add(obj); bob.push(obj); markObjs[key] = obj; };
-  place('m1', buoy(0xffc21a)); place('m1a', buoy(0xffc21a)); place('m2', buoy(0xffc21a)); place('m3', buoy(0xffc21a));
-  place('gL', buoy(0xff6a1f)); place('gR', buoy(0xff6a1f));
+  place('m1', buoy()); place('m1a', buoy()); place('m2', buoy()); place('m3', buoy());
+  place('gL', buoy()); place('gR', buoy());
 
   // アウター艇(ピン側のオレンジ旗艇) — 船首を風上に向けてアンカリング
   const flagSway = [];
@@ -1224,46 +1335,56 @@ export function createWorld(scene) {
 
   // フィニッシュ運営艇(アウターと同じ種類の和船型サポートボート + 青旗・S旗・オレンジ旗)と反対側の通常マークブイ
   const fComBoat = putBoat(makeMotorboat('outer', { flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
-  // フィニッシュ船の上で3マーク〜フィニッシュライン側に向けて「大きい望遠レンズの一眼レフ」を構えているたぬきカメラマンを配置
+  // フィニッシュ船の船首デッキおよび屋根上に、3マーク〜フィニッシュライン側(+z/+x方向)へ「大きい白レンズの一眼レフ」を構えるたぬきカメラマンを配置
   {
+    // 既存の船首アヒルスタッフを隠して、船首デッキに特大望遠一眼レフを持ったたぬきカメラマンを目立つよう配置
+    fComBoat.traverse((o) => {
+      if (o.userData && o.userData.officialCrew && o.children && o.children[2]) {
+        o.children[2].visible = false;
+      }
+    });
     const tanukiCam = buildFigure('tanuki', { vest: 0xf97316, suit: 0x1e293b });
-    tanukiCam.scale.setScalar(1.18);
-    tanukiCam.position.set(-0.26, 0.66, -0.25);
-    tanukiCam.rotation.y = 1.18; // フィニッシュライン〜3マーク方向(-x, -z側)を向く
+    tanukiCam.scale.setScalar(1.36);
+    // 屋根に隠れないオープンなバウデッキ(z=1.88, y=0.76)に立ち、正面(-z)が船首・3マーク・フィニッシュライン方向(+z, +x)を向くよう rotY = Math.PI - 0.32 に設定
+    tanukiCam.position.set(0.22, 0.76, 1.88);
+    tanukiCam.rotation.y = Math.PI - 0.32;
     if (tanukiCam.userData.upper) {
       const tu = tanukiCam.userData.upper;
-      if (tu.userData.armL) tu.userData.armL.rotation.set(-0.68, 0.25, -0.18);
-      if (tu.userData.armR) tu.userData.armR.rotation.set(-0.68, -0.25, 0.18);
+      if (tu.userData.armL) tu.userData.armL.rotation.set(-0.78, 0.26, -0.18);
+      if (tu.userData.armR) tu.userData.armR.rotation.set(-0.78, -0.26, 0.18);
     }
-    // 一眼レフ本体 ＋ 白い超望遠大口径レンズ(赤リング・黒い大型レンズフード・前玉ガラス付き)
+    // 一眼レフ本体 ＋ 白い超望遠大口径レンズ(赤リング・黒い大型レンズフード・前玉ガラス・一脚付き)
     const dslr = new THREE.Group();
-    dslr.position.set(0.0, 0.36, -0.24);
-    dslr.rotation.x = 0.06;
-    const camMat = new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.45, metalness: 0.25 });
-    const whiteLensMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.28, metalness: 0.18 });
+    dslr.position.set(0.0, 0.34, -0.22);
+    dslr.rotation.x = 0.04;
+    const camMat = new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.42, metalness: 0.28 });
+    const whiteLensMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.24, metalness: 0.20 });
     const redRingMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.08, metalness: 0.65, emissive: 0x0369a1, emissiveIntensity: 0.35 });
-    const bodyBox = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.10), camMat);
-    const prismBox = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.045, 0.08), camMat);
-    prismBox.position.set(0, 0.08, 0);
-    // 大型望遠レンズ鏡筒 (-z方向が被写体側)
-    const barrel1 = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.044, 0.16, 14), whiteLensMat);
-    barrel1.rotation.x = Math.PI / 2; barrel1.position.set(0, 0, -0.12);
-    const barrel2 = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.048, 0.18, 14), whiteLensMat);
-    barrel2.rotation.x = Math.PI / 2; barrel2.position.set(0, 0, -0.28);
-    const redRing = new THREE.Mesh(new THREE.CylinderGeometry(0.059, 0.059, 0.018, 14), redRingMat);
-    redRing.rotation.x = Math.PI / 2; redRing.position.set(0, 0, -0.35);
-    const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.059, 0.13, 14), camMat);
-    hood.rotation.x = Math.PI / 2; hood.position.set(0, 0, -0.43);
-    const frontGlass = new THREE.Mesh(new THREE.CircleGeometry(0.060, 14), glassMat);
-    frontGlass.rotation.y = Math.PI; frontGlass.position.set(0, 0, -0.496);
-    dslr.add(bodyBox, prismBox, barrel1, barrel2, redRing, hood, frontGlass);
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.08, metalness: 0.65, emissive: 0x0369a1, emissiveIntensity: 0.40 });
+    const bodyBox = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.15, 0.12), camMat);
+    const prismBox = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.055, 0.095), camMat);
+    prismBox.position.set(0, 0.095, 0);
+    // 大型望遠レンズ鏡筒 (たぬきの正面 -z 方向へ大きく突き出す白レンズ)
+    const barrel1 = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.056, 0.22, 16), whiteLensMat);
+    barrel1.rotation.x = Math.PI / 2; barrel1.position.set(0, 0, -0.15);
+    const barrel2 = new THREE.Mesh(new THREE.CylinderGeometry(0.076, 0.062, 0.24, 16), whiteLensMat);
+    barrel2.rotation.x = Math.PI / 2; barrel2.position.set(0, 0, -0.36);
+    const redRing = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.022, 16), redRingMat);
+    redRing.rotation.x = Math.PI / 2; redRing.position.set(0, 0, -0.45);
+    const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.088, 0.078, 0.18, 16), camMat);
+    hood.rotation.x = Math.PI / 2; hood.position.set(0, 0, -0.56);
+    const frontGlass = new THREE.Mesh(new THREE.CircleGeometry(0.078, 16), glassMat);
+    frontGlass.rotation.y = Math.PI; frontGlass.position.set(0, 0, -0.652);
+    // 望遠レンズを支える一脚(モノポッド)
+    const monopod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.009, 0.56, 8), camMat);
+    monopod.position.set(0, -0.28, -0.26);
+    dslr.add(bodyBox, prismBox, barrel1, barrel2, redRing, hood, frontGlass, monopod);
     tanukiCam.add(dslr);
     fComBoat.add(tanukiCam);
     fComBoat.userData.tanukiCam = tanukiCam;
   }
   markObjs.fcom = fComBoat;
-  const fPinObj = buoy(0xffc21a); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
+  const fPinObj = buoy(); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
 
   let courseVisible = true;
 
@@ -1806,15 +1927,15 @@ export function createWorld(scene) {
         const wsZ = waveSample(ox, oz, SEA.clock, 0, 1);
         const slZ = wsZ.slope;
         if (o.userData && o.userData.isMarkBuoy) {
-          // インフレータブルマークブイ: 海面の描画シェーダ波高に合わせて水面上へくっきり浮かせ、波の通過に合わせて軽快に揺らす
-          const waveY = wsX.hLong * 1.0 + (wsX.h - wsX.hLong) * 0.95;
-          const vRip = 0.055 * Math.sin(ox * 0.42 + oz * 0.31 - SEA.clock * 3.1) + 0.042 * Math.cos(ox * 0.27 - oz * 0.48 + SEA.clock * 2.5);
-          const bobRip = 0.07 * Math.sin(t * 2.6 + ox * 0.17 + oz * 0.13) + 0.04 * Math.cos(t * 1.9 - oz * 0.21);
-          o.position.y = waveY + vRip + 0.18 + bobRip;
+          // インフレータブルマークブイ: 海面にしっかり浮かせつつ、実際のアンカー固定マークと同様に波による過度な揺れを抑えて安定させる
+          const waveY = wsX.hLong * 0.85 + (wsX.h - wsX.hLong) * 0.32;
+          const vRip = 0.016 * Math.sin(ox * 0.42 + oz * 0.31 - SEA.clock * 2.4);
+          const bobRip = 0.015 * Math.sin(t * 1.7 + ox * 0.17 + oz * 0.13);
+          o.position.y = waveY + vRip + 0.06 + bobRip;
           const body = o.userData.body;
           if (body) {
-            body.rotation.z = clampN(-Math.atan(slX) * 1.35 + 0.14 * Math.sin(t * 2.5 + ox * 0.19) + 0.06 * Math.cos(t * 3.6 + oz * 0.15), -0.34, 0.34);
-            body.rotation.x = clampN(Math.atan(slZ) * 1.35 + 0.14 * Math.cos(t * 2.3 + oz * 0.17) + 0.06 * Math.sin(t * 3.4 - ox * 0.14), -0.34, 0.34);
+            body.rotation.z = clampN(-Math.atan(slX) * 0.22 + 0.016 * Math.sin(t * 1.5 + ox * 0.19), -0.042, 0.042);
+            body.rotation.x = clampN(Math.atan(slZ) * 0.22 + 0.016 * Math.cos(t * 1.4 + oz * 0.17), -0.042, 0.042);
           }
         } else {
           // クルーザー・エンジンボート: 波による上下動や傾きをごくわずかに抑えてどっしり安定させる
