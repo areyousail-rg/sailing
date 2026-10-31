@@ -11,7 +11,12 @@ export function setWindParams(kt = 9, sideBias = -0.6) {
   BASE_WIND_KT = Math.max(4, Math.min(22, kt));
   SIDE_BIAS = Math.max(-1.5, Math.min(1.5, sideBias));
 }
-export const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a <= -Math.PI) a += 2 * Math.PI; return a; };
+export const wrap = (a) => {
+  if (!Number.isFinite(a)) return 0;
+  let r = (a + Math.PI) % (2 * Math.PI);
+  if (r <= 0) r += 2 * Math.PI;
+  return r - Math.PI;
+};
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 // ランチャー(ウィスカーポール): 上げている間はこの真風角より風上には向けない
