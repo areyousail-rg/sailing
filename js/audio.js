@@ -504,20 +504,32 @@ function tone(freq, dur, type, vol, endFreq) {
   o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
 }
 
-// 艇同士の衝突(FRPの「ゴツン」+ きしみ)
-export function thud(vol = 1) {
+// 艇同士の衝突(FRPの「ゴツン」+ きしみ): 艇速(speedNorm)に応じて音量・音色・鋭さを変化させ、スタート前の停止・微速時の接触は小さく控えめな音にする
+export function thud(vol = 1, speedNorm = 1) {
   if (!ctx || vol <= 0.02) return;
-  tone(130, 0.22, 'sine', 0.7 * vol, 45);
-  noiseBurst(0.18, 600, 'lowpass', 0.8 * vol);
-  noiseBurst(0.07, 2200, 'bandpass', 0.35 * vol);
+  const sp = clampN(speedNorm, 0.08, 1.25);
+  const sp01 = clamp01((sp - 0.08) / 0.92);
+  const velGain = 0.22 + 0.78 * Math.pow(sp01, 1.20);
+  const v = vol * velGain;
+  const dur = 0.11 + 0.12 * sp01;
+  tone(90 + 44 * sp01, dur, 'sine', 0.65 * v, 42);
+  noiseBurst(0.085 + 0.10 * sp01, 330 + 310 * sp01, 'lowpass', 0.72 * v);
+  if (sp01 > 0.18) {
+    noiseBurst(0.04 + 0.035 * sp01, 1600 + 700 * sp01, 'bandpass', 0.35 * v * sp01);
+  }
 }
-// マーク接触(ブイの「ボコン」という中空音)
-export function markHit(vol = 1) {
+// マーク接触(ブイの「ボコン」という中空音): 艇速に応じて強弱をつける
+export function markHit(vol = 1, speedNorm = 1) {
   if (!ctx || vol <= 0.02) return;
-  tone(210, 0.5, 'triangle', 0.55 * vol, 150);
-  tone(330, 0.35, 'sine', 0.3 * vol, 260);
-  tone(540, 0.2, 'sine', 0.15 * vol);
-  noiseBurst(0.06, 1500, 'bandpass', 0.4 * vol);
+  const sp01 = clamp01((clampN(speedNorm, 0.10, 1.20) - 0.10) / 0.90);
+  const velGain = 0.26 + 0.74 * Math.pow(sp01, 1.15);
+  const v = vol * velGain;
+  tone(185 + 30 * sp01, 0.32 + 0.18 * sp01, 'triangle', 0.52 * v, 145);
+  tone(300 + 35 * sp01, 0.22 + 0.13 * sp01, 'sine', 0.28 * v, 250);
+  if (sp01 > 0.20) {
+    tone(540, 0.18, 'sine', 0.15 * v * sp01);
+  }
+  noiseBurst(0.045 + 0.02 * sp01, 1200 + 400 * sp01, 'bandpass', 0.36 * v);
 }
 // セールが「パンッ」と返る音(タック/ジャイブ時: 低音ブザー成分を排し、セール布の音のみ)
 export function flap(vol = 0.6) {
