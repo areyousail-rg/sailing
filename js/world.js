@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { MARKS, LEGS, COURSE_MODE, toWorld, LINE_HALF, LINE_SKEW, FAVORED, lineA, U, W0, setWindDir } from './course.js';
 import { makeMotorboat } from './powerboats.js';
+import { buildFigure } from './crew.js';
 import { shiftAt, waveSample, SEA, BASE_WIND_KT } from './sim.js';
 
 export const FOG_COLOR = 0xbdd5e6;
@@ -1223,6 +1224,44 @@ export function createWorld(scene) {
 
   // フィニッシュ運営艇(アウターと同じ種類の和船型サポートボート + 青旗・S旗・オレンジ旗)と反対側の通常マークブイ
   const fComBoat = putBoat(makeMotorboat('outer', { flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
+  // フィニッシュ船の上で3マーク〜フィニッシュライン側に向けて「大きい望遠レンズの一眼レフ」を構えているたぬきカメラマンを配置
+  {
+    const tanukiCam = buildFigure('tanuki', { vest: 0xf97316, suit: 0x1e293b });
+    tanukiCam.scale.setScalar(1.18);
+    tanukiCam.position.set(-0.26, 0.66, -0.25);
+    tanukiCam.rotation.y = 1.18; // フィニッシュライン〜3マーク方向(-x, -z側)を向く
+    if (tanukiCam.userData.upper) {
+      const tu = tanukiCam.userData.upper;
+      if (tu.userData.armL) tu.userData.armL.rotation.set(-0.68, 0.25, -0.18);
+      if (tu.userData.armR) tu.userData.armR.rotation.set(-0.68, -0.25, 0.18);
+    }
+    // 一眼レフ本体 ＋ 白い超望遠大口径レンズ(赤リング・黒い大型レンズフード・前玉ガラス付き)
+    const dslr = new THREE.Group();
+    dslr.position.set(0.0, 0.36, -0.24);
+    dslr.rotation.x = 0.06;
+    const camMat = new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.45, metalness: 0.25 });
+    const whiteLensMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.28, metalness: 0.18 });
+    const redRingMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.08, metalness: 0.65, emissive: 0x0369a1, emissiveIntensity: 0.35 });
+    const bodyBox = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.10), camMat);
+    const prismBox = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.045, 0.08), camMat);
+    prismBox.position.set(0, 0.08, 0);
+    // 大型望遠レンズ鏡筒 (-z方向が被写体側)
+    const barrel1 = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.044, 0.16, 14), whiteLensMat);
+    barrel1.rotation.x = Math.PI / 2; barrel1.position.set(0, 0, -0.12);
+    const barrel2 = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.048, 0.18, 14), whiteLensMat);
+    barrel2.rotation.x = Math.PI / 2; barrel2.position.set(0, 0, -0.28);
+    const redRing = new THREE.Mesh(new THREE.CylinderGeometry(0.059, 0.059, 0.018, 14), redRingMat);
+    redRing.rotation.x = Math.PI / 2; redRing.position.set(0, 0, -0.35);
+    const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.059, 0.13, 14), camMat);
+    hood.rotation.x = Math.PI / 2; hood.position.set(0, 0, -0.43);
+    const frontGlass = new THREE.Mesh(new THREE.CircleGeometry(0.060, 14), glassMat);
+    frontGlass.rotation.y = Math.PI; frontGlass.position.set(0, 0, -0.496);
+    dslr.add(bodyBox, prismBox, barrel1, barrel2, redRing, hood, frontGlass);
+    tanukiCam.add(dslr);
+    fComBoat.add(tanukiCam);
+    fComBoat.userData.tanukiCam = tanukiCam;
+  }
   markObjs.fcom = fComBoat;
   const fPinObj = buoy(0xffc21a); scene.add(fPinObj); bob.push(fPinObj); markObjs.fm = fPinObj;
 
@@ -2823,60 +2862,49 @@ function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
   const metroLand = new THREE.Mesh(new THREE.BoxGeometry(12000, 4, 18000), new THREE.MeshLambertMaterial({ color: 0x6b7c90 }));
   metroLand.position.set(-1400, 0.8, -14500); metro.add(metroLand);
 
-  // 横浜みなとみらい21・横浜ランドマークタワー (八景島沖から北北西 NNW 約348°〜355°、本牧ふ頭ガントリークレーンの左奥の水平線上にうっすら望む実在位置関係を再現)
+  // 横浜みなとみらい21・横浜ランドマークタワーと周辺建物:
+  // クレーンと重なる奥の過密な都会ビル群は削除し、クレーン右側の控えめな規模感の港湾建物のみ残しつつ、
+  // ランドマークタワーとその直近のみなとみらい建物(クイーンズスクエアA/B/C・インターコンチネンタル・ランドマークプラザ等)だけを水平線上に「ほんのうっすら」霞んで見えるように配置
   const lmkX = -760, lmkZ = -6850;
-  const hazedTowerMat = new THREE.MeshLambertMaterial({ color: 0xc2d5ea, emissive: 0x2b3e54 });
-  const hazedSubMat = new THREE.MeshLambertMaterial({ color: 0xb8cce2, emissive: 0x26384d });
-  // 横浜ランドマークタワー (296m: 上に向かって段状に細くなる特徴的な四角柱シルエット)
-  const lmkBase = new THREE.Mesh(new THREE.CylinderGeometry(38, 52, 230, 4), hazedTowerMat);
-  lmkBase.rotation.y = Math.PI / 4; lmkBase.position.set(lmkX, 115, lmkZ); metro.add(lmkBase);
-  const lmkTop = new THREE.Mesh(new THREE.CylinderGeometry(28, 38, 95, 4), hazedTowerMat);
-  lmkTop.rotation.y = Math.PI / 4; lmkTop.position.set(lmkX, 275, lmkZ); metro.add(lmkTop);
-  // クイーンズスクエア横浜 3連棟 (ランドマークタワーのすぐ右隣に並ぶ3棟)
+  const hazedTowerMat = new THREE.MeshLambertMaterial({ color: 0xc9daec, emissive: 0x384d63, transparent: true, opacity: 0.19, depthWrite: false });
+  const hazedSubMat = new THREE.MeshLambertMaterial({ color: 0xc2d5e8, emissive: 0x33475c, transparent: true, opacity: 0.17, depthWrite: false });
+  // 1) 横浜ランドマークタワー (296m: 上に向かって段状に細くなる四角柱シルエット)
+  const lmkBase = new THREE.Mesh(new THREE.CylinderGeometry(36, 50, 225, 4), hazedTowerMat);
+  lmkBase.rotation.y = Math.PI / 4; lmkBase.position.set(lmkX, 112.5, lmkZ); metro.add(lmkBase);
+  const lmkTop = new THREE.Mesh(new THREE.CylinderGeometry(26, 36, 72, 4), hazedTowerMat);
+  lmkTop.rotation.y = Math.PI / 4; lmkTop.position.set(lmkX, 261, lmkZ); metro.add(lmkTop);
+  // ランドマークプラザ・三菱重工横浜ビル(左隣の中層棟)
+  const mhiBldg = new THREE.Mesh(new THREE.BoxGeometry(58, 145, 48), hazedSubMat);
+  mhiBldg.position.set(lmkX - 95, 72.5, lmkZ - 20); metro.add(mhiBldg);
+  // 2) クイーンズスクエア横浜 3連棟 (A棟172m・B棟138m・C棟109m: ランドマークのすぐ右隣に階段状に並ぶ実在配置)
+  const queensHeights = [172, 138, 109];
   for (let i = 0; i < 3; i++) {
-    const qh = 195 - i * 20;
-    const qb = new THREE.Mesh(new THREE.BoxGeometry(52, qh, 52), hazedSubMat);
-    qb.position.set(lmkX + 145 + i * 78, qh / 2, lmkZ + 40 + i * 25); metro.add(qb);
+    const qh = queensHeights[i];
+    const qb = new THREE.Mesh(new THREE.BoxGeometry(46, qh, 46), hazedSubMat);
+    qb.position.set(lmkX + 125 + i * 68, qh / 2, lmkZ + 35 + i * 22); metro.add(qb);
   }
-  // ヨコハマ グランド インターコンチネンタル ホテル (ヨットのセール型の半月シルエット)
-  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(72, 72, 22, 24, 1, false, 0, Math.PI), hazedTowerMat);
-  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.35; interCon.position.set(lmkX + 410, 56, lmkZ + 110); interCon.scale.set(2.1, 1, 1); metro.add(interCon);
+  // 3) ヨコハマ グランド インターコンチネンタル ホテル (140m: クイーンズスクエア右海側の半月ヨットセール型シルエット)
+  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(68, 68, 20, 20, 1, false, 0, Math.PI), hazedTowerMat);
+  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.35; interCon.position.set(lmkX + 355, 52, lmkZ + 95); interCon.scale.set(2.0, 1, 1); metro.add(interCon);
 
-  // 横浜ベイブリッジ (みなとみらいの右手前、本牧ふ頭の北東側に遠望できる斜張橋)
+  // 4) 横浜ベイブリッジ (本牧ふ頭右奥にほんのうっすら見える斜張橋)
   const bbX = 480, bbZ = -6350;
-  const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(1950, 8, 22), hazedSubMat);
-  bbDeck.position.set(bbX, 58, bbZ); bbDeck.rotation.y = -0.22; metro.add(bbDeck);
+  const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(1950, 7, 20), hazedSubMat);
+  bbDeck.position.set(bbX, 56, bbZ); bbDeck.rotation.y = -0.22; metro.add(bbDeck);
   for (const s of [-360, 360]) {
-    const tw = new THREE.Mesh(new THREE.BoxGeometry(18, 165, 24), hazedTowerMat);
-    tw.position.set(bbX + s * Math.cos(0.22), 82.5, bbZ + s * Math.sin(0.22)); metro.add(tw);
+    const tw = new THREE.Mesh(new THREE.BoxGeometry(16, 160, 22), hazedTowerMat);
+    tw.position.set(bbX + s * Math.cos(0.22), 80, bbZ + s * Math.sin(0.22)); metro.add(tw);
   }
 
-  // 横浜駅周辺〜みなとみらい・関内・本牧の遠景高層ビル群 (大気遠近でうっすら霞んだ青灰色のスカイライン)
-  const HBOX = 180;
-  const hBoxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ emissive: 0x223246 }), HBOX);
+  // 5) クレーン右側にある控えめな規模感の港湾・沿岸建物群のみ残す (クレーン背後と重なる都会ビル群は完全削除)
+  const HBOX = 28;
+  const hBoxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ emissive: 0x223246, transparent: true, opacity: 0.42 }), HBOX);
   let hbn = 0;
   const cityPal = [0xb4c8de, 0xa5bcd4, 0xc2d5ea, 0x9cb3cb];
-  // (a) みなとみらい〜桜木町・関内・横浜駅方面の高層ビル群 (z = -6500 .. -7900, x = -1450 .. +180)
-  for (let k = 0; k < 64 && hbn < HBOX; k++) {
-    const x = lmkX - 680 + rnd() * 1580, z = lmkZ - 950 + rnd() * 1450;
-    const distC = Math.abs(x - lmkX);
-    const bh = (distC < 450 ? 85 : 50) + rnd() * (distC < 450 ? 125 : 75);
-    const bw = 32 + rnd() * 38, bd = 32 + rnd() * 38;
-    m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
-    hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
-  }
-  // (b) クレーンの少し奥(根岸・本牧ふ頭倉庫: z = -4300 .. -5800) の低層倉庫
-  for (let k = 0; k < 22 && hbn < HBOX; k++) {
-    const x = -2100 + rnd() * 1600, z = -4300 - rnd() * 1500;
-    const bh = 12 + rnd() * 14, bw = 35 + rnd() * 45, bd = 35 + rnd() * 45;
-    m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
-    hBoxes.setMatrixAt(hbn, m4); tc.setHex(0x94a3b8); hBoxes.setColorAt(hbn, tc); hbn++;
-  }
-  // (c) さらに奥の川崎・鶴見・東京湾岸の遠景ビル群 (z = -9500 .. -16500)
-  for (let k = 0; k < 80 && hbn < HBOX; k++) {
-    const z = -9500 - rnd() * 7000;
-    const x = -1800 + rnd() * 4200;
-    const bh = 45 + rnd() * 85, bw = 38 + rnd() * 45, bd = 38 + rnd() * 45;
+  for (let k = 0; k < 24 && hbn < HBOX; k++) {
+    // クレーン列の右側(東側: x = +220 .. +1080, z = -3950 .. -5400)の控えめな中低層港湾施設
+    const x = 220 + rnd() * 860, z = -3950 - rnd() * 1450;
+    const bh = 16 + rnd() * 28, bw = 32 + rnd() * 38, bd = 32 + rnd() * 38;
     m4.compose(new THREE.Vector3(x, bh / 2 + 2, z), q, new THREE.Vector3(bw, bh, bd));
     hBoxes.setMatrixAt(hbn, m4); tc.setHex(cityPal[(rnd() * cityPal.length) | 0]); hBoxes.setColorAt(hbn, tc); hbn++;
   }
