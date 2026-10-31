@@ -144,7 +144,7 @@ export function updateProgress(b, t) {
     const inSpan = Math.abs(b.c) <= LINE_HALF + 5.5 || Math.abs(prevC) <= LINE_HALF + 5.5;
     if (inSpan && b.a >= laNow - 0.5 && (prevA <= laPrev + 8.0 || t < 20)) {
       b.started = true;
-    } else if (!b.isPlayer && b.a >= laNow + 12.0 && Math.abs(b.c) <= LINE_HALF + 18) {
+    } else if (!b.isPlayer && b.a >= laNow + 2.0) {
       b.started = true;
     }
   }
