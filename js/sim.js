@@ -970,7 +970,12 @@ export function resolveCollisions(boats, t) {
       if (A.contactCD <= 0 && B.contactCD <= 0 && !A.finished && !B.finished) {
         const r = giveWayBoat(A, B, OBSTACLES);
         A.contactCD = 3; B.contactCD = 3;
-        ev.push({ type: 'contact', gw: r.gw, row: r.gw === A ? B : A, rule: r.rule, text: r.text });
+        const vxA = Math.sin(A.h) * A.v, vzA = -Math.cos(A.h) * A.v;
+        const vxB = Math.sin(B.h) * B.v, vzB = -Math.cos(B.h) * B.v;
+        const relV = Math.hypot(vxA - vxB, vzA - vzB);
+        const maxV = Math.max(Math.abs(A.v), Math.abs(B.v));
+        const impact = clamp((maxV * 0.55 + relV * 0.45) / (2.15 * SPEED_SCALE), 0.08, 1.25);
+        ev.push({ type: 'contact', gw: r.gw, row: r.gw === A ? B : A, rule: r.rule, text: r.text, impact });
       }
     }
     for (const o of OBSTACLES) {
@@ -979,8 +984,13 @@ export function resolveCollisions(boats, t) {
         const d = Math.hypot(dx, dz) || 0.001;
         const pp = o.r + CR - d;
         if (pp > 0) {
+          const preV = Math.abs(A.v);
           A.x += (dx / d) * pp; A.z += (dz / d) * pp; A.v *= 0.97;
-          if (A.touchCD <= 0 && !A.finished) { A.touchCD = 6; ev.push({ type: 'touch', boat: A, mark: o.key }); }
+          if (A.touchCD <= 0 && !A.finished) {
+            A.touchCD = 6;
+            const impact = clamp(preV / (2.10 * SPEED_SCALE), 0.10, 1.20);
+            ev.push({ type: 'touch', boat: A, mark: o.key, impact });
+          }
         }
       }
     }
