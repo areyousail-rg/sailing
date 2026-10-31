@@ -452,7 +452,12 @@ export function openReview(rec, o) {
   </div>`;
 
   const $ = (id) => root.querySelector('#' + id);
-  $('rvClose').onclick = () => { cancelAnimationFrame(raf); root.remove(); playBgm('result'); };
+  $('rvClose').onclick = () => {
+    cancelAnimationFrame(raf);
+    root.remove();
+    if (typeof o.onClose === 'function') o.onClose();
+    else playBgm(o.returnBgm || 'result');
+  };
 
   // 表
   const rows = $('rvRows');
@@ -777,4 +782,279 @@ export function openReview(rec, o) {
     }
   };
   render();
+}
+
+// 戦績モーダルから過去のレースの「振り返り」をいつでも開けるよう、Recorderデータを軽量JSONに直列化・復元するヘルパー
+export function serializeReviewSnapshot(rec, o) {
+  if (!rec || !rec.d || !rec.order) return null;
+  const r1 = (v) => (v == null || !isFinite(v) ? null : Math.round(v * 10) / 10);
+  const r2 = (v) => (v == null || !isFinite(v) ? null : Math.round(v * 100) / 100);
+  const boats = [];
+  for (const id of rec.order) {
+    const s = rec.d.get(id);
+    if (!s) continue;
+    const rawTrack = Array.isArray(s.track) ? s.track : [];
+    const track = [];
+    for (let i = 0; i < rawTrack.length; i++) {
+      if (i % 2 === 0 || i === rawTrack.length - 1) {
+        const p = rawTrack[i];
+        track.push([Math.round(p.t), r1(p.a ?? 0), r1(p.c ?? 0), r2(p.h ?? 0), r2(p.v ?? 0), p.rank ?? null]);
+      }
+    }
+    boats.push({
+      id: s.id,
+      color: s.color,
+      isPlayer: !!s.isPlayer,
+      sailNo: s.sailNo || '',
+      nat: s.nat || 'JPN',
+      name: o && o.nameOf && s.boat ? o.nameOf(s.boat) : (s.isPlayer ? 'あなた' : `${s.nat || 'JPN'} ${s.sailNo || ''}`),
+      dist: r1(s.dist || 0),
+      avgV: r2(s.avgV || 0),
+      avgUpV: r2(s.avgUpV),
+      avgDnV: r2(s.avgDnV),
+      avgRcV: r2(s.avgRcV),
+      avgUpAng: r2(s.avgUpAng),
+      avgUpCourseAng: r2(s.avgUpCourseAng),
+      avgUpShiftGain: r2(s.avgUpShiftGain || 0),
+      avgDnAng: r2(s.avgDnAng),
+      avgWindF: r2(s.avgWindF ?? 1),
+      startCross: r1(s.startCross),
+      startRank: s.startRank ?? null,
+      gunRank: s.gunRank ?? null,
+      tacks: s.tacks || 0,
+      gybes: s.gybes || 0,
+      blkT: r1(s.blkT || 0),
+      backT: r1(s.backT || 0),
+      lossBlk: r1(s.lossBlk || 0),
+      lossBack: r1(s.lossBack || 0),
+      lossWave: r1(s.lossWave || 0),
+      pinchT: r1(s.pinchT || 0),
+      lossPinch: r1(s.lossPinch || 0),
+      footT: r1(s.footT || 0),
+      lossFoot: r1(s.lossFoot || 0),
+      headerT: r1(s.headerT || 0),
+      overstandT: r1(s.overstandT || 0),
+      lossCourse: r1(s.lossCourse || 0),
+      distAngleDiff: r1(s.distAngleDiff || 0),
+      distShiftDiff: r1(s.distShiftDiff || 0),
+      distOverDiff: r1(s.distOverDiff || 0),
+      contacts: s.contacts || 0,
+      touches: s.touches || 0,
+      penalties: s.penalties || 0,
+      final: s.final ?? null,
+      status: s.status || '',
+      finishTime: r1(s.finishTime),
+      avgDrop: r2(s.avgDrop || 0),
+      lostTotal: r1(s.lostTotal || 0),
+      events: Array.isArray(s.events)
+        ? s.events.slice(0, 16).map((e) => ({ t: r1(e.t), dur: r1(e.dur), drop: r2(e.drop), lost: r1(e.lost), cause: e.cause, leg: e.leg }))
+        : [],
+      legMarks: Array.isArray(s.legMarks)
+        ? s.legMarks.map((m) => ({ leg: m.leg, t: r1(m.t), rank: m.rank }))
+        : [],
+      track,
+    });
+  }
+  const marksCopy = {};
+  if (o && o.marks) {
+    for (const k of Object.keys(o.marks)) {
+      marksCopy[k] = { a: r1(o.marks[k].a), c: r1(o.marks[k].c) };
+    }
+  }
+  return {
+    v: 1,
+    endT: Math.round(rec.endT || 180),
+    n: rec.n || boats.length,
+    order: rec.order,
+    meta: {
+      sea: rec.meta?.sea || '',
+      tide: rec.meta?.tide || '',
+      courseMode: o?.courseMode || rec.meta?.courseMode || 'trapezoid',
+      baseWindKt: rec.meta?.baseWindKt || 9,
+      windDeg: rec.meta?.windDeg ?? 15,
+      sideBiasDesc: rec.meta?.sideBiasDesc || '',
+    },
+    windSummary: rec.windSummary || { blowSideTxt: '', shifts: [] },
+    playerId: o?.playerId ?? 0,
+    marks: marksCopy,
+    legs: Array.isArray(o?.legs) ? o.legs.map((l) => ({ id: l.id, name: l.name, type: l.type })) : [],
+    speedScale: o?.speedScale || 1.25,
+    kt: o?.kt || 0.5144,
+    boats,
+  };
+}
+
+export function deserializeReviewSnapshot(snap, fallbackOpts = {}) {
+  if (!snap || !Array.isArray(snap.boats)) return null;
+  const d = new Map();
+  for (const b of snap.boats) {
+    const track = Array.isArray(b.track)
+      ? b.track.map((p) => (Array.isArray(p) ? { t: p[0], a: p[1], c: p[2], h: p[3], v: p[4], rank: p[5] } : p))
+      : [];
+    const entry = {
+      ...b,
+      boat: { id: b.id, isPlayer: b.isPlayer, sailNo: b.sailNo, nat: b.nat, name: b.name },
+      track,
+    };
+    d.set(b.id, entry);
+  }
+  const rec = {
+    endT: snap.endT || 180,
+    n: snap.n || snap.boats.length,
+    order: Array.isArray(snap.order) ? snap.order : snap.boats.map((b) => b.id),
+    meta: snap.meta || {},
+    windSummary: snap.windSummary || { blowSideTxt: '', shifts: [] },
+    d,
+  };
+  const o = {
+    nameOf: (boat) => (boat && boat.name) || (boat && boat.isPlayer ? 'あなた' : `${boat?.nat || 'JPN'} ${boat?.sailNo || ''}`),
+    playerId: snap.playerId ?? 0,
+    marks: (snap.marks && Object.keys(snap.marks).length > 0) ? snap.marks : fallbackOpts.marks,
+    courseMode: snap.meta?.courseMode || fallbackOpts.courseMode || 'trapezoid',
+    legs: (Array.isArray(snap.legs) && snap.legs.length > 0) ? snap.legs : fallbackOpts.legs,
+    speedScale: snap.speedScale || fallbackOpts.speedScale || 1.25,
+    kt: snap.kt || fallbackOpts.kt || 0.5144,
+    returnBgm: fallbackOpts.returnBgm || 'menu_hakkeijima',
+    onClose: fallbackOpts.onClose,
+  };
+  return { rec, o };
+}
+
+// 過去の戦績レコード(詳細スナップショット保存前の履歴や上限超過分)からも振り返り画面を開けるフォールバック生成
+export function buildFallbackReviewFromRecord(r, fallbackOpts = {}) {
+  const isUpwind = String(r.course || '').includes('上マーク');
+  const courseMode = isUpwind ? 'upwind' : 'trapezoid';
+  const fleet = r.fleet || 16;
+  const pRank = typeof r.rank === 'number' && r.rank >= 1 ? r.rank : Math.ceil(fleet / 2);
+  const speedScale = fallbackOpts.speedScale || 1.25;
+  const kt = fallbackOpts.kt || 0.5144;
+  const pKt = parseFloat(r.avgKt) || 4.65;
+  const pV = pKt * speedScale * kt;
+  const parseTimeSec = (str) => {
+    if (!str || typeof str !== 'string' || !str.includes(':')) return isUpwind ? 175 : 320;
+    const [m, s] = str.split(':');
+    return (parseInt(m, 10) || 0) * 60 + (parseFloat(s) || 0);
+  };
+  const endT = Math.max(90, Math.round(parseTimeSec(r.time)));
+  const marks = isUpwind
+    ? { pin: { a: 0, c: -50 }, com: { a: 0, c: 50 }, m1: { a: 600, c: 0 }, fcom: { a: 600, c: 28 }, fm: { a: 600, c: 0 } }
+    : { pin: { a: 0, c: -50 }, com: { a: 0, c: 50 }, m1: { a: 300, c: 0 }, m1a: { a: 300, c: -30 }, m2: { a: 215, c: -110 }, m3: { a: 40, c: -110 }, gL: { a: 40, c: -22 }, gR: { a: 40, c: 22 }, fcom: { a: -110, c: -135 }, fm: { a: -110, c: -168 } };
+  const legs = isUpwind
+    ? [{ id: 0, name: 'F', type: 'finish' }]
+    : [
+        { id: 0, name: '1', type: 'mark' },
+        { id: 1, name: '1a', type: 'mark' },
+        { id: 2, name: '4', type: 'gate' },
+        { id: 3, name: '1', type: 'mark' },
+        { id: 4, name: '2', type: 'mark' },
+        { id: 5, name: '3', type: 'mark' },
+        { id: 6, name: 'F', type: 'finish' },
+      ];
+  const d = new Map();
+  const order = [];
+  const palette = [0xff5a1f, 0x38bdf8, 0x22c55e, 0xeab308, 0xa855f7, 0xec4899, 0x14b8a6, 0xf97316];
+  for (let pos = 1; pos <= fleet; pos++) {
+    const isP = pos === pRank;
+    const id = isP ? 0 : pos;
+    order.push(id);
+    const rankDiff = pos - pRank;
+    const bV = Math.max(1.8, pV * (1 - rankDiff * 0.012));
+    const baseDist = isUpwind ? 860 : 1480;
+    const dist = Math.round(baseDist + (pos - 1) * 9.5);
+    const waypoints = isUpwind
+      ? [[0, 12, -18], [endT * 0.45, 290, -52 + (pos % 5) * 14], [endT, 600, 10]]
+      : [
+          [0, 0, 18 - (pos % 7) * 8],
+          [endT * 0.24, 300, 0],
+          [endT * 0.28, 300, -30],
+          [endT * 0.48, 40, pos % 2 === 0 ? -18 : 18],
+          [endT * 0.72, 300, 0],
+          [endT * 0.82, 215, -110],
+          [endT * 0.92, 40, -110],
+          [endT, -110, -150],
+        ];
+    const track = [];
+    for (let t = 0; t <= endT; t += 4) {
+      let w0 = waypoints[0], w1 = waypoints[waypoints.length - 1];
+      for (let k = 0; k < waypoints.length - 1; k++) {
+        if (t >= waypoints[k][0] && t <= waypoints[k + 1][0]) {
+          w0 = waypoints[k]; w1 = waypoints[k + 1]; break;
+        }
+      }
+      const u = w1[0] > w0[0] ? (t - w0[0]) / (w1[0] - w0[0]) : 1;
+      const a = w0[1] + (w1[1] - w0[1]) * u;
+      const c = w0[2] + (w1[2] - w0[2]) * u + Math.sin(t * 0.08 + pos) * 6;
+      track.push({ t, a, c, h: 0, v: bV, rank: pos });
+    }
+    const boatObj = { id, isPlayer: isP, sailNo: String(30000 + pos * 113), nat: isP ? 'JPN' : 'JPN', name: isP ? 'あなた' : `CP ${30000 + pos * 113}` };
+    d.set(id, {
+      id,
+      color: isP ? 0xff5a1f : palette[pos % palette.length],
+      isPlayer: isP,
+      sailNo: boatObj.sailNo,
+      nat: boatObj.nat,
+      boat: boatObj,
+      track,
+      dist,
+      avgV: bV,
+      avgUpV: bV * 0.94,
+      avgDnV: isUpwind ? null : bV * 1.08,
+      avgRcV: isUpwind ? null : bV * 1.12,
+      avgUpAng: 41.8 + (pos - 1) * 0.18,
+      avgUpCourseAng: 41.2 + (pos - 1) * 0.22,
+      avgUpShiftGain: 0.6,
+      avgDnAng: isUpwind ? null : 144.0 - (pos - 1) * 0.25,
+      avgWindF: 1.02 - (pos - 1) * 0.004,
+      startCross: 1.8 + (pos - 1) * 0.45,
+      startRank: pos,
+      gunRank: pos,
+      tacks: isUpwind ? 4 + (pos % 3) : 6 + (pos % 4),
+      gybes: isUpwind ? 0 : 3 + (pos % 2),
+      blkT: Math.max(0, (pos - 1) * 2.2),
+      backT: Math.max(0, (pos - 2) * 1.1),
+      lossBlk: Math.max(0, (pos - 1) * 1.6),
+      lossBack: Math.max(0, (pos - 2) * 0.8),
+      lossWave: 4.2,
+      pinchT: Math.max(0, (pos - 2) * 1.8),
+      lossPinch: Math.max(0, (pos - 2) * 1.4),
+      footT: Math.max(0, (pos - 3) * 1.5),
+      lossFoot: Math.max(0, (pos - 3) * 1.1),
+      headerT: Math.max(0, (pos - 1) * 2.5),
+      overstandT: Math.max(0, (pos - 2) * 1.2),
+      lossCourse: Math.max(0, (pos - 1) * 2.1),
+      distAngleDiff: (pos - 1) * 3.2,
+      distShiftDiff: (pos - 1) * 4.5,
+      distOverDiff: (pos - 1) * 1.8,
+      contacts: 0,
+      touches: 0,
+      penalties: 0,
+      final: r.status === 'DSQ' && isP ? null : pos,
+      status: isP && r.status !== 'FIN' ? r.status : '',
+      finishTime: endT + (pos - pRank) * 3.2,
+      avgDrop: 0.18,
+      lostTotal: 8 + pos * 1.8,
+      events: [],
+      legMarks: legs.map((lg, li) => ({ leg: lg.id, t: Math.round(((li + 1) / legs.length) * endT), rank: pos })),
+    });
+  }
+  const rec = {
+    endT,
+    n: fleet,
+    order,
+    meta: { sea: `${r.venue || '八景島'} (${r.wind || '9kt'})`, tide: r.date || '', courseMode },
+    windSummary: { blowSideTxt: `戦績記録 (${r.date || ''}) — ${r.venue || ''} / ${r.course || ''} / 風況 ${r.wind || ''}`, shifts: [] },
+    d,
+  };
+  const o = {
+    nameOf: (b) => b.name || (b.isPlayer ? 'あなた' : b.sailNo),
+    playerId: 0,
+    marks,
+    courseMode,
+    legs,
+    speedScale,
+    kt,
+    returnBgm: fallbackOpts.returnBgm || 'menu_hakkeijima',
+    onClose: fallbackOpts.onClose,
+  };
+  return { rec, o };
 }
