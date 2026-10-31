@@ -32,10 +32,12 @@ export class Recorder {
         dnSpdSum: 0, dnSpdT: 0,
         rcSpdSum: 0, rcSpdT: 0,
         upAngSum: 0, upAngT: 0, upAngRawSum: 0, upAngRawT: 0,
+        upCourseAngSum: 0, upCourseAngT: 0, upShiftGainSum: 0, upShiftGainT: 0,
         dnAngSum: 0, dnAngT: 0, dnAngRawSum: 0, dnAngRawT: 0,
         pinchT: 0, lossPinch: 0, footT: 0, lossFoot: 0,
         windFSum: 0, windFT: 0, lowBlowT: 0,
         headerT: 0, overstandT: 0, lossCourse: 0, vmgSum: 0,
+        distAngleDiff: 0, distShiftDiff: 0, distOverDiff: 0,
         startCross: null, startRank: null, gunRank: null,
         ref: Math.abs(b.v), ev: null, events: [],
         tacks: 0, gybes: 0, lastTack: b.tack, stableTack: b.tack, pendT: null, pendKind: 'tack',
@@ -97,7 +99,8 @@ export class Recorder {
       const s = this.d.get(b.id); if (!s) continue;
       const active = t >= 0 && !s.done && !b.dsq;
       if (active) {
-        s.dist += Math.hypot(b.x - s.lx, b.z - s.lz);
+        const ds = Math.hypot(b.x - s.lx, b.z - s.lz);
+        s.dist += ds;
         const v = Math.abs(b.v);
         s.spdSum += v * dt; s.spdT += dt;
 
@@ -107,12 +110,20 @@ export class Recorder {
         const isUpLeg = isUpwindCourse ? true : (b.leg === 0 || b.leg === 3);
         const isDnLeg = isUpwindCourse ? false : (b.leg === 2 || b.leg === 5);
         const isRcLeg = isUpwindCourse ? false : (b.leg === 1 || b.leg === 4 || b.leg === 6);
+        const curShift = this.meta.shiftAt ? this.meta.shiftAt(t) : 0;
 
         if (isUpLeg) {
           s.upSpdSum += v * dt; s.upSpdT += dt;
           s.upAngRawSum += twaDeg * dt; s.upAngRawT += dt;
           if (!b.maneuver && !b.tacking && !b.penalty && twaDeg >= 24 && twaDeg <= 72) {
             s.upAngSum += twaDeg * dt; s.upAngT += dt;
+            const liftRad = b.tack * curShift;
+            const liftDeg = (liftRad * 180) / Math.PI;
+            s.upShiftGainSum += liftDeg * dt; s.upShiftGainT += dt;
+            s.upCourseAngSum += (twaDeg - liftDeg) * dt; s.upCourseAngT += dt;
+            const cosOpt = Math.cos((42 * Math.PI) / 180);
+            s.distAngleDiff += ds * (1 - Math.cos(b.twa) / cosOpt);
+            s.distShiftDiff += ds * ((Math.cos(b.twa) - Math.cos(Math.max(0.08, b.twa - liftRad))) / cosOpt);
           }
           // 1) 上しすぎ(ピンチング < 39.8°)による艇速低下の積算
           if (!b.maneuver && !b.tacking && !b.penalty && twaDeg < 39.8) {
@@ -132,6 +143,11 @@ export class Recorder {
           s.dnAngRawSum += effTwaDeg * dt; s.dnAngRawT += dt;
           if (!b.maneuver && !b.penalty && twaDeg >= 110) {
             s.dnAngSum += effTwaDeg * dt; s.dnAngT += dt;
+            const liftRad = -b.tack * curShift;
+            const cosOptDn = Math.cos((32 * Math.PI) / 180);
+            const offDnRad = Math.max(0.05, Math.PI - b.twa);
+            s.distAngleDiff += ds * (1 - Math.cos(offDnRad) / cosOptDn);
+            s.distShiftDiff += ds * ((Math.cos(offDnRad) - Math.cos(Math.max(0.05, offDnRad - liftRad))) / cosOptDn);
           }
           if (!b.maneuver && !b.penalty && twaDeg < 134) {
             s.pinchT += dt;
@@ -156,7 +172,6 @@ export class Recorder {
 
         // 4) コース要因(シフト逆走・レイラインオーバー・大回り)の記録
         if (!b.maneuver && !b.tacking && !b.penalty) {
-          const curShift = this.meta.shiftAt ? this.meta.shiftAt(t) : 0;
           // クローズでは windFrom = W0 + shift のとき、tack=+1(スタボ)は右シフト(shift>0)でリフト・左シフト(shift<0)でヘッダー
           if (isUpLeg) {
             const tackGain = b.tack * curShift; // < 0 ならヘッダー(不利タック)を走っている
@@ -171,6 +186,7 @@ export class Recorder {
             if (Math.abs(b.c ?? 0) > layC) {
               s.overstandT += dt;
               s.lossCourse += v * 0.55 * dt;
+              s.distOverDiff += ds * 0.55;
             }
           } else if (isDnLeg) {
             const tackGain = -b.tack * curShift;
@@ -183,6 +199,7 @@ export class Recorder {
             if (Math.abs(b.c ?? 0) > layC) {
               s.overstandT += dt;
               s.lossCourse += v * 0.48 * dt;
+              s.distOverDiff += ds * 0.48;
             }
           }
         }
@@ -265,6 +282,8 @@ export class Recorder {
       s.avgDnV = s.dnSpdT > 0 ? s.dnSpdSum / s.dnSpdT : null;
       s.avgRcV = s.rcSpdT > 0 ? s.rcSpdSum / s.rcSpdT : null;
       s.avgUpAng = s.upAngT > 0 ? s.upAngSum / s.upAngT : (s.upAngRawT > 0 ? s.upAngRawSum / s.upAngRawT : null);
+      s.avgUpCourseAng = s.upCourseAngT > 0 ? s.upCourseAngSum / s.upCourseAngT : s.avgUpAng;
+      s.avgUpShiftGain = s.upShiftGainT > 0 ? s.upShiftGainSum / s.upShiftGainT : 0;
       s.avgDnAng = s.dnAngT > 0 ? s.dnAngSum / s.dnAngT : (s.dnAngRawT > 0 ? s.dnAngRawSum / s.dnAngRawT : null);
       s.avgWindF = s.windFT > 0 ? s.windFSum / s.windFT : 1.0;
       s.lossEv = {}; for (const c of CAUSES) s.lossEv[c] = { n: 0, lost: 0 };
@@ -401,7 +420,7 @@ export function openReview(rec, o) {
 
   root.innerHTML = `
   <div class="rvHead">
-    <div class="rvTitle">振り返り <span class="rvSub">${rec.meta.sea ? '海況: ' + rec.meta.sea : ''}</span></div>
+    <div class="rvTitle">振り返り <span class="rvSub">${rec.meta.sea ? '海況: ' + rec.meta.sea : ''}${rec.meta.tide ? ' ｜ 潮汐: ' + rec.meta.tide : ''}</span></div>
     <button type="button" class="rvClose" id="rvClose">閉じる</button>
   </div>
   <div class="rvBody">
@@ -428,7 +447,7 @@ export function openReview(rec, o) {
   <div class="rvBlock rvTableWrap">
     <div class="rvLbl">全艇データ</div>
     <table class="rvTable"><thead><tr>
-      <th>順位</th><th>艇</th><th>平均艇速</th><th>上り艇速</th><th>下り艇速</th><th>リーチング艇速</th><th>上り角度</th><th>下り角度</th><th>走行距離</th><th>スタート</th><th>タック数</th><th>ジャイブ数</th><th>減速</th><th>風の影響</th><th>接触</th>
+      <th>順位</th><th>艇</th><th>平均艇速</th><th>上り艇速</th><th>下り艇速</th><th>リーチング艇速</th><th>上り対風角</th><th>上り有効角</th><th>下り角度</th><th>走行距離</th><th>スタート</th><th>タック数</th><th>ジャイブ数</th><th>減速</th><th>風の影響</th><th>接触</th>
     </tr></thead><tbody id="rvRows"></tbody></table>
   </div>`;
 
@@ -447,6 +466,7 @@ export function openReview(rec, o) {
       <td class="rvNum">${fmtKt2(s.avgDnV)}</td>
       <td class="rvNum">${fmtKt2(s.avgRcV)}</td>
       <td class="rvNum">${fmtAng2(s.avgUpAng)}</td>
+      <td class="rvNum">${fmtAng2(s.avgUpCourseAng)}</td>
       <td class="rvNum">${fmtAng2(s.avgDnAng)}</td>
       <td class="rvNum">${Math.round(s.dist)}m</td>
       <td class="rvNum">${s.startRank ?? '−'}位${s.startCross !== null ? ` / ${f1(s.startCross)}s` : ''}</td>
@@ -668,6 +688,29 @@ export function openReview(rec, o) {
 
     const ws = rec.windSummary || { blowSideTxt: '記録なし', shifts: [] };
 
+    // 走行距離の要因判別 (①登り角度TWA vs ②コース・シフト vs ③レイライン超過)
+    const fmtM = (m) => `${m >= 0 ? '+' : '−'}${Math.abs(Math.round(m))}m`;
+    const dTotalM = Math.round(s.dist - ref.dist);
+    const dAngM = Math.round((s.distAngleDiff || 0) - (ref.distAngleDiff || 0));
+    const dShiftM = Math.round((s.distShiftDiff || 0) - (ref.distShiftDiff || 0));
+    const dOverM = Math.round((s.distOverDiff || 0) - (ref.distOverDiff || 0));
+    let distVerdict = '';
+    if (dTotalM > 8) {
+      if (dShiftM + dOverM > dAngM + 4) {
+        distVerdict = `【判別】走行距離が長い主因は「登り角度(TWA)」ではなく「コース取り・シフト(ヘッダー逆走 ${fmtM(dShiftM)} / レイライン超過 ${fmtM(dOverM)})」です。`;
+      } else if (dAngM > dShiftM + dOverM + 4) {
+        distVerdict = `【判別】走行距離が長い主因は「登り・下り角度の広さ(落としすぎ ${fmtM(dAngM)})」です。`;
+      } else {
+        distVerdict = `【判別】走行距離の増加(${fmtM(dTotalM)})は「角度の広さ(${fmtM(dAngM)})」と「シフト・コース取り(${fmtM(dShiftM + dOverM)})」の両方が影響しています。`;
+      }
+    } else if (dTotalM < -8 && s.pinchT > ref.pinchT + 3) {
+      distVerdict = `【判別】走行距離は短い(${fmtM(dTotalM)})ですが、「上しすぎ(ピンチング ${Math.round(s.pinchT)}秒)」で角度を詰めすぎて艇速を失っています。`;
+    } else if (dShiftM < -5) {
+      distVerdict = `【判別】リフト(有利シフト)を捉えて対マーク有効角を詰めたことで走行距離を ${fmtM(dShiftM)} 短縮できています。`;
+    } else {
+      distVerdict = `【判別】比較艇との走行距離差は小さく(${fmtM(dTotalM)})、角度・コースともに標準的です。`;
+    }
+
     $('rvAnalysis').innerHTML = `
       <div class="rvLbl">分析: ${name} ${s.status || s.final + '位'}</div>
       <p class="rvSummary">${summary}</p>
@@ -676,9 +719,17 @@ export function openReview(rec, o) {
         const isHl = isWinner ? (p === best && p.v < -0.5) : (p === worst && p.v > 1.5);
         return `<tr class="${isHl ? 'hl' : ''}"><th>${p.k}</th><td class="rvNum ${p.v > 0 ? 'bad' : 'good'}">${sec(p.v)}</td></tr><tr class="rvDetail"><td colspan="2">${p.d}</td></tr>`;
       }).join('')}</table>
+      <div class="rvSubLbl">走行距離の要因判別 (角度 vs コース・シフト)</div>
+      <p class="rvNote">${distVerdict}</p>
+      <table class="rvMini">
+        <tr><th>総走行距離の差</th><td class="rvNum ${dTotalM > 5 ? 'bad' : dTotalM < -5 ? 'good' : ''}">${Math.round(s.dist)}m <span class="rvDim">(比較艇 ${Math.round(ref.dist)}m / 差 ${fmtM(dTotalM)})</span></td></tr>
+        <tr><th>① 登り・下り対風角(TWA)要因</th><td class="rvNum ${dAngM > 5 ? 'bad' : dAngM < -5 ? 'good' : ''}">${fmtM(dAngM)} <span class="rvDim">(上り対風角 ${fmtAng2(s.avgUpAng)} vs ${fmtAng2(ref.avgUpAng)})</span></td></tr>
+        <tr><th>② 風の振れ(リフト/ヘッダー)要因</th><td class="rvNum ${dShiftM > 5 ? 'bad' : dShiftM < -5 ? 'good' : ''}">${fmtM(dShiftM)} <span class="rvDim">(対マーク有効角 ${fmtAng2(s.avgUpCourseAng)} vs ${fmtAng2(ref.avgUpCourseAng)})</span></td></tr>
+        <tr><th>③ レイライン超過・大回り要因</th><td class="rvNum ${dOverM > 5 ? 'bad' : ''}">${fmtM(dOverM)} <span class="rvDim">(超過 ${Math.round(s.overstandT)}秒 vs ${Math.round(ref.overstandT)}秒)</span></td></tr>
+      </table>
       <div class="rvSubLbl">艇速・平均角度・マニューバー内訳 (比較艇: ${refName})</div>
       <table class="rvMini">
-        <tr><th>上り平均艇速 / 平均角度</th><td class="rvNum">${fmtKt2(s.avgUpV)} / ${fmtAng2(s.avgUpAng)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgUpV)} / ${fmtAng2(ref.avgUpAng)})</span></td></tr>
+        <tr><th>上り平均艇速 / 対風角(有効角)</th><td class="rvNum">${fmtKt2(s.avgUpV)} / ${fmtAng2(s.avgUpAng)}(${fmtAng2(s.avgUpCourseAng)}) <span class="rvDim">(比較艇 ${fmtKt2(ref.avgUpV)} / ${fmtAng2(ref.avgUpAng)})</span></td></tr>
         <tr><th>下り平均艇速 / 平均角度</th><td class="rvNum">${fmtKt2(s.avgDnV)} / ${fmtAng2(s.avgDnAng)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgDnV)} / ${fmtAng2(ref.avgDnAng)})</span></td></tr>
         <tr><th>リーチング平均艇速</th><td class="rvNum">${fmtKt2(s.avgRcV)} <span class="rvDim">(比較艇 ${fmtKt2(ref.avgRcV)})</span></td></tr>
         <tr><th>タック数 / ジャイブ数</th><td class="rvNum">タック ${s.tacks}回 / ジャイブ ${s.gybes}回 <span class="rvDim">(比較艇 ${ref.tacks}回 / ${ref.gybes}回)</span></td></tr>
