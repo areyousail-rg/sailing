@@ -661,17 +661,6 @@ export function poleClank(up = true, vol = 0.88) {
   gf.gain.exponentialRampToValueAtTime(0.0001, tf + 0.35);
   sf.connect(bpf); bpf.connect(gf); gf.connect(master);
   sf.start(tf, Math.random() * 1.0); sf.stop(tf + 0.37);
-
-  // セールが風を受け止める低い「ボフッ」という空気圧音
-  const bf = ctx.createOscillator(), bfg = ctx.createGain();
-  bf.type = 'sine';
-  bf.frequency.setValueAtTime(up ? 108 : 86, tf + 0.018);
-  bf.frequency.exponentialRampToValueAtTime(42, tf + 0.24);
-  bfg.gain.setValueAtTime(0.0001, tf + 0.018);
-  bfg.gain.linearRampToValueAtTime((up ? 0.42 : 0.24) * vol, tf + 0.048);
-  bfg.gain.exponentialRampToValueAtTime(0.0001, tf + 0.26);
-  bf.connect(bfg); bfg.connect(master);
-  bf.start(tf + 0.018); bf.stop(tf + 0.28);
 }
 
 // オリエンテーション(スマブラ風 HOW TO PLAY)のステップ切り替え効果音: シャープな風切りスラッシュ＋重厚なインパクト音
