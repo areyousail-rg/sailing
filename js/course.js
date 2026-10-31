@@ -141,11 +141,11 @@ export function updateProgress(b, t) {
   // スタートライン通過判定 (ピン c=-LINE_HALF と本部船 c=+LINE_HALF の間を風下から風上へ切る)
   if (!b.ocs && !b.started) {
     const laNow = lineA(b.c), laPrev = lineA(prevC);
-    const inSpan = Math.abs(b.c) <= LINE_HALF + 3.5 || Math.abs(prevC) <= LINE_HALF + 3.5;
-    if (inSpan && b.a >= laNow - 0.4 && prevA <= laPrev + 4.0) {
+    const inSpan = Math.abs(b.c) <= LINE_HALF + 5.5 || Math.abs(prevC) <= LINE_HALF + 5.5;
+    if (inSpan && b.a >= laNow - 0.5 && (prevA <= laPrev + 8.0 || t < 20)) {
       b.started = true;
-    } else if (t < 1.5 && Math.abs(b.c) <= LINE_HALF + 2.5 && b.a <= laNow + 0.5 && b.a >= laNow - 25) {
-      // 号砲直後にライン内側からスタートする場合もライン通過でstartedになるよう待機
+    } else if (!b.isPlayer && b.a >= laNow + 12.0 && Math.abs(b.c) <= LINE_HALF + 18) {
+      b.started = true;
     }
   }
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
@@ -176,8 +176,8 @@ export function updateProgress(b, t) {
       else if (!sideOk || !v.passed) ev.push({ type: 'wrongSide', leg: L });
     }
   } else if (L.type === 'gate') {
-    const crossedGate = prevA > L.center.a + 2.2 && b.a <= L.center.a + 2.2 && Math.abs(b.c) < 32;
-    const inGateBottom = b.a <= L.center.a + 1.5 && b.a >= L.center.a - 9.0 && Math.abs(b.c) < 26.5;
+    const crossedGate = prevA > L.center.a + 3.0 && b.a <= L.center.a + 3.0 && Math.abs(b.c) < 35;
+    const inGateBottom = b.a <= L.center.a + 2.5 && b.a >= L.center.a - 14.0 && Math.abs(b.c) < 32;
     if (crossedGate || inGateBottom) { b.leg++; ev.push({ type: 'gate', leg: L }); }
   } else if (L.type === 'finish') {
     const F = MARKS.fcom, G = MARKS.fm;
