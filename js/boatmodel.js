@@ -1019,29 +1019,29 @@ export class BoatModel {
       rope([[0, 0.615, 0.295], [0, 0.28, 0.046], [0, 0.045, 0.062]], 0xf8fafc, 0.0032)
     );
 
-    // 後部メインシートの三角形ブライドル(実艇写真4枚目準拠):
-    // 左右スターンデッキ金具(z=1.62, x=±0.44)と頂点ブロック(aftBridleBlk)で三角形を構成し、三角形部分のシートはやや細め(poleTipSegGeo: r=0.0036)で再現
+    // 後部メインシートの三角形ブライドル(実艇写真1・3枚目準拠):
+    // 左右スターンデッキ金具(z=1.62, x=±0.44)と頂点(aftBridleBlk)で三角形を構成し、三角形部分のシートはやや細め(poleTipSegGeo: r=0.0036)で再現
     for (const sg of [-1, 1]) {
       const bx = sg * 0.44, bz = 1.62, by = deckY(bz, bx);
       const padEye = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.014, 0.034), M.steel);
       padEye.position.set(bx, by + 0.007, bz);
       this.body.add(padEye);
     }
-    this.aftBridleBlk = block(0.017, 0x1e293b);
-    this.aftBridleBlk.position.set(0, FLOOR_Y + 0.48, 1.62);
+    this.aftBridleBlk = block(0.011, 0x1e293b);
+    this.aftBridleBlk.position.set(0, 1.27, 1.62);
     this.body.add(this.aftBridleBlk);
-    // 三角形ブライドル用のやや細めのシート(左脚・右脚・底辺クロスラインの3本)
+    // 三角形ブライドル用のやや細めのシート(左脚・右脚・スターンデッキ上のベースラインの3本)
     this.bridleTriSegs = [];
-    const bridleMat = ropeMat(0x94a3b8);
+    const bridleMat = ropeMat(0x334155);
     for (let i = 0; i < 3; i++) {
       const bSeg = new THREE.Mesh(poleTipSegGeo, bridleMat);
       this.body.add(bSeg);
       this.bridleTriSegs.push(bSeg);
     }
 
-    // メインシート(5セグメント: 三角形頂点→ブーム後端ブロック + ブーム後端ブロック→コックピット斜め引き込み + ブーム下 + センターブロック降り + スキッパー手元)
+    // メインシート(4セグメント: 三角形頂点→ブーム後端ブロック + ブーム下(後端→中央ブロック) + センターブロックへの立ち下がり + スキッパー手元)
     this.mainSheetSegs = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       const seg = new THREE.Mesh(sheetSegGeo, mainSheetMat);
       this.body.add(seg);
       this.mainSheetSegs.push(seg);
@@ -1872,12 +1872,12 @@ export class BoatModel {
     if (this.bowSprayMesh.instanceColor) this.bowSprayMesh.instanceColor.needsUpdate = true;
   }
 
-  // メインシート ＆ ブーム後方の三角形ブライドル(実艇写真4枚目・1枚目準拠):
-  // ・スターンデッキ両端(x=±0.44, z=1.62)と頂点ブロック(aftBridleBlk)の間を「やや細めのシート(bridleTriSegs)」で三角形に結び、
-  //   ブームの振れに応じて三角形の頂点がブーム後端ブロック(bz=2.52)側へ少し引かれる構造を再現
-  // ・三角形の頂点ブロックからブーム後端ブロック(bz=2.52)へメインシートが立ち上がり、そこから斜め前方(コックピット)とブーム中央ブロック(bz=1.22)へ分岐する
+  // メインシート ＆ ブーム後方の三角形ブライドル(実艇写真1・2・3枚目準拠):
+  // ・クローズ時(メインシートを引き込んだ際)は、ブライドルの頂点がブーム後端ブロック(bz=2.52)直下まで高く引き上げられてきれいな三角形になり(画像1枚目)、
+  //   メインシートを出している時は、その三角形がスターンデッキ近くの下の方になり、頂点から1本のメインシートがブーム後端ブロックへ伸びる(画像3枚目)
+  // ・ブーム後端ブロックからはブーム下に沿って中央ブロック(bz=1.22)へ走り、センターケース後端のラチェットブロックを経由してスキッパーの手元へ戻る(画像2・3枚目)
   syncMainSheet(sgn, lean, sideAbs) {
-    if (!this.mainSheetSegs || this.mainSheetSegs.length < 5) return;
+    if (!this.mainSheetSegs || this.mainSheetSegs.length < 4) return;
     const pm = this.boomRotY !== undefined ? this.boomRotY : -sgn * this.boomA;
     const sinP = Math.sin(pm), cosP = Math.cos(pm);
     const bzAft = 2.52, bzMid = 1.22;
@@ -1885,38 +1885,37 @@ export class BoatModel {
     const boomAftY = 1.35;
     const boomAftZ = -0.9 + bzAft * cosP;
 
-    // 三角形ブライドルの頂点座標: ブーム後端の位置へわずかに引かれる
-    const apexX = clamp(boomAftX * 0.24, -0.22, 0.22);
-    const apexY = FLOOR_Y + 0.48;
-    const apexZ = 1.62;
+    // メインシートの出し具合(easeF: 0=クローズ引き込み時 → 1=メインシートを出している時)
+    const easeF = clamp((this.boomA - 0.12) / 0.58, 0, 1);
+    const apexX = clamp(boomAftX * (0.92 - 0.56 * easeF), -0.32, 0.32);
+    const apexY = 1.27 - 0.62 * easeF;
+    const apexZ = 1.62 + (boomAftZ - 1.62) * (0.90 - 0.58 * easeF);
     if (this.aftBridleBlk) {
       this.aftBridleBlk.position.set(apexX, apexY, apexZ);
     }
     if (this.bridleTriSegs && this.bridleTriSegs.length >= 3) {
-      const byDeck = deckY(1.62, 0.44) + 0.012;
+      const byDeck = deckY(1.62, 0.44) + 0.008;
       _p0.set(-0.44, byDeck, 1.62);
       _p1.set(0.44, byDeck, 1.62);
-      _p2.set(apexX, apexY - 0.008, apexZ);
-      placeSeg(this.bridleTriSegs[0], _p0, _p2); // 左デッキ金具 → 三角形頂点
-      placeSeg(this.bridleTriSegs[1], _p1, _p2); // 右デッキ金具 → 三角形頂点
-      placeSeg(this.bridleTriSegs[2], _p0, _p1); // デッキ間のベースライン
+      _p2.set(apexX, apexY, apexZ);
+      placeSeg(this.bridleTriSegs[0], _p0, _p2); // 左スターンデッキ金具 → 三角形頂点
+      placeSeg(this.bridleTriSegs[1], _p1, _p2); // 右スターンデッキ金具 → 三角形頂点
+      placeSeg(this.bridleTriSegs[2], _p0, _p1); // スターンデッキ上のベースライン
     }
 
-    // seg[0]: 三角形ブライドル頂点ブロック → ブーム後端ブロック(bz=2.52)
-    _p0.set(apexX, apexY + 0.008, apexZ);
+    // seg[0]: 三角形ブライドル頂点 → ブーム後端ブロック(bz=2.52)
+    _p0.set(apexX, apexY, apexZ);
     _p1.set(boomAftX, boomAftY, boomAftZ);
     placeSeg(this.mainSheetSegs[0], _p0, _p1);
-    // seg[1]: ブーム後端ブロック(bz=2.52) → スキッパー手元/コックピット側へ斜めに降りるシート(画像4枚目の三角形シルエットを構成)
-    _p5.set(this.side * (0.30 + lean * 0.20), 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12, 0.72);
-    placeSeg(this.mainSheetSegs[1], _p1, _p5);
-    // seg[2]: ブーム後端ブロック → ブーム中央ブロック(bz=1.22)
+    // seg[1]: ブーム後端ブロック(bz=2.52) → ブーム中央ブロック(bz=1.22)
     _p3.set(bzMid * sinP, 1.35, -0.9 + bzMid * cosP);
-    placeSeg(this.mainSheetSegs[2], _p1, _p3);
-    // seg[3]: ブーム中央ブロック → センターケース後端ラチェットブロック(0, FLOOR_Y + 0.16, 0.10)
+    placeSeg(this.mainSheetSegs[1], _p1, _p3);
+    // seg[2]: ブーム中央ブロック → センターケース後端ラチェットブロック(0, FLOOR_Y + 0.16, 0.10)
     _p4.set(0, FLOOR_Y + 0.16, 0.10);
-    placeSeg(this.mainSheetSegs[3], _p3, _p4);
-    // seg[4]: ラチェットブロック → スキッパーの前手
-    placeSeg(this.mainSheetSegs[4], _p4, _p5);
+    placeSeg(this.mainSheetSegs[2], _p3, _p4);
+    // seg[3]: ラチェットブロック → スキッパーの前手
+    _p5.set(this.side * (0.30 + lean * 0.20), 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12, 0.72);
+    placeSeg(this.mainSheetSegs[3], _p4, _p5);
   }
 
   // 走る索:
