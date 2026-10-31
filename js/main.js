@@ -1,7 +1,7 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
 import { Recorder, openReview } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
@@ -65,6 +65,12 @@ let rateData = loadRateData();
 function saveRateData() {
   try { localStorage.setItem(RATE_KEY, JSON.stringify(rateData)); } catch (e) {}
 }
+// ブラウザの自動ストレージ削除(Storage Eviction / ITP等)から戦績・レートデータを保護するため永続化ストレージを要求
+try {
+  if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
+    navigator.storage.persist().catch(() => {});
+  }
+} catch (e) {}
 function isCrewUnlocked(id) {
   const spec = CREW_TYPES.find((c) => c.id === id);
   if (!spec || !spec.unlockRate) return true;
@@ -913,6 +919,7 @@ function startRace() {
     venue: cfg.venue,
     courseMode: cfg.courseMode,
     sea: SEA.label,
+    tide: TIDE.label,
     windDeg: currentWindDeg,
     baseWindKt: BASE_WIND_KT,
     sideBias: SIDE_BIAS,
@@ -1732,8 +1739,48 @@ function simStep(dt) {
   if (recorder) recorder.step(dt, t, boats, progressOf, lineA);
 }
 
-// 自艇フィニッシュ後: 残りの艇を早送りで走らせ、制限時間内のフィニッシュタイムを計測する
+// 自艇フィニッシュ後: 背景で3マーク側から後続艇が次々とフィニッシュしてくるライブ映像をそのまま継続できるよう、
+// 現在の各艇・AIの状態をスナップショット保存した上で早送り計測を行い、リザルト＆振り返り確定後にライブ状態を復元する
+let _liveFinishSnap = null;
+function snapshotLiveFleet() {
+  return {
+    t: state.t,
+    firstFinish: state.firstFinish,
+    rs,
+    boats: boats.map((b) => ({
+      x: b.x, z: b.z, h: b.h, v: b.v, steer: b.steer, sheet: b.sheet, throttle: b.throttle,
+      tack: b.tack, tacking: b.tacking, tackTimer: b.tackTimer, tackCount: b.tackCount, gybeCount: b.gybeCount,
+      rel: b.rel, twa: b.twa, effTwaDeg: b.effTwaDeg, byTheLee: b.byTheLee, windFrom: b.windFrom, windF: b.windF,
+      maneuver: b.maneuver ? { ...b.maneuver } : null,
+      penalty: b.penalty ? { ...b.penalty } : null,
+      penaltyDone: b.penaltyDone, penaltyExpired: b.penaltyExpired, penaltyUpgraded: b.penaltyUpgraded,
+      leg: b.leg, ocs: b.ocs, started: b.started, finished: b.finished, finishTime: b.finishTime, late: b.late,
+      a: b.a, c: b.c, visit: b.visit ? { ...b.visit } : null,
+      contactCD: b.contactCD, touchCD: b.touchCD, heel: b.heel, rollBias: b.rollBias, hike: b.hike, turned: b.turned,
+      sOpt: b.sOpt, luff: b.luff, stall: b.stall, cover: b.cover, coverT: b.coverT, back: b.back, backT: b.backT,
+      waveF: b.waveF, waveH: b.waveH, waveSlope: b.waveSlope, waveLoss: b.waveLoss,
+      windBend: b.windBend, windBendT: b.windBendT, flowBoost: b.flowBoost, flowBoostT: b.flowBoostT,
+      aeroTag: b.aeroTag, aeroClimb: b.aeroClimb, awa: b.awa, aws: b.aws, awx: b.awx, awz: b.awz,
+      dnf: b.dnf, dsq: b.dsq, dsqReason: b.dsqReason, pole: b.pole, poleK: b.poleK, gybePoleRestore: b.gybePoleRestore,
+      rudderDrag: b.rudderDrag, snagCD: b.snagCD, wakeWave: b.wakeWave,
+    })),
+    ais: ais.map((ai) => ({ ...ai })),
+  };
+}
+function restoreLiveFleet(snap) {
+  if (!snap) return;
+  state.t = snap.t;
+  state.firstFinish = snap.firstFinish;
+  rs = snap.rs;
+  for (let i = 0; i < boats.length && i < snap.boats.length; i++) {
+    Object.assign(boats[i], snap.boats[i]);
+  }
+  for (let i = 0; i < ais.length && i < snap.ais.length; i++) {
+    Object.assign(ais[i], snap.ais[i]);
+  }
+}
 function fastForwardFinishers() {
+  _liveFinishSnap = snapshotLiveFleet();
   const limit = Math.min(RACE_LIMIT, (state.firstFinish ?? state.t) + FINISH_WINDOW);
   state.ff = true;
   let guard = 0;
@@ -2049,6 +2096,12 @@ function showResult() {
       if (again && again.parentNode) again.parentNode.insertBefore(rb, again); else $('result').appendChild(rb);
     }
     rb.onclick = () => openReview(rec, { nameOf, playerId: player.id, marks: MARKS, courseMode: COURSE_MODE, legs: LEGS, lineA, speedScale: SPEED_SCALE, kt: KT });
+    // 振り返りデータを確定した後は recorder を切り離し、背景の3D艇群を早送り前の位置へ戻してライブで次々とフィニッシュさせる
+    recorder = null;
+  }
+  if (_liveFinishSnap) {
+    restoreLiveFleet(_liveFinishSnap);
+    _liveFinishSnap = null;
   }
 }
 
@@ -2082,6 +2135,7 @@ function loop() {
   const dt = Math.min(0.05, raw);
   const time = performance.now() / 1000;
   SEA.clock = (state.phase === 'race' || state.phase === 'orientation') ? state.t : time; // 艇モデル・マーク・航跡の上下動を物理と同じ海面時刻で同期
+  TIDE.active = state.phase !== 'orientation';
   
   if (state.phase === 'race' && !state.paused) {
     let rem = dt;
@@ -2109,14 +2163,37 @@ function loop() {
   }
   
   for (const m of models) m.sync(dt, time);
-  if (models[0]) models[0].setFirstPerson(cam.mode === COCKPIT);
+  const isPostFinishView = state.phase === 'race' && state.pFinish !== null && !player.dsq && (state.t - state.pFinish > 0.6 || state.resultShown);
+  if (models[0]) models[0].setFirstPerson(!isPostFinishView && cam.mode === COCKPIT);
   world.wake.update(boats, state.paused ? 0 : dt);
   
   if (player) {
-    cam.update(dt, time, player, boats);
+    if (isPostFinishView && world.markObjs && world.markObjs.fcom) {
+      // フィニッシュ後の背景映像: フィニッシュ船(fcom)の上(大型望遠一眼レフを構えるたぬきの斜め後ろ)から、
+      // フィニッシュラインおよび3マーク側(自分以降にフィニッシュしてくる後続艇群)を望むアングルに固定
+      const fc = world.markObjs.fcom;
+      if (fc.userData && fc.userData.tanukiCam) {
+        const tk = fc.userData.tanukiCam;
+        tk.rotation.y = 1.18 + Math.sin(time * 0.85) * 0.16;
+        if (tk.userData.head) tk.userData.head.rotation.y = Math.sin(time * 1.4) * 0.08;
+      }
+      const isUpwindFin = COURSE_MODE === 'upwind';
+      // たぬきカメラマン(local: -0.26, 0.66, -0.25)が画面右手前に写り込み、その奥にフィニッシュライン〜3マーク側の後続艇群が広がる位置
+      const camLocal = isUpwindFin ? new THREE.Vector3(0.48, 2.02, -1.18) : new THREE.Vector3(0.52, 2.05, 0.92);
+      fc.updateMatrixWorld(true);
+      const camWorld = camLocal.applyMatrix4(fc.matrixWorld);
+      camera.position.copy(camWorld);
+      // 視線ターゲット: 3マーク〜フィニッシュラインの中間(後続艇が3マークを回ってフィニッシュへ向かってくる海面)
+      const lookCourse = isUpwindFin
+        ? toWorld(MARKS.m1.a - 36, (MARKS.m1.c + MARKS.fcom.c) * 0.42 + Math.sin(time * 0.45) * 3.5)
+        : toWorld((MARKS.fm.a * 0.52 + MARKS.m3.a * 0.48), (MARKS.fm.c * 0.55 + MARKS.m3.c * 0.45) + Math.sin(time * 0.45) * 3.5);
+      camera.lookAt(lookCourse.x, 1.45, lookCourse.z);
+    } else {
+      cam.update(dt, time, player, boats);
+    }
     // ドローンカメラ時に他艇(CP艇)が「カメラと自艇の視線上(水平射影)」に入って自艇と重なった時だけ半透明化する
     if (models.length > 1) {
-      const isDrone = cam.mode !== COCKPIT;
+      const isDrone = !isPostFinishView && cam.mode !== COCKPIT;
       const cx = camera.position.x, cz = camera.position.z;
       const px = player.x, pz = player.z;
       const rdx = px - cx, rdz = pz - cz;
@@ -2309,9 +2386,10 @@ function computeSideBias(venueId, windDeg) {
   return { bias: -0.50, desc: 'やや左海面ブロー優勢傾向' };
 }
 
-// 海面・風向・風速から波の種類(三角波/うねり/短周期の風浪)を決めて物理と海面描画へ反映
+// 海面・風向・風速から波の種類(三角波/うねり/短周期の風浪)と潮汐流を決めて物理と海面描画へ反映
 function applySea(windDeg, kt) {
   setSeaState(cfg.venue, windDeg, kt);
+  setTideState(cfg.venue, windDeg, Date.now());
   if (world.setSea) world.setSea(SEA);
 }
 
@@ -2356,7 +2434,8 @@ function updateWeatherInfoUI(windDeg, kt, gustKt, desc, fallback) {
   infoEl.classList.remove('hidden');
   const dirStr = `${compassDir(windDeg)} (${windDeg}°)`;
   const note = fallback ? '(標準風速・ブロー移動あり)' : `(ガスト ${gustKt}kt・ブロー移動あり)`;
-  infoEl.textContent = `現地実況  風向 ${dirStr}  風速 ${kt}kt ${note}  ｜  ${desc}${SEA.label ? `  ｜  波: ${SEA.label}` : ''}`;
+  const tideStr = TIDE && TIDE.phaseLabel ? `  ｜  潮汐: ${TIDE.tideType}・${TIDE.phaseLabel} (${TIDE.dirLabel}へ ${TIDE.kt.toFixed(2)}kt)` : '';
+  infoEl.textContent = `現地実況  風向 ${dirStr}  風速 ${kt}kt ${note}  ｜  ${desc}${SEA.label ? `  ｜  波: ${SEA.label}` : ''}${tideStr}`;
 }
 
 function applyVenue() {
