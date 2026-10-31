@@ -171,6 +171,105 @@ export function waveSample(x, z, t, hx = 0, hz = 0) {
   return _ws;
 }
 
+// ---------- 潮の満ち引き・潮流 (八景島沖＝東京湾西岸、江の島沖＝相模湾北東部) ----------
+// 実際の天文潮汐(月齢・太陰半日周潮M2+太陽半日周潮S2)と各海面の地形的特性からリアルタイムの潮汐・潮流を算出:
+//  ・八景島沖(東京湾西岸・金沢八景沖):
+//     上げ潮(満潮へ向かう流れ)は湾奥へ向かう北北西流(約335°方向)、下げ潮(干潮へ向かう流れ)は湾口・観音崎へ向かう南南東流(約155°方向)。大潮最大約0.45kt
+//  ・江の島沖(相模湾北東部):
+//     上げ潮は相模湾反時計回り還流と合わさる西北西流(約285°・江の島〜烏帽子岩方向)、下げ潮は東南東流(約105°・鎌倉〜逗子方向)。大潮最大約0.35kt
+export const TIDE = {
+  venue: 'hakkeijima',
+  tideType: '中潮',     // 大潮 / 中潮 / 小潮 / 長潮 / 若潮
+  phaseLabel: '上げ潮', // 上げ潮 / 下げ潮 / 満潮前後(潮止まり) / 干潮前後(潮止まり)
+  dirToDeg: 335,        // 潮が流れていく方位(度: 0=北, 90=東, 180=南, 270=西)
+  dirLabel: '北北西',
+  kt: 0.22,             // 潮流速度 [kt]
+  heightM: 1.25,        // 推算潮位 [m]
+  vx: 0,                // コース座標系での潮流ベクトルX (東向き+) [m/s]
+  vz: 0,                // コース座標系での潮流ベクトルZ (南向き+) [m/s]
+  active: true,
+};
+
+const COMPASS_16_JA = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+function degToCompassJa(deg) {
+  const d = ((deg % 360) + 360) % 360;
+  return COMPASS_16_JA[Math.round(d / 22.5) % 16];
+}
+
+export function setTideState(venue = 'hakkeijima', windDeg = 0, nowMs = Date.now()) {
+  // 基準新月: 2024-01-11 11:57 UTC (1704974220000 ms), 朔望月 = 29.530588853 日
+  const SYNODIC_DAYS = 29.530588853;
+  const elapsedDays = (nowMs - 1704974220000) / 86400000;
+  const lunarAge = ((elapsedDays % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS;
+
+  // 月齢から潮回り(大潮・中潮・小潮・長潮・若潮)と振幅係数を算出
+  const halfCycle = lunarAge % (SYNODIC_DAYS * 0.5); // 0 .. 14.765
+  let tideType = '中潮', springFactor = 0.88;
+  if (halfCycle < 2.2 || halfCycle > 13.0) {
+    tideType = '大潮'; springFactor = 1.18;
+  } else if (halfCycle < 5.6 || (halfCycle >= 11.2 && halfCycle <= 13.0)) {
+    tideType = '中潮'; springFactor = 0.90;
+  } else if (halfCycle < 8.8) {
+    tideType = '小潮'; springFactor = 0.58;
+  } else if (halfCycle < 10.0) {
+    tideType = '長潮'; springFactor = 0.48;
+  } else {
+    tideType = '若潮'; springFactor = 0.72;
+  }
+
+  // 日本標準時(UTC+9)での時刻と太陰時角から半日周潮位相を計算
+  // 満潮時刻は八景島(横浜・東京湾西岸)が江の島(片瀬・相模湾)より約30分遅れる
+  const jstHours = ((nowMs + 9 * 3600000) / 3600000);
+  const lunarLagHours = lunarAge * 0.8412; // 1日あたり約50.5分の月の南中遅れ
+  const portHighOffset = venue === 'enoshima' ? 4.85 : 5.38;
+  const semidiurnalPeriod = 12.4206; // M2半日周潮周期 [時間]
+  const tideAngle = ((jstHours - lunarLagHours - portHighOffset) / semidiurnalPeriod) * 2 * Math.PI;
+
+  // 潮位 h = cos(tideAngle) (+1:満潮, -1:干潮)、潮流流速 u = -sin(tideAngle) (+:上げ潮最大, -:下げ潮最大)
+  const tideCos = Math.cos(tideAngle);
+  const flowSin = -Math.sin(tideAngle); // >0 なら干潮→満潮へ向かう「上げ潮」、<0 なら満潮→干潮へ向かう「下げ潮」
+  const meanLevel = venue === 'enoshima' ? 1.05 : 1.18;
+  const tideRange = (venue === 'enoshima' ? 0.58 : 0.78) * springFactor;
+  const heightM = Math.round((meanLevel + tideRange * tideCos) * 100) / 100;
+
+  // 上げ潮 / 下げ潮 の流向と最大流速
+  const isFlood = flowSin >= 0;
+  const floodDir = venue === 'enoshima' ? 285 : 335; // 江の島上げ潮: 西北西(285°), 八景島上げ潮: 北北西(335°)
+  const ebbDir = venue === 'enoshima' ? 105 : 155;   // 江の島下げ潮: 東南東(105°), 八景島下げ潮: 南南東(155°)
+  const maxKt = (venue === 'enoshima' ? 0.35 : 0.45) * springFactor;
+  const rawKt = Math.abs(flowSin) * maxKt;
+  const kt = Math.round(Math.max(0.04, rawKt) * 100) / 100;
+  const dirToDeg = isFlood ? floodDir : ebbDir;
+  const dirLabel = degToCompassJa(dirToDeg);
+
+  let phaseLabel;
+  if (Math.abs(flowSin) < 0.20) {
+    phaseLabel = tideCos >= 0 ? '満潮前後(潮止まり)' : '干潮前後(潮止まり)';
+  } else {
+    phaseLabel = isFlood ? '上げ潮' : '下げ潮';
+  }
+
+  // レース海面ワールド座標(x=東, z=南)での潮流ベクトル [m/s]
+  const dirRad = (dirToDeg * Math.PI) / 180;
+  const speedMs = kt * KT;
+  const vx = Math.sin(dirRad) * speedMs;
+  const vz = -Math.cos(dirRad) * speedMs;
+
+  Object.assign(TIDE, {
+    venue,
+    tideType,
+    phaseLabel,
+    dirToDeg,
+    dirLabel,
+    kt,
+    heightM,
+    vx,
+    vz,
+  });
+  return TIDE;
+}
+setTideState('hakkeijima', 0, Date.now());
+
 // ---------- 風の振れ(シフト) ----------
 // 実際のレース同様、①左右に振れて戻る「オシレーション」、②徐々に回って戻らない「パーシステントシフト」、
 // ③ブローと共に短時間で振れる「ステップ的なシフト」をランダムな順番・長さで組み合わせた時系列を毎レース生成する
@@ -476,19 +575,19 @@ export class Boat {
         // 3) 風軸を超えた後(crossed): タック後の重心移動で新タックから見てオーバーヒール(-s0 = +newTack)を起こし、その後フラットに起こす
         if (!crossed) {
           if (m.t < 0.28 || absRel > 0.38) {
-            rollCmd = m.s0 * 0.25;
+            rollCmd = m.s0 * 0.30;
             steer = m.dir * clamp(m.t / 0.28, 0.28, 1.0);
           } else {
             const unheelF = clamp((0.38 - absRel) / 0.28, 0, 1);
-            rollCmd = m.s0 * (0.18 * (1 - unheelF) - 0.21 * unheelF);
+            rollCmd = m.s0 * (0.21 * (1 - unheelF) - 0.25 * unheelF);
             steer = m.dir;
           }
         } else {
           m.tCross = (m.tCross || 0) + dt;
-          if (m.tCross < 0.75) {
-            rollCmd = -m.s0 * 0.32 * Math.sin(clamp(m.tCross / 0.75, 0.15, 1) * Math.PI * 0.82);
+          if (m.tCross < 0.78) {
+            rollCmd = -m.s0 * 0.38 * Math.sin(clamp(m.tCross / 0.78, 0.15, 1) * Math.PI * 0.82);
           } else {
-            rollCmd = -m.s0 * 0.26 * Math.max(0, 1 - (m.tCross - 0.75) / 0.65);
+            rollCmd = -m.s0 * 0.31 * Math.max(0, 1 - (m.tCross - 0.78) / 0.68);
           }
           steer = -clamp(err * 2.5, -1, 1);
           if (Math.abs(steer) < 0.5) steer = -0.5 * Math.sign(err || 1);
@@ -504,10 +603,10 @@ export class Boat {
           if (m.restorePole && !this.penalty) { this.gybePoleRestore = 0.36; m.restorePole = false; }
         }
         if (m.t < 0.38) {
-          rollCmd = -m.s0 * 0.19; // アンヒール(風上側へ起こす/逆ヒール)をかけてから落とす
+          rollCmd = -m.s0 * 0.22; // アンヒール(風上側へ起こす/逆ヒール)をかけてから落とす
           steer = m.dir * clamp(m.t / 0.34, 0.22, 0.95);
         } else if (!m.flipped) {
-          rollCmd = -m.s0 * 0.13;
+          rollCmd = -m.s0 * 0.15;
           steer = m.dir * 0.92;
         } else {
           rollCmd = 0;
@@ -522,17 +621,17 @@ export class Boat {
       // 通常操舵時: 急激に上す際にはオーバーヒール → 風軸直前はアンヒール → タック直後は新タック側オーバーヒール、落とす際にはアンヒール
       const turnUp = steer * this.tack; // +ならラフ(上す)、-ならベア(落とす)
       const absRelNow = Math.abs(wrap(w.from - this.h));
-      if (this.tacking && this.tackTimer > 0.55) {
+      if (this.tacking && this.tackTimer > 0.50) {
         const tc = 1.8 - this.tackTimer;
-        rollCmd = this.tack * 0.30 * Math.sin(clamp(tc / 1.25, 0, 1) * Math.PI);
+        rollCmd = this.tack * 0.36 * Math.sin(clamp(tc / 1.30, 0, 1) * Math.PI);
       } else if (turnUp > 0.18) {
         if (absRelNow < 0.36) {
-          rollCmd = -this.tack * clamp((0.36 - absRelNow) * 0.52, 0, 0.19);
+          rollCmd = -this.tack * clamp((0.36 - absRelNow) * 0.58, 0, 0.23);
         } else {
-          rollCmd = this.tack * clamp((turnUp - 0.15) * 0.27, 0, 0.22);
+          rollCmd = this.tack * clamp((turnUp - 0.15) * 0.32, 0, 0.26);
         }
       } else if (turnUp < -0.18) {
-        rollCmd = -this.tack * clamp((-turnUp - 0.15) * 0.25, 0, 0.20);
+        rollCmd = -this.tack * clamp((-turnUp - 0.15) * 0.29, 0, 0.24);
       }
     }
     this.rollBias += (rollCmd - this.rollBias) * (1 - Math.exp(-dt * 7.5));
@@ -773,8 +872,9 @@ export class Boat {
     const tau = (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : 2.2) : turning ? 8.5 : 1.5; // ±10°では速やかに失速してバックへ遷移
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
 
-    // 風下側への流され(リーウェイ＆風圧ドリフト):
+    // 風下側への流され(リーウェイ＆風圧ドリフト) ＋ 潮の満ち引きによる潮流(TIDE)の影響:
     // スタート時など船が止まっている・極微速時の下流れを従来のさらに2倍(計3倍)に設定し、一定の速度が出るとセンターボードが効いて流されなくなる
+    // また、リアルタイムの潮の流れ(八景島沖・江の島沖の上げ潮/下げ潮)もスタート時や微風時に若干反映される
     const vCut = 1.35 * KT * SPEED_SCALE;
     const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.3);
     const leewayV = 0.60 * slowF * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向への下流れ(低速時2倍)
@@ -785,24 +885,30 @@ export class Boat {
     const leeX = -nt * Math.cos(this.h) * (leewayV - liftLatV) - Math.sin(w.from) * windageV;
     const leeZ = -nt * Math.sin(this.h) * (leewayV - liftLatV) + Math.cos(w.from) * windageV;
 
-    this.x += (Math.sin(this.h) * this.v + leeX) * dt;
-    this.z += (-Math.cos(this.h) * this.v + leeZ) * dt;
+    // 潮流ドリフト: スタート時(低速時 slowF)や微風時ほど潮の流れの影響を若干受ける実艇の挙動
+    const lightWindF = clamp((10.5 - localWindKt) / 5.5, 0.35, 1.15);
+    const tideWeight = TIDE.active !== false ? (0.18 + 0.28 * slowF) * lightWindF : 0;
+    const tideX = (TIDE.vx || 0) * tideWeight;
+    const tideZ = (TIDE.vz || 0) * tideWeight;
+
+    this.x += (Math.sin(this.h) * this.v + leeX + tideX) * dt;
+    this.z += (-Math.cos(this.h) * this.v + leeZ + tideZ) * dt;
 
     // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力
-    // ＋ タック/上す際のオーバーヒール、ジャイブ/落とす際のアンヒール(rollBias)を合成
+    // ＋ タック/上す際のオーバーヒール、ジャイブ/落とす際のアンヒール(rollBias)を合成 (全体的に強風時・タック時のヒールをもう少しだけ大きめに設定)
     const anglePress = Math.sin(clamp(twa, 0.2, Math.PI * 0.88)) * (0.35 + 0.65 * this.sheet) * (1 - 0.65 * smoothstep(1.85, 2.75, twa)) * (1 - 0.55 * this.luff);
-    const windPress = Math.pow(clamp(localWindKt / 9.2, 0.25, 1.85), 1.25);
+    const windPress = Math.pow(clamp(localWindKt / 8.8, 0.25, 1.95), 1.32);
     const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
     const rawHeelPress = anglePress * windPress * speedPress;
-    const strongWindBoost = smoothstep(8.8, 13.8, localWindKt) * 0.34 * anglePress;
-    const puffBoost = clamp((w.puff - 0.26) / 0.74, 0, 1);
+    const strongWindBoost = smoothstep(8.2, 13.5, localWindKt) * 0.42 * anglePress;
+    const puffBoost = clamp((w.puff - 0.24) / 0.76, 0, 1);
     const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.28 + Math.abs(this.heel) * 1.45 + strongWindBoost, 0.05, 1.38);
     this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
-    // ブロー(w.puff)に入った時は瞬間的にヒールが少し大きめに入るようにする
-    const puffHeelAdd = puffBoost * 0.088 * anglePress;
-    const netHeel = Math.max(0.014, rawHeelPress * 0.265 + puffHeelAdd - this.hike * 0.140);
-    const heelT = clamp(nt * clamp(netHeel, 0, 0.29) + this.rollBias, -0.39, 0.39);
-    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.6));
+    // ブロー(w.puff)や強風時はヒールがもう少し大きめに入るように調整
+    const puffHeelAdd = puffBoost * 0.112 * anglePress;
+    const netHeel = Math.max(0.016, rawHeelPress * 0.305 + strongWindBoost * 0.22 + puffHeelAdd - this.hike * 0.132);
+    const heelT = clamp(nt * clamp(netHeel, 0, 0.34) + this.rollBias, -0.44, 0.44);
+    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.8));
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
     this.snagCD = Math.max(0, (this.snagCD || 0) - dt);
