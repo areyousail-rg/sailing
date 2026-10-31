@@ -855,7 +855,8 @@ function handleCollision(e) {
   const penOn = cfg.penaltyMode === 'on';
   if (e.type === 'contact') {
     const { gw, row } = e;
-    if (!quiet) thud(soundVol(gw.x, gw.z));
+    const imp = e.impact ?? clamp(Math.max(Math.abs(gw.v), Math.abs(row.v)) / (2.15 * SPEED_SCALE), 0.08, 1.25);
+    if (!quiet) thud(soundVol(gw.x, gw.z), imp);
     if (!penOn) {
       if (quiet) return;
       if (gw.isPlayer) toast(`【違反判定】${nameOf(row)} と接触 (${e.text})\n本来は ルール${e.rule}違反 → 720°(2回転)ペナルティ ですが、ペナルティ無モードのためそのままレース続行`, 'warn', 6500);
@@ -872,7 +873,8 @@ function handleCollision(e) {
     const b = e.boat;
     if (!quiet) {
       const v = soundVol(b.x, b.z);
-      if (e.mark === 'com') thud(v); else markHit(v);
+      const imp = e.impact ?? clamp(Math.abs(b.v) / (2.10 * SPEED_SCALE), 0.10, 1.20);
+      if (e.mark === 'com') thud(v, imp); else markHit(v, imp);
     }
     if (!penOn) {
       if (!quiet && b.isPlayer) toast('【違反判定】マークに接触! (ルール31)\n本来は 360°(1回転)ペナルティ ですが、ペナルティ無モードのためそのままレース続行', 'warn', 5500);
