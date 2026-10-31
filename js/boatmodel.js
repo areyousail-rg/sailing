@@ -168,8 +168,139 @@ const SAIL_LETTER_PALETTE = [
   { main: '#0f7a3c', ghost: 'rgba(15, 122, 60, 0.20)' }, // 緑
 ];
 
-// メインセールテクスチャ: 実艇写真準拠の3本バテンポケット、パネルシーム、スナイプ鳥マーク、国別コード & 4色セールNo、マスト側下部の控えめな青いロゴ、下部クリアウィンドウ
-function mainSailTexture(no, color, nat = 'JPN', isPlayer = false) {
+// メインセールに描く同種動物ペア専用の薄めの動物ロゴマーク (スキッパーとクルーが同じ動物の場合のみ描画)
+function drawAnimalPairSailLogo(ctx, animalType, colorHex) {
+  if (!animalType) return;
+  ctx.save();
+  ctx.translate(284, 808);
+  ctx.rotate(0.05);
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = colorHex || '#123e96';
+  ctx.strokeStyle = colorHex || '#123e96';
+  ctx.lineWidth = 6.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // 外周の薄いエンブレムリング
+  ctx.beginPath();
+  ctx.arc(0, 0, 74, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (animalType === 'cat') {
+    // ネコ: ピンと立った三角耳と丸い顔のシルエット＋ヒゲ
+    ctx.beginPath();
+    ctx.moveTo(-42, -10);
+    ctx.lineTo(-48, -56);
+    ctx.lineTo(-16, -34);
+    ctx.quadraticCurveTo(0, -40, 16, -34);
+    ctx.lineTo(48, -56);
+    ctx.lineTo(42, -10);
+    ctx.quadraticCurveTo(50, 26, 0, 42);
+    ctx.quadraticCurveTo(-50, 26, -42, -10);
+    ctx.closePath();
+    ctx.fill();
+    // ヒゲ
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(s * 32, 6); ctx.lineTo(s * 62, 0);
+      ctx.moveTo(s * 32, 16); ctx.lineTo(s * 60, 18);
+      ctx.stroke();
+    }
+  } else if (animalType === 'dog' || animalType === 'shiba') {
+    // イヌ / 柴犬: 立ち耳〜垂れ耳の犬フェイスシルエット
+    ctx.beginPath();
+    if (animalType === 'shiba') {
+      ctx.moveTo(-40, -8);
+      ctx.lineTo(-44, -54);
+      ctx.lineTo(-14, -34);
+      ctx.quadraticCurveTo(0, -38, 14, -34);
+      ctx.lineTo(44, -54);
+      ctx.lineTo(40, -8);
+      ctx.quadraticCurveTo(46, 30, 0, 44);
+      ctx.quadraticCurveTo(-46, 30, -40, -8);
+    } else {
+      ctx.arc(0, -2, 38, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    if (animalType !== 'shiba') {
+      // 垂れ耳
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(s * 42, 4, 14, 28, s * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // 肉球マークを下に添える
+    ctx.beginPath();
+    ctx.arc(0, 54, 7, 0, Math.PI * 2);
+    ctx.arc(-11, 45, 4.2, 0, Math.PI * 2);
+    ctx.arc(0, 42, 4.2, 0, Math.PI * 2);
+    ctx.arc(11, 45, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (animalType === 'duck') {
+    // アヒル: 水面に浮かぶかわいいラバーダックの横顔シルエット
+    ctx.beginPath();
+    ctx.arc(-10, -24, 22, 0, Math.PI * 2); // 頭
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-38, -26);
+    ctx.quadraticCurveTo(-56, -24, -54, -15);
+    ctx.quadraticCurveTo(-38, -12, -26, -16);
+    ctx.closePath();
+    ctx.fill(); // くちばし
+    ctx.beginPath();
+    ctx.moveTo(-24, -4);
+    ctx.quadraticCurveTo(-36, 34, 4, 38);
+    ctx.quadraticCurveTo(46, 38, 48, -6);
+    ctx.lineTo(32, 2);
+    ctx.quadraticCurveTo(10, -2, -24, -4);
+    ctx.closePath();
+    ctx.fill(); // 胴体と尾
+  } else if (animalType === 'tanuki') {
+    // タヌキ: 丸耳と目の周りのアイマスク模様
+    ctx.beginPath();
+    ctx.arc(0, 4, 40, 0, Math.PI * 2);
+    ctx.arc(-30, -30, 14, 0, Math.PI * 2);
+    ctx.arc(30, -30, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.ellipse(-16, 2, 12, 9, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(16, 2, 12, 9, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  } else if (animalType === 'rabbit') {
+    // ウサギ: 長い2本の耳と丸い顔のシルエット
+    ctx.beginPath();
+    ctx.arc(0, 16, 32, 0, Math.PI * 2);
+    ctx.ellipse(-15, -28, 10, 30, -0.10, 0, Math.PI * 2);
+    ctx.ellipse(15, -28, 10, 30, 0.10, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (animalType === 'dolphin') {
+    // イルカ: ジャンプする流線型のイルカシルエット
+    ctx.beginPath();
+    ctx.moveTo(-48, 22);
+    ctx.quadraticCurveTo(-22, -44, 38, -18);
+    ctx.lineTo(54, -12);
+    ctx.lineTo(36, -6);
+    ctx.quadraticCurveTo(0, -10, -26, 26);
+    ctx.lineTo(-44, 38);
+    ctx.lineTo(-36, 22);
+    ctx.closePath();
+    ctx.fill();
+    // 背びれ
+    ctx.beginPath();
+    ctx.moveTo(-4, -22);
+    ctx.lineTo(-16, -42);
+    ctx.lineTo(10, -24);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// メインセールテクスチャ: 実艇写真準拠の3本バテンポケット、パネルシーム、スナイプ鳥マーク、国別コード & 4色セールNo、同種動物ペア時の薄めの動物ロゴ、タック角の三角形カット、下部クリアウィンドウ
+function mainSailTexture(no, color, nat = 'JPN', isPlayer = false, animalPairLogo = null) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 1024;
   const x = c.getContext('2d');
   x.fillStyle = 'rgba(249, 251, 253, 0.98)';
@@ -333,9 +464,14 @@ function mainSailTexture(no, color, nat = 'JPN', isPlayer = false) {
   x.lineWidth = 1.5;
   x.strokeRect(mwx, mwy, mww, mwh);
 
-  // 8) メインセールのマスト側下部(タック付近)の青いセールメーカー/クラスロゴ(画像5枚目準拠・かなり目立たない控えめな表現)
+  // 8) 同じ動物のペアの場合、メインセール中下部にその動物のロゴを薄めにデザイン
+  if (animalPairLogo) {
+    drawAnimalPairSailLogo(x, animalPairLogo, letterCol);
+  }
+
+  // 9) メインセールのマスト側下部(タック付近)の青いセールメーカー/クラスロゴ(画像準拠・控えめな表現)
   x.save();
-  x.translate(34, 948);
+  x.translate(38, 944);
   x.beginPath();
   x.ellipse(0, 0, 12, 9.5, -0.12, 0, Math.PI * 2);
   x.fillStyle = 'rgba(18, 62, 150, 0.38)';
@@ -347,6 +483,24 @@ function mainSailTexture(no, color, nat = 'JPN', isPlayer = false) {
   x.lineTo(7, -5);
   x.stroke();
   x.restore();
+
+  // 10) メインセールのマストとブームの接着部(タック角: 左下コーナー)の三角形の隙間を再現 (実艇画像2・3枚目準拠)
+  x.save();
+  x.beginPath();
+  x.moveTo(0, 968);
+  x.lineTo(36, 1024);
+  x.lineTo(0, 1024);
+  x.closePath();
+  x.clip();
+  x.clearRect(0, 964, 40, 62);
+  x.restore();
+  // 三角形カット縁のダクロン補強テープとタッククリングル
+  x.strokeStyle = 'rgba(220, 228, 238, 0.96)';
+  x.lineWidth = 5.0;
+  x.beginPath();
+  x.moveTo(1, 968);
+  x.lineTo(36, 1023);
+  x.stroke();
 
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
@@ -378,9 +532,9 @@ function jibTexture() {
     x.beginPath(); x.moveTo(0, y + 6); x.lineTo(256, y - 4); x.stroke();
   }
 
-  // ジブセール前下部(タック角付近)の青いロゴマーク (画像4枚目準拠の青い楕円North Sailsロゴ)
+  // ジブセール前下部(タック角付近)の青いロゴマーク (画像4枚目準拠: ウインドウよりさらに下のタック角近くに配置)
   x.save();
-  x.translate(30, 444);
+  x.translate(32, 480);
   x.rotate(-0.10);
   x.beginPath();
   x.ellipse(0, 0, 14, 10.5, 0, 0, Math.PI * 2);
@@ -781,9 +935,11 @@ export class BoatModel {
     this.tillerExtGrip.position.copy(_p1);
     this.rudderGroup = rudderGroup; this.body.add(rudderGroup);
 
-    const tex = mainSailTexture(String(boat.sailNo), boat.color, boat.nat, boat.isPlayer);
-    // メインセール・ジブともに小さい透明ウインドウが自然に透けつつdepthWriteで前後ソート崩れを防ぐ
-    this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.62, metalness: 0.04, transparent: true, opacity: 0.99, depthWrite: true });
+    const isSameAnimalPair = crewHelm && crewCrew && crewHelm.type === crewCrew.type && !String(crewHelm.type).startsWith('human');
+    const animalPairLogo = isSameAnimalPair ? crewHelm.type : null;
+    const tex = mainSailTexture(String(boat.sailNo), boat.color, boat.nat, boat.isPlayer, animalPairLogo);
+    // メインセール・ジブともに小さい透明ウインドウが自然に透けつつ、alphaTestでタック角の三角形隙間を抜く
+    this.sailMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.62, metalness: 0.04, transparent: true, opacity: 0.99, alphaTest: 0.06, depthWrite: true });
     this.jibMat = new THREE.MeshStandardMaterial({ map: jibTexture(), side: THREE.DoubleSide, roughness: 0.58, transparent: true, opacity: 0.98, depthWrite: true });
 
     this.mainPivot = new THREE.Group(); this.mainPivot.position.set(0, 0.4, -0.9); this.body.add(this.mainPivot);
@@ -808,54 +964,82 @@ export class BoatModel {
       this.leechRibbons.push({ m, u, ry, rz, twistX, ph: i * 2.1 + Math.random() * 3 });
     }
     const boom = new THREE.Mesh(boomGeo, spar); boom.position.set(0, 1.02, 1.44); this.mainPivot.add(boom);
-    // ゴースネック / メンタック(2周結び・かなり控えめ) / カニンガム(控えめ)
+    // ゴースネック / マスト周辺細部パーツ (メンタック・カニンガム・アフタープラー・ランチャーシート・マスト赤バンド: 実艇写真1・2・3枚目準拠)
     const gn = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.052, 0.072), M.alu); gn.position.set(0, 1.02, 0.02); this.mainPivot.add(gn);
-    // メンタック(Maintack): マストとメインセール下端(タック角)の間を2周して結ぶ細い紐 (目立たない控えめな太さ・色)
-    for (const dy of [0.042, 0.054]) {
-      const mtLoop = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0020, 6, 12), ropeMat(0x64748b));
-      mtLoop.rotation.x = Math.PI / 2;
-      mtLoop.scale.set(0.72, 1.18, 1);
-      mtLoop.position.set(0, 1.02 + dy, 0.018);
+    const mastBand = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, 0.022, 12), new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.5 }));
+    mastBand.position.set(0, 1.00, 0.0);
+    this.mainPivot.add(mastBand);
+    // 1) メンタック(Maintack): マストとメインセール下端の三角形の隙間を横切るように結ぶ細いオレンジ〜グレーのコード
+    const tackCringleMain = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0022, 6, 10), M.steel);
+    tackCringleMain.rotation.y = Math.PI / 2;
+    tackCringleMain.position.set(0, 1.10, 0.068);
+    this.mainPivot.add(tackCringleMain);
+    for (const dy of [0.068, 0.082]) {
+      const mtLoop = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.0022, 6, 12), ropeMat(0xea580c));
+      mtLoop.rotation.x = Math.PI / 2 - 0.18;
+      mtLoop.scale.set(0.48, 1.15, 1);
+      mtLoop.position.set(0, 1.02 + dy, 0.032);
       this.mainPivot.add(mtLoop);
     }
-    // カニンガム(Cunningham): タックの少し上(y=1.22, z=0.042)のアイレットからグースネック脇を通ってマスト基部へ降りる控えめな細紐
+    // 2) カニンガム(Cunningham): タックの少し上(y=1.24, z=0.052)のアイレットからグースネック脇を通ってマスト基部へ降りる細紐
     const cunEye = new THREE.Mesh(new THREE.TorusGeometry(0.0065, 0.0018, 6, 10), M.steel);
     cunEye.rotation.y = Math.PI / 2;
-    cunEye.position.set(0, 1.22, 0.042);
+    cunEye.position.set(0, 1.24, 0.052);
     this.mainPivot.add(cunEye);
-    this.mainPivot.add(rope([[0, 1.22, 0.042], [0.010, 1.02, 0.028], [0.008, 0.14, 0.024]], 0x64748b, 0.0021));
+    this.mainPivot.add(
+      rope([[0, 1.24, 0.052], [0.012, 1.02, 0.032], [0.010, 0.08, 0.026]], 0x0284c7, 0.0022),
+      // 3) ランチャーシート(Launcher halyard/sheet): マスト前脇のフェアリードからランチャーリング・デッキ基部へ走る細い赤系ライン
+      rope([[-0.018, 0.98, 0.045], [-0.022, 0.48, 0.015], [-0.018, 0.06, -0.015]], 0xe11d48, 0.0023)
+    );
+    // 4) アフタープラー(Aft puller): デッキの少し上(y=0.56, z=-0.88)のマストカラーから後方デッキブロック(z=-0.75)へ引く左右の細いコントロールライン
+    const aftPullerCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 0.018, 10), M.steel);
+    aftPullerCollar.position.set(0, 0.56, -0.90);
+    this.body.add(aftPullerCollar);
+    for (const sg of [-1, 1]) {
+      this.body.add(rope([[sg * 0.032, 0.56, -0.87], [sg * 0.065, 0.435, -0.74]], 0x475569, 0.0022));
+    }
 
-    // ブーム後端の二股メインシート用ツインブロック(bz=2.56, bz=2.34) & 中央ブロック(bz=1.18)
-    const bb = block(0.019, 0x1e293b); bb.position.set(0, 0.965, 2.56); this.mainPivot.add(bb);
-    const bbAft2 = block(0.017, 0x1e293b); bbAft2.position.set(0, 0.965, 2.34); this.mainPivot.add(bbAft2);
-    const bbMid = block(0.020, 0x1e293b); bbMid.position.set(0, 0.965, 1.18); this.mainPivot.add(bbMid);
+    // ブーム後端のシングルブロック(bz=2.52) & 中央ブロック(bz=1.22) (実艇写真4枚目準拠)
+    const bb = block(0.019, 0x1e293b); bb.position.set(0, 0.965, 2.52); this.mainPivot.add(bb);
+    const bbMid = block(0.020, 0x1e293b); bbMid.position.set(0, 0.965, 1.22); this.mainPivot.add(bbMid);
     const bEnd = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.074, 0.036), M.alu); bEnd.position.set(0, 1.02, 2.86); this.mainPivot.add(bEnd);
 
-    // バング(Boom Vang): 実艇写真(1・3枚目)準拠の小さめの滑車(ブーム側ブロック・中間カスケードブロック・マスト基部スイベルブロック)とマルチパーチェスライン
+    // バング(Boom Vang): 実艇写真(1・2・3枚目)準拠。マストとの接続用滑車(vbMast)は船内ではなくデッキよりもやや高めの位置(mainPivot内 y=0.28 ≒ 船体y=0.68、デッキy=0.425の約25cm上)に配置
     const vangBail = new THREE.Mesh(new THREE.BoxGeometry(0.050, 0.028, 0.024), M.steel); vangBail.position.set(0, 0.985, 0.58); this.mainPivot.add(vangBail);
     const vbBoom = block(0.014, 0x1e293b); vbBoom.position.set(0, 0.955, 0.58); this.mainPivot.add(vbBoom);
-    const vbMid = block(0.013, 0x1e293b); vbMid.position.set(0, 0.54, 0.30); this.mainPivot.add(vbMid);
-    const vangTangM = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.026, 0.038), M.steel); vangTangM.position.set(0, 0.11, 0.032); this.mainPivot.add(vangTangM);
-    const vbMast = block(0.015, 0x1e293b); vbMast.position.set(0, 0.12, 0.048); this.mainPivot.add(vbMast);
+    const vbMid = block(0.014, 0x1e293b); vbMid.position.set(0, 0.62, 0.30); this.mainPivot.add(vbMid);
+    const vangTangM = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.028, 0.042), M.steel); vangTangM.position.set(0, 0.28, 0.030); this.mainPivot.add(vangTangM);
+    const vbMast = block(0.016, 0x1e293b); vbMast.position.set(0, 0.28, 0.050); this.mainPivot.add(vbMast);
+    const vbDeck = block(0.012, 0x1e293b); vbDeck.position.set(0, 0.045, 0.062); this.mainPivot.add(vbDeck);
+    this.vbBoom = vbBoom; this.vbMid = vbMid; this.vbMast = vbMast; this.vbDeck = vbDeck;
     this.mainPivot.add(
-      rope([[0, 0.955, 0.58], [0, 0.555, 0.305]], 0x64748b, 0.0044),
-      rope([[0.008, 0.535, 0.30], [0.009, 0.125, 0.048]], 0x38bdf8, 0.0036),
-      rope([[-0.008, 0.535, 0.30], [-0.009, 0.125, 0.048]], 0x38bdf8, 0.0036),
-      rope([[0, 0.535, 0.295], [0, 0.12, 0.044]], 0xe11d48, 0.0034)
+      rope([[0, 0.955, 0.58], [0, 0.63, 0.305]], 0x475569, 0.0044),
+      rope([[0.008, 0.615, 0.30], [0.009, 0.285, 0.050]], 0xf97316, 0.0036),
+      rope([[-0.008, 0.615, 0.30], [-0.009, 0.285, 0.050]], 0xf97316, 0.0036),
+      rope([[0, 0.615, 0.295], [0, 0.28, 0.046], [0, 0.045, 0.062]], 0xf8fafc, 0.0032)
     );
 
-    // 後部二股ブライドル(Port/Starboardデッキ金具 z=1.62, x=±0.42 から中央頂点ブロックへ二股に分かれて船体とつながる構造)
-    const brApexY = FLOOR_Y + 0.36, brApexZ = 1.58;
+    // 後部メインシートの三角形ブライドル(実艇写真4枚目準拠):
+    // 左右スターンデッキ金具(z=1.62, x=±0.44)と頂点ブロック(aftBridleBlk)で三角形を構成し、三角形部分のシートはやや細め(poleTipSegGeo: r=0.0036)で再現
     for (const sg of [-1, 1]) {
-      const bx = sg * 0.42, bz = 1.62, by = deckY(bz, bx);
+      const bx = sg * 0.44, bz = 1.62, by = deckY(bz, bx);
       const padEye = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.014, 0.034), M.steel);
       padEye.position.set(bx, by + 0.007, bz);
       this.body.add(padEye);
-      this.body.add(rope([[bx, by + 0.012, bz], [sg * 0.012, brApexY - 0.01, brApexZ]], 0x475569, 0.0048));
     }
-    const aftBridleBlk = block(0.018, 0x1e293b); aftBridleBlk.position.set(0, brApexY, brApexZ); this.body.add(aftBridleBlk);
+    this.aftBridleBlk = block(0.017, 0x1e293b);
+    this.aftBridleBlk.position.set(0, FLOOR_Y + 0.48, 1.62);
+    this.body.add(this.aftBridleBlk);
+    // 三角形ブライドル用のやや細めのシート(左脚・右脚・底辺クロスラインの3本)
+    this.bridleTriSegs = [];
+    const bridleMat = ropeMat(0x94a3b8);
+    for (let i = 0; i < 3; i++) {
+      const bSeg = new THREE.Mesh(poleTipSegGeo, bridleMat);
+      this.body.add(bSeg);
+      this.bridleTriSegs.push(bSeg);
+    }
 
-    // メインシート(5セグメント共有ジオメトリ方式: ブーム後ろ側の二股パーチェス2本 + ブーム下 + センターブロック降り + スキッパー手元)
+    // メインシート(5セグメント: 三角形頂点→ブーム後端ブロック + ブーム後端ブロック→コックピット斜め引き込み + ブーム下 + センターブロック降り + スキッパー手元)
     this.mainSheetSegs = [];
     for (let i = 0; i < 5; i++) {
       const seg = new THREE.Mesh(sheetSegGeo, mainSheetMat);
@@ -1003,19 +1187,19 @@ export class BoatModel {
     if (this.waterCutMat) this.waterCutMat.dispose();
   }
 
-  // ランニング時にメインセールが風下サイドステー(シュラウド)に押し付けられるわずかな窪み・折れ目を再現 (画像5枚目準拠)
-  updateMainShroudPress(pressAmt) {
+  // サイドステー(シュラウド)・スプレッダーがメインセールを貫通しないよう幾何学的にクランプしつつ、ランニング時にサイドステーに押し付けられる折れ目を再現
+  updateMainShroudPress(pressAmt, boomAng = 0.3, absScaleX = 1.0) {
     if (!this.mainGeo || !this._baseMainPos) return;
-    const eps = this.boat.isPlayer ? 0.008 : 0.025;
-    if (Math.abs(pressAmt - this._lastShroudPress) < eps) return;
+    const eps = this.boat.isPlayer ? 0.006 : 0.020;
+    if (Math.abs(pressAmt - this._lastShroudPress) < eps && Math.abs(boomAng - (this._lastShroudBoomA || 0)) < eps) return;
     this._lastShroudPress = pressAmt;
+    this._lastShroudBoomA = boomAng;
     const pos = this.mainGeo.attributes.position;
     const src = this._baseMainPos;
     const nu = 28, nv = 12;
     let idx = 0;
     for (let i = 0; i <= nu; i++) {
       const u = i / nu;
-      // シュラウドは y=0.375(u≈0)..3.85(u≈0.60) の範囲でセール前腹部(v≈0.18..0.32)に接触する
       const uContact = Math.sin(clamp(u / 0.68, 0, 1) * Math.PI);
       const vShroud = 0.24 - 0.07 * u;
       for (let j = 0; j <= nv; j++) {
@@ -1028,10 +1212,35 @@ export class BoatModel {
         if (pressAmt > 0.005 && uContact > 0.01) {
           const dv = (v - vShroud) / 0.14;
           const contactIndent = Math.exp(-dv * dv * 2.2) * uContact * pressAmt;
-          // サイドステー接触ラインでキャンバーが手前(風上側)へ少し押し戻され、その後方(v > vShroud)がふっくら張り出す
           const aftBell = v > vShroud ? Math.sin(clamp((v - vShroud) / (1 - vShroud), 0, 1) * Math.PI) * 0.065 * uContact * pressAmt : 0;
           xMod = bx * (1 - 0.42 * contactIndent) + aftBell;
           zMod = bz - 0.032 * contactIndent;
+        }
+        // サイドステー＆スプレッダー貫通防止ガード:
+        // マスト回転中心(0, yBody, -0.90)に対するシュラウド位置(xS, dzS)の角度(angShroud)を超えないようキャンバーxModを制限
+        const yBody = 0.40 + by;
+        if (yBody <= 5.95 && zMod > 0.03) {
+          let xS, dzS;
+          if (yBody <= 3.85) {
+            const tS = clamp((yBody - 0.375) / (3.85 - 0.375), 0, 1);
+            xS = 0.72 - 0.08 * tS;
+            dzS = 0.15 - 0.17 * tS;
+          } else {
+            const tU = clamp((yBody - 3.85) / (5.95 - 3.85), 0, 1);
+            xS = 0.64 * (1 - tU);
+            dzS = -0.02 * (1 - tU);
+          }
+          const rShroud = Math.hypot(xS, dzS);
+          const angShroud = Math.atan2(xS, dzS);
+          const rVert = Math.hypot(xMod * absScaleX, zMod);
+          const nearSpreader = Math.abs(yBody - 3.85) < 0.36 && rVert <= 0.72;
+          const nearShroud = Math.abs(rVert - rShroud) < 0.38;
+          if ((nearShroud || nearSpreader) && rShroud > 0.04) {
+            const maxAllowAng = angShroud - 0.045;
+            const maxLocalAng = maxAllowAng - boomAng;
+            const maxX = Math.max(0.01, zMod * Math.tan(Math.max(0.01, maxLocalAng)) / Math.max(0.25, absScaleX));
+            if (xMod > maxX) xMod = maxX;
+          }
         }
         pos.setXYZ(idx, xMod, by, zMod);
         idx++;
@@ -1131,12 +1340,15 @@ export class BoatModel {
     const pz = lz + v * dz + nz * b;
     const zBody = JIB_TACK_Z + pz;
 
-    // 実艇写真(画像4枚目)のジブ下部(フット u→0)の丸みを帯びたスカート形状(タックからクリューへ滑らかな弧を描く)
-    const footSkirtDepth = 0.058 * closeF + 0.026 * (1 - closeF) + 0.022 * pk;
-    py -= footSkirtDepth * Math.sin(Math.PI * Math.pow(v, 0.88)) * Math.pow(1 - u, 1.85);
+    // 実艇写真(画像1・4枚目)のジブ下部(フット u→0)のスカート形状:
+    // クローズまで引き込まれるとジブ下部の中央付近(v≈0.28..0.72)が滑らかに下がってフォアデッキ(船体上面 y≈0.425)と接する
+    const footSkirtDepth = 0.148 * closeF + 0.032 * (1 - closeF) + 0.022 * pk;
+    py -= footSkirtDepth * Math.sin(Math.PI * Math.pow(v, 0.85)) * Math.pow(1 - u, 2.05);
+    const minDeckLocalY = (0.424 - JIB_TACK_Y) + 0.003;
+    if (py < minDeckLocalY) py = minDeckLocalY;
 
-    // メインセール貫通防止ガード: ジブの中〜下部リーチ側(u < 0.68 かつ v > 0.48)でマスト後方へ重なる頂点のみ外側に保ち、マスト上部のラフやヘッドは絶対に切り離さない
-    if (pk < 0.35 && u < 0.68 && v > 0.48 && zBody > -0.88) {
+    // メインセール貫通防止ガード: マスト後方(zBody > -0.92)へ重なるすべてのジブ頂点について、現在のメインセール実座標より必ず風下外側に保つ
+    if (pk < 0.65 && v > 0.18 && zBody > -0.92) {
       const yBody = JIB_TACK_Y + py;
       const zMain = Math.max(0, zBody - (-0.90));
       const uMain = clamp((yBody - 1.02) / 5.73, 0, 1);
@@ -1144,12 +1356,13 @@ export class BoatModel {
       const vMain = clamp(zMain / chordMain, 0, 1);
       const bMain = 0.37 * Math.sin(Math.PI * vMain) * (1 - 0.50 * uMain) * Math.sin(Math.PI * Math.min(1, 0.15 + uMain * 0.85));
       const twMain = MAIN_TWIST * Math.pow(uMain, 1.15) * (1 - uMain) * 2.02 * Math.pow(vMain, 1.08);
-      const boomAng = this.boomA || 0.03;
-      const mainScale = this.mainSail ? Math.abs(this.mainSail.scale.x) : 1;
-      const mainLeeDist = zMain * Math.sin(boomAng) + (bMain + twMain) * mainScale * Math.cos(boomAng);
-      const leeSign = sgn > 0 ? -1 : 1; // スターボード(sgn=1)の風下は -x、ポート(sgn=-1)の風下は +x
-      const blendW = clamp((0.68 - u) / 0.22, 0, 1) * clamp((v - 0.48) / 0.25, 0, 1);
-      const minOutboard = (mainLeeDist + 0.032) * blendW;
+      const signedMainScale = this.mainSail ? this.mainSail.scale.x : -(sgn || 1);
+      const rotM = this.boomRotY !== undefined ? this.boomRotY : -sgn * (this.boomA || 0.05);
+      const xLocalMain = (bMain + twMain) * signedMainScale;
+      const xMainBody = xLocalMain * Math.cos(rotM) + zMain * Math.sin(rotM);
+      const leeSign = Math.sign(clewX) || (sgn > 0 ? -1 : 1);
+      const blendW = clamp((zBody - (-0.93)) / 0.10, 0, 1) * clamp((v - 0.18) / 0.22, 0, 1);
+      const minOutboard = (Math.max(0, leeSign * xMainBody) + 0.048) * blendW;
       if (leeSign * px < minOutboard) {
         px = leeSign * minOutboard;
       }
@@ -1160,12 +1373,12 @@ export class BoatModel {
   updateJibShape(pk, jibRot, camberSigned) {
     const closeF = this._closeFactor ?? 0;
     const eps = this.boat.isPlayer ? 0.004 : 0.015;
-    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps && Math.abs((this.boomA || 0) - (this._lastBoomA || 0)) < eps && Math.abs(closeF - (this._lastCloseF || 0)) < eps) return;
-    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned; this._lastBoomA = this.boomA || 0; this._lastCloseF = closeF;
+    if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps && Math.abs((this.boomRotY || 0) - (this._lastBoomRotY || 0)) < eps && Math.abs(closeF - (this._lastCloseF || 0)) < eps) return;
+    this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned; this._lastBoomRotY = this.boomRotY || 0; this._lastCloseF = closeF;
 
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
-    // ランチャー展開時はクリューが跳ね上がりすぎずテンションを抜いた自然な高さ(0.16 + 0.54*pk)に保つ
-    const clewLocalY = 0.16 + 0.54 * pk;
+    // クローズ時はクリューが低く引き込まれてフット中央がデッキに接し、ランチャー展開時は自然な高さに保つ
+    const clewLocalY = 0.055 * closeF + 0.16 * (1 - closeF) + 0.54 * pk;
     const clewLocalZ = JIB_CLEW_LEN * Math.cos(jibRot);
     const pos = this.jibGeo.attributes.position;
     const norm = this.jibGeo.attributes.normal;
@@ -1188,8 +1401,9 @@ export class BoatModel {
   // ジブのテルテール: セール面に常に密着し、風上側が躍る=上り過ぎ、風下側が躍る=落とし過ぎ、リーバウ効果時は風上テルテールが上向きにリフト反応
   syncTells(t, camberSigned, luff, stall, pk = 0, jibRot = 0) {
     const sgn = this.boat.tack;
+    const closeF = this._closeFactor ?? 0;
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
-    const clewLocalY = 0.16 + 0.54 * pk;
+    const clewLocalY = 0.055 * closeF + 0.16 * (1 - closeF) + 0.54 * pk;
     const clewLocalZ = JIB_CLEW_LEN * Math.cos(jibRot);
     // リーバウ効果やスターン通過リフト(windBend > 0)を受けている時はテルテールがリフト反応を示す
     const leeBowLift = clamp((this.boat.windBend || 0) * 6.0, -0.5, 0.65);
@@ -1259,13 +1473,10 @@ export class BoatModel {
     this._closeFactor = closeFactor;
     const effMainSheet = clamp(b.sheet + closeFactor * 0.036, 0, 1);
     const sheetAng = (0.018 + (1 - closeFactor) * 0.052) + Math.pow(1 - effMainSheet, 1.10) * (1.36 + 0.16 * runEaseFactor);
-    const maxBoomAng = 1.0 + 0.24 * runEaseFactor;
+    const maxBoomAng = 1.0 + 0.20 * runEaseFactor;
     let ang = Math.min(sheetAng, Math.max(0.018, Math.abs(b.awa) - 0.11 * closeFactor - 0.03 + 0.10 * runEaseFactor), maxBoomAng);
     ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
-    // ランニング時にブームが大きく出た際、風下サイドステー(シュラウド)にメインセールが押し付けられるわずかな窪み・折れ目を更新
-    const shroudPress = clamp((this.boomA - 0.78) / 0.42, 0, 1);
-    this.updateMainShroudPress(shroudPress);
 
     const sgn = b.tack;
     if (sgn !== this._prevTack) {
@@ -1320,6 +1531,9 @@ export class BoatModel {
     const jibLuff = luff * (1 - pk);
     const closeDepthScale = 1 + 0.075 * closeFactor;
     this.mainSail.scale.x = bulgeSign * flap * closeDepthScale;
+    // サイドステー貫通防止とランニング時のサイドステーへの押し付け形状を更新
+    const shroudPress = clamp((this.boomA - 0.72) / 0.42, 0, 1);
+    this.updateMainShroudPress(shroudPress, Math.abs(this.boomRotY), Math.abs(this.mainSail.scale.x));
 
     // クローズ時は深めで丸みのあるジブキャンバー(0.168)、ランチャーアップ時はふっくら風をはらんだ深いポケット(0.31)を表現
     const jibCamberScale = 0.168 * closeFactor + (0.23 + 0.085 * pk) * (1 - closeFactor);
@@ -1330,7 +1544,7 @@ export class BoatModel {
     this.updateJibShape(pk, jibRot, jibCamber);
 
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
-    const clewY = JIB_TACK_Y + 0.16 + 0.54 * pk;
+    const clewY = JIB_TACK_Y + 0.055 * closeFactor + 0.16 * (1 - closeFactor) + 0.54 * pk;
     const clewZ = JIB_TACK_Z + JIB_CLEW_LEN * Math.cos(jibRot);
 
     this.poleStow.visible = pk <= 0.01;
@@ -1658,31 +1872,50 @@ export class BoatModel {
     if (this.bowSprayMesh.instanceColor) this.bowSprayMesh.instanceColor.needsUpdate = true;
   }
 
-  // メインシート(実艇写真1・5枚目準拠):
-  // ブーム後端側は2個のブロック(bz=2.56, bz=2.34)と船体後部ブライドル頂点ブロック(z=1.58)の間で二股に分かれてつながり、
-  // ブーム下面に沿って中央ブロック(bz=1.18) → センターケース後端フロアブロック(z=0.10) → スキッパー手元へつながる
+  // メインシート ＆ ブーム後方の三角形ブライドル(実艇写真4枚目・1枚目準拠):
+  // ・スターンデッキ両端(x=±0.44, z=1.62)と頂点ブロック(aftBridleBlk)の間を「やや細めのシート(bridleTriSegs)」で三角形に結び、
+  //   ブームの振れに応じて三角形の頂点がブーム後端ブロック(bz=2.52)側へ少し引かれる構造を再現
+  // ・三角形の頂点ブロックからブーム後端ブロック(bz=2.52)へメインシートが立ち上がり、そこから斜め前方(コックピット)とブーム中央ブロック(bz=1.22)へ分岐する
   syncMainSheet(sgn, lean, sideAbs) {
     if (!this.mainSheetSegs || this.mainSheetSegs.length < 5) return;
     const pm = this.boomRotY !== undefined ? this.boomRotY : -sgn * this.boomA;
     const sinP = Math.sin(pm), cosP = Math.cos(pm);
-    const bzAft1 = 2.56, bzAft2 = 2.34, bzMid = 1.18;
-    const brY = FLOOR_Y + 0.36, brZ = 1.58;
-    // seg[0]: ブライドル頂点ブロック → ブーム後端第1ブロック(bz=2.56)
-    _p0.set(-0.008, brY, brZ + 0.01);
-    _p1.set(bzAft1 * sinP, 1.35, -0.9 + bzAft1 * cosP);
+    const bzAft = 2.52, bzMid = 1.22;
+    const boomAftX = bzAft * sinP;
+    const boomAftY = 1.35;
+    const boomAftZ = -0.9 + bzAft * cosP;
+
+    // 三角形ブライドルの頂点座標: ブーム後端の位置へわずかに引かれる
+    const apexX = clamp(boomAftX * 0.24, -0.22, 0.22);
+    const apexY = FLOOR_Y + 0.48;
+    const apexZ = 1.62;
+    if (this.aftBridleBlk) {
+      this.aftBridleBlk.position.set(apexX, apexY, apexZ);
+    }
+    if (this.bridleTriSegs && this.bridleTriSegs.length >= 3) {
+      const byDeck = deckY(1.62, 0.44) + 0.012;
+      _p0.set(-0.44, byDeck, 1.62);
+      _p1.set(0.44, byDeck, 1.62);
+      _p2.set(apexX, apexY - 0.008, apexZ);
+      placeSeg(this.bridleTriSegs[0], _p0, _p2); // 左デッキ金具 → 三角形頂点
+      placeSeg(this.bridleTriSegs[1], _p1, _p2); // 右デッキ金具 → 三角形頂点
+      placeSeg(this.bridleTriSegs[2], _p0, _p1); // デッキ間のベースライン
+    }
+
+    // seg[0]: 三角形ブライドル頂点ブロック → ブーム後端ブロック(bz=2.52)
+    _p0.set(apexX, apexY + 0.008, apexZ);
+    _p1.set(boomAftX, boomAftY, boomAftZ);
     placeSeg(this.mainSheetSegs[0], _p0, _p1);
-    // seg[1]: ブライドル頂点ブロック → ブーム後端第2ブロック(bz=2.34) (二股パーチェス)
-    _p0.set(0.008, brY, brZ - 0.01);
-    _p2.set(bzAft2 * sinP, 1.35, -0.9 + bzAft2 * cosP);
-    placeSeg(this.mainSheetSegs[1], _p0, _p2);
-    // seg[2]: ブーム後端ブロック → ブーム中央ブロック(bz=1.18)
+    // seg[1]: ブーム後端ブロック(bz=2.52) → スキッパー手元/コックピット側へ斜めに降りるシート(画像4枚目の三角形シルエットを構成)
+    _p5.set(this.side * (0.30 + lean * 0.20), 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12, 0.72);
+    placeSeg(this.mainSheetSegs[1], _p1, _p5);
+    // seg[2]: ブーム後端ブロック → ブーム中央ブロック(bz=1.22)
     _p3.set(bzMid * sinP, 1.35, -0.9 + bzMid * cosP);
     placeSeg(this.mainSheetSegs[2], _p1, _p3);
     // seg[3]: ブーム中央ブロック → センターケース後端ラチェットブロック(0, FLOOR_Y + 0.16, 0.10)
     _p4.set(0, FLOOR_Y + 0.16, 0.10);
     placeSeg(this.mainSheetSegs[3], _p3, _p4);
     // seg[4]: ラチェットブロック → スキッパーの前手
-    _p5.set(this.side * (0.30 + lean * 0.20), 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12, 0.72);
     placeSeg(this.mainSheetSegs[4], _p4, _p5);
   }
 
