@@ -21,20 +21,26 @@ export class AI {
     // ランニング角度(下レグで180°の真後ろではなく164°〜170°付近を走行してVMGを稼ぐ)
     this.runAngle = ((164.0 + rng() * 6.0) * Math.PI) / 180;
     this.targetStartC = b.startTargetC ?? b.c;
-    // コースのばらつき: 有利サイド(SIDE_BIAS)も考慮しつつ、適度な回廊幅で極端な不利サイドへの突っ込みを防止
+    // コースのばらつき: 有利サイド(SIDE_BIAS)も考慮しつつ、RRSプロパーコース(レイライン円錐)から大きく外れない適度な回廊幅に制限
     const slotSpread = ((b.id % 7) - 3) / 3; // -1 .. +1
-    const biasShift = clamp((SIDE_BIAS || 0) * 35, -32, 32);
-    this.prefSideC = clamp(slotSpread * 72 + biasShift + (rng() - 0.5) * 32, -98, 98);
-    this.corridorHalf = 46 + rng() * 34;
-    this.cLim = 95 + rng() * 32;
-    this.tackCool = 20 + rng() * 14; // 中盤の戦術タック間隔(レイライン到達時は別途即座にタック可能)
+    const biasShift = clamp((SIDE_BIAS || 0) * 32, -28, 28);
+    this.prefSideC = clamp(slotSpread * 54 + biasShift + (rng() - 0.5) * 24, -76, 76);
+    this.corridorHalf = 36 + rng() * 24;
+    this.cLim = 88 + rng() * 24;
+    this.tackCool = 18 + rng() * 13; // 中盤の戦術タック間隔(レイライン到達時は別途即座にタック可能)
     this.lastTack = -99;
     // ラインを切る目標時刻(号砲=0秒の後):
     // 1列目スタート艇はライン手前(6.5〜9.3m)で加速スペースを確保して飛び出し、
+    // 隙間狙い艇(gapShooter)は後ろで待機してスタート前に船と船の間へ滑り込み、
     // スタート失敗役(secondRow / highComFail)は第二線から遅れて出る
     const isStrong = (b.skill || 1) >= 1.04;
     const role = b.startRole || 'firstRow';
-    if (role === 'secondRow') {
+    if (role === 'gapShooter') {
+      this.tc = 0.70 + rng() * 0.90;
+      this.goDist = 11.8 + rng() * 2.4;
+      this.baseStartC = this.targetStartC;
+      this.nextGapScanT = -26 + rng() * 2.0;
+    } else if (role === 'secondRow') {
       this.tc = 2.8 + rng() * 2.4;
       this.goDist = 13.0 + rng() * 4.5;
     } else if (role === 'highComFail') {
@@ -49,14 +55,14 @@ export class AI {
     }
     this.go = false;
     // レイライン余白を抑え、オーバースタンド(レイラインを大きく超えて不利な位置を走り続ける現象)を防止
-    this.layMargin = 0.012 + rng() * 0.042 + skillGap * 0.045;
+    this.layMargin = 0.010 + rng() * 0.032 + skillGap * 0.035;
     this.penDir = rng() < 0.5 ? 1 : -1;
     this.jit = (rng() - 0.5) * 14;
     this.vmgAt = 12 + rng() * 16;
     this.creepExp = 1.15 + rng() * 0.45;
     this.gap0 = null;
     this.avoidUntil = -999; this.avoidH = 0;
-    this.roundR = 6.6 + rng() * 1.2; // マーク進入半径(ワイドイン)
+    this.roundR = 6.4 + rng() * 1.1; // マーク進入半径(ワイドイン)
     this.roundROut = 2.50;            // マーク脱出半径(タイトアウト)
     this.rp = null;
     // 4ゲート(4S=gL / 4P=gR)
@@ -64,6 +70,8 @@ export class AI {
     this.gateRp = null;
     this.poleT = 0;
     this.coverTime = 0;
+    // 戦術的に賢い上位〜中上位CP艇かどうか(上レグの抑えのタック・下レグのブランケット意識を実行)
+    this.isTacticalStrong = (b.skill || 1) >= 0.99;
     // リーチングで前後に密着した際に後ろから上してブランケットを仕掛けたり対抗する積極性(一部CP艇が積極的に仕掛ける)
     this.luffAggro = (b.id % 3 !== 0 || rng() < 0.65) ? 0.58 + rng() * 0.42 : 0.20;
     this.luffMatch = 0;
@@ -116,7 +124,7 @@ export class AI {
   }
 
   // スターボード(tack=1)からポート(newTack=-1)へタックした際に、近くのスターボード権利艇と衝突・接近するか検証
-  hasStbdTackConflict() {
+  hasStbdTackConflict(isOverstoodLay = false) {
     const b = this.b, W = b.windFrom;
     const hPort = wrap(W + this.closeAngle);
     const fx = Math.sin(hPort), fz = -Math.cos(hPort);
@@ -129,10 +137,12 @@ export class AI {
       const dx = o.x - b.x, dz = o.z - b.z;
       const d = Math.hypot(dx, dz);
       if (d > 38) continue;
-      if (d < 9.2 && o.c > b.c - 4.0) return o;
+      // 自分より左側(o.c < b.c - 0.8)にいてスタボで左へ離れていく艇は、自分がポート(右進行)へタックしても遠ざかるだけなので直近4.2m以外除外
+      if (o.c < b.c - 0.8 && d > 4.2) continue;
+      if (d < (isOverstoodLay ? 6.2 : 8.8) && o.c >= b.c - 0.8) return o;
       const vo = Math.max(o.v, 1.6);
       const vox = Math.sin(o.h) * vo, voz = -Math.cos(o.h) * vo;
-      const minSafeCpa = o.isPlayer ? 8.6 : 7.6;
+      const minSafeCpa = o.isPlayer ? 8.6 : (isOverstoodLay ? 5.8 : 7.4);
       for (const [ox0, oz0, sMul] of [[0, 0, 1.0], [0, 0, 0.78], [turnOffX, turnOffZ, 0.92]]) {
         const rx = dx - ox0, rz = dz - oz0;
         const vx = fx * spd * sMul, vz = fz * spd * sMul;
@@ -148,7 +158,7 @@ export class AI {
 
   // 仕方なくスタボからポートへタックせざるを得ない場面で、タック後に角度を落として(ベアアウェイして)全スタボ艇のスターン(後ろ)を安全に通過できる目標relNewを探索
   // 通過できない位置関係(スタボ艇が近すぎる・スタボ艇のバウ前方を横切ってしまう位置)なら null を返し、タック自体を禁止する
-  findPostTackDuckAngle() {
+  findPostTackDuckAngle(isOverstoodLay = false) {
     const b = this.b, W = b.windFrom, ca = this.closeAngle;
     const spd = Math.max(b.v * 0.82, 1.95);
     const turnOffX = Math.sin(W) * 2.0 + Math.sin(b.h) * 1.2;
@@ -158,12 +168,14 @@ export class AI {
       if (o === b || o.finished || o.dsq || o.tack !== 1) continue;
       const d = Math.hypot(o.x - b.x, o.z - b.z);
       if (d > 38) continue;
-      // 直近11m以内にスタボ艇がいる場合は、タック中にぶつかるため絶対にタックしない
-      if (d < 11.0 && o.c > b.c - 3.5) return null;
+      if (o.c < b.c - 0.8 && d > 4.2) continue;
+      // 直近右側にスタボ艇がいる場合は、タック中にぶつかるため絶対にタックしない
+      const minImmediateD = isOverstoodLay ? 5.8 : 9.8;
+      if (d < minImmediateD && o.c >= b.c - 0.8) return null;
       stbdBoats.push(o);
     }
     if (!stbdBoats.length) return -ca;
-    for (const extra of [0.26, 0.36, 0.46, 0.56]) {
+    for (const extra of [0.22, 0.32, 0.42, 0.50]) {
       const duckAng = ca + extra;
       const hDuck = wrap(W + duckAng);
       const fx = Math.sin(hDuck), fz = -Math.cos(hDuck);
@@ -182,7 +194,8 @@ export class AI {
         const bRelOx = -rx - dvx * tca;
         const bRelOz = -rz - dvz * tca;
         const alongO = bRelOx * fox + bRelOz * foz;
-        if (cpa < 5.6 || (cpa < 8.5 && alongO > -3.4)) {
+        const minCpa = isOverstoodLay ? 4.6 : 5.4;
+        if (cpa < minCpa || (cpa < 8.0 && alongO > -3.0)) {
           allSafe = false;
           break;
         }
@@ -190,6 +203,31 @@ export class AI {
       if (allSafe) return -duckAng;
     }
     return null;
+  }
+
+  // 上レグで勝っている(先行している)強いCP艇が「抑えのタック(ルーズカバー: 後ろの船と同じ方向に向かう)」を行うための後続監視対象を探索
+  findUpwindCoverTarget(tgt) {
+    const b = this.b;
+    if (!this.isTacticalStrong || !this.others) return null;
+    const daToMark = tgt.a - b.a;
+    // スタート直後や1マーク直前(レイライン付近)では無理なカバーをせずプロパーコースを優先
+    if (b.a < 24 || daToMark < 38) return null;
+    // 上位グループ(1〜7位)または直後に迫るライバル艇がいる時にカバーリングを意識
+    if ((b.rank || 99) > 8) return null;
+    let bestO = null, bestScore = 1e9;
+    for (const o of this.others) {
+      if (o === b || o.finished || o.dsq || o.ocs || o.leg !== b.leg || o.maneuver) continue;
+      const aheadA = b.a - o.a;
+      const latC = Math.abs(b.c - o.c);
+      // 風上距離で3.5m〜42m後方、横距離36m以内にいる直後の追撃艇を対象とする
+      if (aheadA < 3.5 || aheadA > 42.0 || latC > 36.0) continue;
+      const score = aheadA + latC * 0.65 - (o.isPlayer ? 5.0 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        bestO = o;
+      }
+    }
+    return bestO;
   }
 
   // タック/ジャイブ先がクリーンエアーで、かつ周囲の権利艇(特にスタボ艇)と衝突コースにならないか厳密に検証
@@ -240,7 +278,7 @@ export class AI {
     return Math.max(c4, c7) < curLoss * 0.50;
   }
 
-  // 目標点(a,c)へ向かうヘディング(風上ならタック、風下ならジャイブ)
+  // 目標点(a,c)へ向かうヘディング(RRSプロパーコース準拠: 風上はレイライン円錐内の最適VMGクローズ、風下は最適VMGランニング角＋レイラインジャイブ)
   headingFor(tgt, t, prestart, directDownwind = false) {
     const b = this.b, W = b.windFrom;
     const tw = toWorld(tgt.a, tgt.c);
@@ -248,33 +286,24 @@ export class AI {
     const relT = wrap(W - brg);
     const ca = this.closeAngle;
     const ra = this.runAngle;
-    // 下レグ(目標が真風角raより深い場合): 180°で走らず164°〜170°を維持し、レイラインに達したらジャイブする
-    if (!prestart && !directDownwind && Math.abs(relT) > ra && Math.hypot(tgt.a - b.a, tgt.c - b.c) > 22) {
+    const distTgt = Math.hypot(tgt.a - b.a, tgt.c - b.c);
+    // 下レグ(目標が真風角raより深い場合): 180°で走らず164°〜170°を維持し、プロパーコースのダウンウインド・レイラインに達したらジャイブする
+    if (!prestart && !directDownwind && Math.abs(relT) > ra && distTgt > 22) {
       const hs = wrap(W - ra), hp = wrap(W + ra);
       const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
-      if (t - this.lastTack > 14 && !this.crowded(6.5) && !this.nearObstacle(8) && this.canTackCleanly('gybe', true)) {
-        if (b.tack === 1 && cp > cs + 0.045) { this.lastTack = t; b.startManeuver('gybe'); }
-        else if (b.tack === -1 && cs > cp + 0.045) { this.lastTack = t; b.startManeuver('gybe'); }
+      const downDa = Math.max(8, b.a - tgt.a);
+      const downLay = Math.max(16, downDa * Math.tan(Math.PI - ra) * 1.08);
+      const overDownLay = (b.tack === 1 && b.c - tgt.c > downLay) || (b.tack === -1 && b.c - tgt.c < -downLay);
+      const gybeCool = overDownLay ? 6.5 : 13.0;
+      if (t - this.lastTack > gybeCool && !this.crowded(6.0) && !this.nearObstacle(7.5) && (overDownLay || this.canTackCleanly('gybe', true))) {
+        if (b.tack === 1 && (cp > cs + 0.042 || overDownLay)) { this.lastTack = t; b.startManeuver('gybe'); }
+        else if (b.tack === -1 && (cs > cp + 0.042 || overDownLay)) { this.lastTack = t; b.startManeuver('gybe'); }
       }
       return wrap(W - b.tack * ra);
     }
-    // マークへの直進が可能な角度か判定
-    // ※上りレグ(leg 0 / leg 3)で1マークよりまだ風下(b.a < MARKS.m1.a - 5.0)にいる間は、クローズ中に謎に角度を落とさないようca+0.06以内に保つ
-    const onUpwindBeat = !prestart && !directDownwind && (b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind') && b.a < MARKS.m1.a - 5.0;
-    if (Math.abs(relT) > ca + 0.03) {
-      if (onUpwindBeat) {
-        const clampedRel = Math.sign(relT || b.tack) * Math.min(Math.abs(relT), ca + 0.06);
-        return wrap(W - clampedRel);
-      }
-      return brg;
-    }
-    if (!prestart && b.leg === 1 && b.c > tgt.c + 1.5) {
-      if (b.tack === -1 && !b.maneuver && t - this.lastTack > 3.0) {
-        this.lastTack = t;
-        b.startManeuver('tack');
-      }
-      return wrap(W - ca);
-    }
+
+    const onUpwindBeat = !prestart && !directDownwind && (b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind') && b.a < MARKS.m1.a - 4.0;
+    const da = tgt.a - b.a, dc = b.c - tgt.c;
 
     // タック直後にスタボ艇のスターンを通過するためのダック継続中なら、スタボ艇の後ろを抜けるまで落とし角度を維持し、抜けたら即クローズへ戻す
     if (b.tack === -1 && this.postTackDuckUntil && t < this.postTackDuckUntil) {
@@ -284,36 +313,102 @@ export class AI {
       this.postTackDuckUntil = 0;
     }
 
-    // ビーティング: レイライン到達時は無駄に外へ突き抜けず速やかにタックし、中盤の戦術タック時はタック先がブランケットや衝突コースでないことを確認する
-    const da = tgt.a - b.a, dc = b.c - tgt.c;
+    // マークへの直進が可能な角度(|relT| > ca + 0.025)のときの処理:
+    // 【重要】relT と現在の b.tack が同符号(同じタック側)のときのみ直進またはレイライン・フェッチ角を返す。
+    // もし異符号(relT * b.tack < 0)なのにそのまま brg を返すと、startManeuver('tack') なしで風向眼(twa=0°)を横切ろうとしてアイアンズ(逆走・停止)に陥るため、
+    // 異符号の上りレグでは必ず下のタック判定へ進ませて正規のタック動作で反対タックへ返らせる！
+    if (Math.abs(relT) > ca + 0.025) {
+      if (onUpwindBeat) {
+        if (relT * b.tack > 0) {
+          // 既にレイラインに乗っており現在のタックのままマーク進入点(rp.lay / rp.entry)へフェッチできる状態:
+          // マーク手前42m以内ならマークを通り過ぎないようターゲット方向(最大ca+0.30 = 約60°)へ自然にフェッチさせ、遠距離ならクローズ角(ca+0.08)を維持
+          const maxFetchRel = da < 42 ? ca + 0.30 : ca + 0.08;
+          const clampedRel = Math.sign(relT) * Math.min(Math.abs(relT), maxFetchRel);
+          return wrap(W - clampedRel);
+        }
+        // relT * b.tack < 0 のときは反対タック側のレイラインを大きく超えているため、直進はせず下の強制タック処理へ進む
+      } else {
+        // リーチングレグ(leg 1: 1→1a, leg 4: 1→2, leg 5: 2→3, leg 6: 3→F)やマーク回航orbit/exit時:
+        // もし現在針路(relNow)から目標(relT)への最短回頭が風向眼(twa=0°)を跨ぐ(|relNow|+|relT| < π)場合、
+        // startManeuver('tack') なしで回頭すると sim.js のアイアンズ逆走判定に捕まるため、必ず正規のタック動作を開始させる！
+        const relNow = wrap(W - b.h);
+        if (!prestart && !b.maneuver && relNow * relT < 0 && Math.abs(relNow) + Math.abs(relT) < Math.PI - 0.12) {
+          this.lastTack = t;
+          b.startManeuver('tack');
+          if (b.maneuver) {
+            b.maneuver.relNew = Math.sign(relT) * clamp(Math.abs(relT), ca, 1.45);
+          }
+        }
+        return brg;
+      }
+    }
+
+    // マーク回航中(directDownwind=true)または1マーク直前〜頂点(a >= 295.5, c >= -1.5)でスターボード・アプローチ中に、
+    // 中盤のビーティング用タック判定へ落ちてポートタックへ逆戻りするのを防ぐ
+    if (!prestart && Math.abs(relT) <= ca + 0.025) {
+      if (directDownwind || (!onUpwindBeat && b.tack === 1 && b.a >= MARKS.m1.a - 4.5 && b.c >= -1.5)) {
+        return wrap(W - (b.tack || 1) * ca);
+      }
+    }
+
+    // ビーティング(RRSプロパーコース):
+    // 1マークから伸びる左右のレイライン円錐(コーン)の内側を保ち、レイライン到達時はオーバースタンドせず速やかにタックする
     const tackNow = b.tack;
     const dtTack = t - this.lastTack;
-    const layCool = dtTack > (prestart ? 11 : 7.0);
+    const layCool = dtTack > (prestart ? 10.5 : 5.0);
     const midCool = dtTack > (prestart ? 15 : this.tackCool);
     let wantTack = false, isMustTack = false, isForcedTack = false;
-    if (da > 5 && layCool) {
-      const lay = da * Math.tan(ca) * (1 + this.layMargin);
+    const lay = Math.max(0, da) * Math.tan(ca) * (1 + this.layMargin);
+    if (da > 3 && layCool) {
       if (tackNow === 1 && dc <= -lay) {
         wantTack = true;
         isMustTack = true;
-        if (dc <= -lay - 8.5) isForcedTack = true;
+        if (dc <= -lay - 3.5) isForcedTack = true;
       }
-      if (tackNow === -1 && dc >= lay) { wantTack = true; isMustTack = true; }
-      // 海面端のデッドコーナーへ突っ込み続けるのを防止
-      if (!prestart && ((tackNow === 1 && b.c < -135) || (tackNow === -1 && b.c > 135))) {
-        wantTack = true; isMustTack = true; isForcedTack = true;
+      if (tackNow === -1 && dc >= lay * 0.92) {
+        wantTack = true;
+        isMustTack = true;
+        isForcedTack = true;
       }
-      if (!prestart && !wantTack && midCool) {
-        const weight = clamp((da - 42) / 135, 0, 1);
+      // 反対タックのフェッチ角を超えてしまっている場合も即座にレイライン強制タック
+      if (!prestart && Math.abs(relT) > ca + 0.025 && relT * tackNow < 0) {
+        wantTack = true;
+        isMustTack = true;
+        isForcedTack = true;
+      }
+      // プロパーコース(海面中央〜有利サイドの回廊)から外へ膨らみすぎないよう |c| > 86m で必須タック、|c| > 95m で強制タック
+      if (!prestart && ((tackNow === 1 && b.c < -86) || (tackNow === -1 && b.c > 86))) {
+        wantTack = true;
+        isMustTack = true;
+        if ((tackNow === 1 && b.c < -95) || (tackNow === -1 && b.c > 95)) isForcedTack = true;
+      }
+
+      // 戦術的に強いCP艇の「抑えのタック(カバーリングタック: 勝っているときは上レグで後ろの船と同じ方向に向かう)」
+      let holdingCover = false;
+      if (!prestart && onUpwindBeat && !wantTack && Math.abs(dc) < lay * 0.84) {
+        const coverTarget = this.findUpwindCoverTarget(tgt);
+        if (coverTarget) {
+          if (coverTarget.tack !== tackNow && dtTack > 10.5) {
+            // 後ろの船が自分と逆タックへ向かっている場合、タックして後ろの船と同じ方向(同じタック)へ向かい抑える
+            wantTack = true;
+          } else if (coverTarget.tack === tackNow && Math.abs(b.c - coverTarget.c) < 22) {
+            // 既に後ろの船と同じ方向(同じタック)で抑えている最中は、不要な中盤タックを控えてカバーを維持する
+            holdingCover = true;
+          }
+        }
+      }
+
+      if (!prestart && !wantTack && !holdingCover && midCool) {
+        const weight = clamp((da - 38) / 130, 0, 1);
         const centerC = tgt.c + this.prefSideC * weight;
-        const halfW = this.corridorHalf * (0.55 + 0.45 * weight);
-        const corridorL = Math.max(-128, centerC - halfW);
-        const corridorR = Math.min(128, centerC + halfW);
+        const halfW = this.corridorHalf * (0.50 + 0.50 * weight);
+        const corridorL = Math.max(-84, Math.min(-18, -lay * 0.88), centerC - halfW);
+        const corridorR = Math.min(84, Math.max(18, lay * 0.88), centerC + halfW);
         if (tackNow === 1 && b.c < corridorL) wantTack = true;
         if (tackNow === -1 && b.c > corridorR) wantTack = true;
-        // 風が弱い不利海面を逆方向へ走り続けている場合や、シフトで反対タックが明確にリフトしている場合は戦術タック
+        // 風が弱い不利海面を逆方向へ走り続けている場合や、シフトで反対タックが明確にリフトしている場合は戦術タック(プロパーコース選択)
         if (t > this.vmgAt) {
-          this.vmgAt = t + 18 + this.rng() * 14;
+          this.vmgAt = t + 16 + this.rng() * 12;
           const hs = W - ca, hp = W + ca;
           const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
           const aheadX = b.x + Math.sin(b.h) * 45, aheadZ = b.z - Math.cos(b.h) * 45;
@@ -321,44 +416,59 @@ export class AI {
           const oppX = b.x + Math.sin(oppH) * 45, oppZ = b.z - Math.cos(oppH) * 45;
           const wAhead = windAt(aheadX, aheadZ, this.wt ?? t).factor;
           const wOpp = windAt(oppX, oppZ, this.wt ?? t).factor;
-          const windGain = (wOpp - wAhead) * 0.65;
-          if (tackNow === 1 && (cp - cs + windGain) > 0.14) wantTack = true;
-          if (tackNow === -1 && (cs - cp + windGain) > 0.14) wantTack = true;
+          const windGain = (wOpp - wAhead) * 0.68;
+          if (tackNow === 1 && (cp - cs + windGain) > 0.13) wantTack = true;
+          if (tackNow === -1 && (cs - cp + windGain) > 0.13) wantTack = true;
         }
       }
     }
-    if (wantTack && !this.crowded(isMustTack ? 5.2 : 6.8) && !this.nearObstacle(8)) {
-      if (tackNow === 1 && this.hasStbdTackConflict()) {
+    if (wantTack && !this.crowded(isForcedTack ? 2.6 : (isMustTack ? 4.4 : 6.2), true) && !this.nearObstacle(7.5)) {
+      if (tackNow === 1 && this.hasStbdTackConflict(isForcedTack)) {
         // スタボからポートへタックするとスタボ艇にぶつかる場面:
-        // 原則タックせずそのままスタボのクローズを維持する(スタボのまま謎に角度を落とさない)。
-        // 境界やレイライン大幅超過(isForcedTack)で仕方なくタックする場合も、タック後に落としてスタボ艇の後ろを通過できる位置の時だけタックする
+        // 原則タックせずそのままスタボのクローズを維持する。
+        // ただしレイライン超過(isForcedTack)で仕方なくタックする場合は、落としてスタボ艇の後ろを通過できる角度を探してタックする
         if (isForcedTack) {
-          const duckRel = this.findPostTackDuckAngle();
+          let duckRel = this.findPostTackDuckAngle(true);
+          if (duckRel === null && (b.c < -98 || dc <= -lay - 6.0)) {
+            let rightBlocked = false;
+            for (const o of this.others) {
+              if (o === b || o.finished || o.dsq) continue;
+              if (o.c > b.c - 0.5 && Math.hypot(o.x - b.x, o.z - b.z) < 3.8) { rightBlocked = true; break; }
+            }
+            if (!rightBlocked) duckRel = -(ca + 0.38);
+          }
           if (duckRel !== null) {
             this.lastTack = t;
             b.startManeuver('tack');
             if (b.maneuver) b.maneuver.relNew = duckRel;
             this.postTackDuckUntil = t + 4.2;
             this.postTackDuckRel = duckRel;
+          } else {
+            // 直近右横に別のスタボ艇が並走していてタックできない場合は、少し減速して相手を先に通すことで左レイラインでのデッドロックを解消
+            b.throttle = Math.min(b.throttle, 0.35);
           }
         }
       } else if (isMustTack || this.canTackCleanly('tack', false)) {
         this.lastTack = t;
-        if (!isMustTack) this.prefSideC = clamp(b.c + b.tack * 48, -110, 110);
+        if (!isMustTack) this.prefSideC = clamp(b.c + b.tack * 42, -88, 88);
         b.startManeuver('tack');
       }
     }
     return wrap(W - b.tack * ca);
   }
 
-  crowded(rad = 8.5) {
+  crowded(rad = 8.5, ignoreAwayOnTack = false) {
     const b = this.b, r2 = rad * rad;
     const pre = (this.now ?? 0) < 0;
     for (const o of this.others) {
       if (o === b || o.finished || o.dsq) continue;
       if (pre && o.isPlayer) continue; // プリスタート中は自艇の位置に関係なくスタートラインへ並ぶ
       const dx = o.x - b.x, dz = o.z - b.z;
-      if (dx * dx + dz * dz < r2) return true;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= r2) continue;
+      // タック回頭側と逆(スタボ→ポート時は左=風下側 o.c < b.c - 0.5)にいる艇は、タックすれば離れる方向なので直近2.2m以外除外
+      if (ignoreAwayOnTack && (o.c - b.c) * (b.tack || 1) < -0.5 && d2 > 4.8) continue;
+      return true;
     }
     return false;
   }
@@ -375,21 +485,28 @@ export class AI {
 
   // ---------- マーク回航プラン (すべて確実に左舷回航 = 反時計回り) ----------
   buildRounding(L) {
-    const m = L.mark, rIn = L.markKey === 'm1a' ? Math.min(this.roundR, 5.2) : this.roundR, rOut = this.roundROut, ca = this.closeAngle;
+    const m = L.mark, rIn = L.markKey === 'm1a' ? Math.min(this.roundR, 4.8) : this.roundR, rOut = this.roundROut;
     const right = (d) => ({ c: d.a, a: -d.c });
     const ri = right(L.dirIn), ro = right(L.dirOut);
     const th1 = Math.atan2(ri.a, ri.c);
     let th2 = Math.atan2(ro.a, ro.c);
     while (th2 < th1 + 0.05) th2 += 2 * Math.PI;
     const beat = L.dirIn.a > 0.7;
-    const ths = L.markKey === 'm1a' ? 0.65 : (beat ? Math.max(th1, 0.35) : th1 - 0.35);
+    const ths = L.markKey === 'm1a' ? 0.75 : (beat ? 0.92 : th1 - 0.35);
+    // 風上マーク(beat=true: 1マーク)では、真風(twa=0°)方向へバウを向けてアイアンズ・オーバースタンドしないよう、
+    // 右下レイライン目標(lay: a=298.0, c=+7.8)からスターボード・クローズ角のままマーク頂点(entry: a=304.2, c=+1.5 -> e: a=303.2, c=-2.5)へ抜け、
+    // マークの真上(dc <= 0.6, da >= 2.2)を確実に越えてから次レグ方向(exit)へベアアウェイさせる
     const entry = L.markKey === 'm1a'
-      ? { c: m.c + 3.8, a: m.a + 2.4 }
-      : { c: m.c + rIn * Math.cos(ths), a: m.a + rIn * Math.sin(ths) };
-    const e = { c: m.c + rOut * Math.cos(th2), a: m.a + rOut * Math.sin(th2) };
-    const lay = beat ? { c: m.c + rIn * 0.88, a: m.a - 1.5 } : null;
+      ? { c: m.c + 3.4, a: m.a + 2.0 }
+      : beat
+        ? { c: m.c + 3.5, a: m.a + 5.0 }
+        : { c: m.c + rIn * Math.cos(ths), a: m.a + rIn * Math.sin(ths) };
+    const e = beat
+      ? { c: m.c - 2.5, a: m.a + 3.8 }
+      : { c: m.c + rOut * Math.cos(th2), a: m.a + rOut * Math.sin(th2) };
+    const lay = beat ? { c: m.c + 10.5, a: m.a + 0.5 } : null;
     const exit = { c: e.c + L.dirOut.c * 14, a: e.a + L.dirOut.a * 14 };
-    return { leg: L.id, m, r: rIn, rOut, ths, arc: th2 - ths, entry, e, lay, exit, phase: beat ? 'lay' : 'approach', beat, idx: 0 };
+    return { leg: L.id, m, r: rIn, rOut, ths, arc: th2 - ths, entry, e, lay, exit, phase: beat ? 'lay' : 'approach', beat, passedRight: false, idx: 0 };
   }
 
   roundingTarget(L) {
@@ -403,15 +520,75 @@ export class AI {
     const dist = (p) => Math.hypot(b.c - p.c, b.a - p.a);
     const t = this.now || 0;
 
-    // 1マーク(上りマーク)の手前でマークより左側(dc < -1.0, da > -26, da < -0.5)にいるとき:
-    // そのままスタボで左へ走ると逆回りになるためポートタックへ返してクローズ角度のままrp.layへ向かわせる(横方向のsafeRightを返して謎に角度を落とすのを防ぐ)
-    if (rp.beat && rp.phase !== 'orbit' && rp.phase !== 'exit' && da > -26 && da < -0.5 && dc < -1.0) {
-      if (b.tack === 1 && !b.maneuver && t - this.lastTack > 4.0 && !this.nearObstacle(5.5)) {
-        if (!this.hasStbdTackConflict()) {
+    // マークの右横〜右上(dc > 0.6 && da > -0.5)を確実に通過したことを記録(マーク下側ショートカットによる誤exit防止)
+    if (rp.beat) {
+      if (dc > 0.6 && da > -0.5) rp.passedRight = true;
+      if (da < -2.0 && dc < 0) rp.passedRight = false;
+    }
+
+    // 既に風上マーク頂点を正規通過してexitフェーズに入っている場合は、レグ更新が完了するまでexit目標を維持する
+    // (ただし万一 dc < -18 まで流れてもレグ更新されなかった場合は passedRight をリセットして再アプローチさせる)
+    if (rp.beat && rp.phase === 'exit') {
+      if (dc < -18.0 || da < -4.0) {
+        rp.phase = 'lay';
+        rp.passedRight = false;
+      } else {
+        rp.idx = 2;
+        return { ...rp.exit, forceDirect: true };
+      }
+    }
+
+    // 1マーク(風上マーク)へポートタック(tack === -1)でアプローチし、マーク頂点(+4.2m)をクリアできるスターボード・レイライン(reqDc)に到達したら、
+    // オーバースタンドして右上(a > 314)へ突き抜けないよう即座にスターボードタックへタックする
+    const reqDc = Math.max(3.4, (4.2 - da) * Math.tan(this.closeAngle));
+    if (rp.beat && b.tack === -1 && !b.maneuver && da >= -10.0 && dc >= reqDc) {
+      this.lastTack = t;
+      b.startManeuver('tack');
+    }
+
+    // 1マーク手前(da >= -16)でポートタック(tack === -1)のままレイライン左側(dc < reqDc)にいる場合:
+    // クローズホールド(43°)で登るとマークの左側〜真上を斜めに横切って a > 314 までオーバースタンドしてしまうため、
+    // マーク手前下側(a = m.a - 2.5, c = m.c + 8.8)へダイレクトにベアアウェイしてマーク下をくぐり、正規の右レイラインへ出る
+    if (rp.beat && rp.phase !== 'exit' && b.tack === -1 && da >= -16.0 && dc < reqDc) {
+      return { a: m.a - 2.5, c: m.c + 8.8, forceDirect: true };
+    }
+
+    // 風上マーク(rp.beat)で正規に右側からアプローチ(rp.passedRight)し、スターボードタックでマークの真上〜左上(da >= 1.8 && dc <= 4.8)に到達したら、
+    // マーク真上(dc <= 0.4 && da >= 2.0)を越えた時点で次レグ方向(rp.exit)へベアアウェイする。
+    // また右レイラインを少しオーバースタンドして da >= 3.2, dc > 4.8 に出た場合も、クローズのまま a > 314 へ登り続けないよう
+    // マーク風上4.5mを通過するアビーム針路でダイレクトにマーク頂点へ寄せる
+    if (rp.beat && b.tack === 1 && rp.passedRight) {
+      if (da >= 1.8 && dc <= 4.8 && dc >= -18.0) {
+        if (dc <= 0.4 && da >= 2.0) {
+          rp.phase = 'exit';
+          rp.idx = 2;
+          return { ...rp.exit, forceDirect: true };
+        }
+        rp.idx = 1;
+        return { ...rp.e, forceDirect: true };
+      }
+      if (da >= 3.2 && dc > 4.8 && dc <= 18.0) {
+        rp.idx = 1;
+        return { c: m.c + 0.8, a: Math.max(m.a + 4.5, Math.min(b.a, m.a + 8.0)), forceDirect: true };
+      }
+    }
+
+    // 万一1マーク(上りマーク)でレイラインより下(左)へ落ちてしまい、このままではマークの下側(逆回り)を通過してしまう位置にある場合:
+    // 必ずマークの右下(正規進入側 rp.lay)へ戻す
+    if (rp.beat && rp.phase !== 'orbit' && rp.phase !== 'exit' && !rp.passedRight && da >= -4.5 && dc < 1.8) {
+      return { a: m.a - 3.5, c: m.c + 9.5, forceDirect: true };
+    }
+
+    // 1マーク(上りマーク)の手前〜左横でスターボード・レイラインより左側(アンダースタンド位置)にいるとき:
+    // そのままスタボで左へ走るとマーク下側へ突っ込み逆回りまたはa>314へのオーバースタンドになるため、ポートタックへ返してrp.layへ向かわせる
+    const minStbdDc = (2.8 - da) * Math.tan(this.closeAngle) - 1.0;
+    if (rp.beat && rp.phase !== 'orbit' && rp.phase !== 'exit' && !rp.passedRight && da > -28 && da < 16.0 && dc < Math.min(2.2, minStbdDc)) {
+      if (b.tack === 1 && !b.maneuver && t - this.lastTack > 1.8) {
+        if (!this.hasStbdTackConflict(true)) {
           this.lastTack = t;
           b.startManeuver('tack');
         } else {
-          const duckRel = this.findPostTackDuckAngle();
+          const duckRel = this.findPostTackDuckAngle(true);
           if (duckRel !== null) {
             this.lastTack = t;
             b.startManeuver('tack');
@@ -425,37 +602,45 @@ export class AI {
     }
 
     if (rp.phase === 'lay') {
-      if (dist(rp.lay) < 7.5 || (dc >= rIn * 0.45 && da >= -10) || (da >= -3.0 && dc > 0)) {
+      if (dc >= reqDc - 0.8 && da >= -8.0 && b.tack === 1) {
         rp.phase = 'approach';
       } else {
         return rp.lay;
       }
     }
     if (rp.phase === 'approach') {
-      // もし風上マークで右レイラインより左下に落ちてエントリーできない場合は一旦rp.layへ戻す
-      if (rp.beat && da < -5.5 && dc < rIn * 0.25) {
+      // もし風上マークでスターボード・レイラインより左下に落ちてエントリーできない場合は一旦rp.layへ戻す
+      if (rp.beat && da < 0.8 && dc < minStbdDc) {
         rp.phase = 'lay';
         return rp.lay;
       }
-      // orbitへ入るのは必ずマークの正規進入側(uu > -0.45 かつ反時計回り側)に来たときのみ
-      const onEntrySide = rp.beat ? (dc > -0.5 || da > 0) : true;
-      if (onEntrySide && (dist(rp.entry) < 6.0 || (dM < 2.2 * rIn && uu > (rp.beat ? -0.35 : -0.95) && uu < rp.arc))) {
+      if (rp.beat) {
+        // 風上マークのapproachでは、スターボードのクローズ角で頂点(rp.entry)へ向かう
+        return rp.entry;
+      }
+      if (dist(rp.entry) < 6.5 || (dM < 2.3 * rIn && uu > -0.95 && uu < rp.arc)) {
         rp.phase = 'orbit';
       } else {
-        return rp.entry;
+        return { ...rp.entry, forceDirect: true };
       }
     }
     if (rp.phase === 'orbit') {
       rp.idx = 1;
       if (uu >= rp.arc - 0.04) rp.phase = 'exit';
-      else if (dM > 3.0 * rIn) { rp.phase = 'approach'; return rp.entry; }
+      else if (dM > 3.0 * rIn) { rp.phase = 'approach'; return { ...rp.entry, forceDirect: true }; }
       else {
         const prog = clamp(uu / Math.max(0.2, rp.arc), 0, 1);
         const rDes = rIn + (rOut - rIn) * Math.pow(prog, 0.85);
         const tc = -Math.sin(thb), ta = Math.cos(thb), nc = Math.cos(thb), na = Math.sin(thb);
         const k = clamp(((dM - rDes) / Math.max(2.2, rDes)) * 1.85, -1.2, 1.15);
         let vc = tc - k * nc, va = ta - k * na; const l = Math.hypot(vc, va) || 1; vc /= l; va /= l;
-        return { c: b.c + vc * 14, a: b.a + va * 14 };
+        // orbit接線が風上ノーゴーゾーン(va > cos(closeAngle))を向いて失速・オーバースタンドしないようクランプ
+        const maxVa = Math.cos(this.closeAngle);
+        if (va > maxVa) {
+          va = maxVa;
+          vc = -Math.sin(this.closeAngle);
+        }
+        return { c: b.c + vc * 14, a: b.a + va * 14, forceDirect: true };
       }
     }
     // exit: course.js の updateProgress で b.leg がインクリメントされるまでは絶対に次マークへ飛ばず、
@@ -464,9 +649,9 @@ export class AI {
     if (dM > ROUND_R - 2) {
       // 万一まだ回航判定が完了していないのにマークから離れた場合はアプローチをやり直す
       this.rp = this.buildRounding(L);
-      return this.rp.entry;
+      return { ...this.rp.entry, forceDirect: !rp.beat };
     }
-    return rp.exit;
+    return { ...rp.exit, forceDirect: true };
   }
 
   // ---------- 4ゲート(4S=gL / 4P=gR) 専用回航プラン ----------
@@ -550,11 +735,50 @@ export class AI {
     return null;
   }
 
+  // プリスタート中に後ろ(第2列)で待機し、スタート前に前線の船と船の間(ギャップ)を見つけて滑り込むCP艇(gapShooter)の隙間探索
+  scanPrestartGap(t) {
+    const b = this.b;
+    const baseC = clamp(this.baseStartC ?? this.targetStartC ?? 0, -LINE_HALF + 8, LINE_HALF - 7);
+    const searchSpan = 22.0;
+    const minC = Math.max(-LINE_HALF + 6, baseC - searchSpan);
+    const maxC = Math.min(LINE_HALF - 5, baseC + searchSpan);
+    const occ = [minC - 2.0, maxC + 2.0];
+    const tanCa = Math.tan(this.closeAngle) * 0.85;
+    for (const o of this.others) {
+      if (o === b || o.finished || o.dsq) continue;
+      const laO = lineA(clamp(o.c, -LINE_HALF, LINE_HALF));
+      const gapO = laO - o.a;
+      // 自分より前方(ライン側)にいる前線待機艇の号砲時予想横位置をリストアップ
+      if (gapO < -2.0 || gapO > 16.0 || o.a < b.a - 1.5) continue;
+      const projC = o.c - Math.max(0, gapO) * tanCa - Math.max(0, -t - 4) * 0.25;
+      if (projC >= minC - 4.0 && projC <= maxC + 4.0) {
+        occ.push(projC);
+      }
+    }
+    occ.sort((x, y) => x - y);
+    let bestMid = baseC, bestScore = -1e9;
+    for (let i = 0; i < occ.length - 1; i++) {
+      const cL = Math.max(minC, occ[i]);
+      const cR = Math.min(maxC, occ[i + 1]);
+      const width = cR - cL;
+      if (width < 4.2) continue;
+      const mid = (cL + cR) * 0.5;
+      // 隙間が広く、かつ自分のベース狙い位置(baseC)から無理なく入れるギャップを高評価
+      const score = width * 1.4 - Math.abs(mid - baseC) * 0.45;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMid = mid;
+      }
+    }
+    this.targetStartC = clamp(bestMid, -LINE_HALF + 6, LINE_HALF - 5);
+  }
+
   // 衝突回避: ポート艇がスタボ艇へ突っ込まないよう早期検知し、リーボータック(クリーンな位置へのタック)またはスターン通過(ベアアウェイ)で確実に回避する
+  // また接触・密着時(d < 3.8m)に離れようとしない現象を防ぐため、1.15秒後の分離距離(sep1)を評価して即座に離間方向へ舵を切る
   avoid(t, desired) {
     const b = this.b;
-    // ポートタック時(特にタック直後)はスタボ艇との衝突を毎フレーム即座に再評価してすぐに落とせるようにする
-    if (b.tack !== -1 && t < this.avoidUntil) return this.avoidH;
+    // ポートタック時や直近接触時は毎フレーム即座に再評価してすぐに離れられるようにする
+    if (b.tack !== -1 && t < this.avoidUntil && !this.crowded(3.8)) return this.avoidH;
     const CLEAR = 5.2, DETECT = 5.6;
     const vb = Math.max(b.v, 1.45);
     const cpaInfo = (h, o) => {
@@ -565,41 +789,48 @@ export class AI {
       const dv2 = dvx * dvx + dvz * dvz || 1e-6;
       const tca = clamp(-(dx * dvx + dz * dvz) / dv2, 0, 9.5);
       const cpa = Math.hypot(dx + dvx * tca, dz + dvz * tca);
+      // 現在すでに密着している場合(tca≈0)でもどの針路hなら1.15秒後に離れられるかを正確に評価
+      const sep1 = Math.hypot(dx + dvx * 1.15, dz + dvz * 1.15);
       // 最接近時に自艇bが相手oの進行方向基準でどこを通過するか(負=oのスターン後方、正=oのバウ前方)
       const bRelOx = -dx - dvx * tca;
       const bRelOz = -dz - dvz * tca;
       const alongO = bRelOx * fox + bRelOz * foz;
-      return { cpa, tca, alongO, d2: dx * dx + dz * dz };
+      return { cpa, sep1, tca, alongO, d2: dx * dx + dz * dz };
     };
     const h0 = desired ?? b.h;
     const W = b.windFrom;
     const twa0 = Math.abs(wrap(W - h0));
-    const isCloseHauled = twa0 < 1.05;
+    const isCloseHauled = twa0 < 1.08;
     const threats = [];
     const prestart = t < 0;
     for (const o of this.others) {
       if (o === b || o.finished || o.dsq) continue;
       const dx = o.x - b.x, dz = o.z - b.z;
       const d2 = dx * dx + dz * dz;
-      // プリスタート中は自艇(isPlayer)がラインから離れていても絶対にそれにつられて針路を変えない(直前3.2mの接触回避のみ)
-      if (prestart && o.isPlayer && d2 > 10.5) continue;
+      // プリスタート中は自艇(isPlayer)がラインから離れていても絶対にそれにつられて針路を変えない(直前3.4mの接触回避のみ)
+      if (prestart && o.isPlayer && d2 > 11.5) continue;
       if (d2 > (prestart ? 360 : 1444)) continue; // プリスタート中は19m以内、レース中は38m以内を監視
-      const { cpa, tca, alongO } = cpaInfo(h0, o);
+      const { cpa, sep1, tca, alongO } = cpaInfo(h0, o);
       const gw = giveWayBoat(b, o).gw;
       const isGiveWay = gw === b;
       const isPortVsStbd = b.tack === -1 && o.tack === 1;
       const isSameTackParallel = b.tack === o.tack && Math.abs(wrap(b.h - o.h)) < 0.45;
-      // 自艇がスタボ権利艇で相手がポート艇の場合は、相手が直前(6.2m以内・cpa<2.3m)まで避けない緊急時以外は針路を維持する
-      if (!isGiveWay && b.tack === 1 && o.tack === -1 && (d2 > 38 || cpa > 2.3)) continue;
-      // クローズ中に同タックで並走している他艇に対しては、5.6mで過剰反応して謎に角度を落とさないよう直近接触圏(d2<110かつcpa<2.55m)のみ回避対象にする
-      if (isCloseHauled && isSameTackParallel && (d2 > 110 || cpa >= 2.55)) continue;
+      // すでに接触・超接近(d < 3.6m)している場合は権利関係や並走判定に関わらず必ず離間対象にする
+      const isTouchingOrClose = d2 < 13.0;
+      if (!isTouchingOrClose) {
+        // 自艇がスタボ権利艇で相手がポート艇の場合は、相手が直前(6.2m以内・cpa<2.3m)まで避けない緊急時以外は針路を維持する
+        if (!isGiveWay && b.tack === 1 && o.tack === -1 && (d2 > 38 || cpa > 2.3)) continue;
+        // クローズ中に同タックで並走している他艇に対しては、5.6mで過剰反応して謎に角度を落とさないよう直近接触圏(d2<90かつcpa<2.55m)のみ回避対象にする
+        if (isCloseHauled && isSameTackParallel && (d2 > 90 || cpa >= 2.55)) continue;
+      }
       const thresh = isGiveWay
-        ? (prestart ? 3.8 : (isPortVsStbd ? 7.2 : (isCloseHauled && isSameTackParallel ? 2.55 : DETECT)))
-        : (o.isPlayer ? (prestart ? 2.5 : 3.0) : 2.4);
-      if (cpa < thresh && (tca > 0.05 || d2 < 36)) {
-        threats.push({ o, isGiveWay, isPortVsStbd, cpa, tca, alongO, d2 });
+        ? (prestart ? 3.8 : (isPortVsStbd ? 7.2 : (isCloseHauled && isSameTackParallel ? 2.65 : DETECT)))
+        : (o.isPlayer ? (prestart ? 2.6 : 3.1) : 2.5);
+      if (isTouchingOrClose || (cpa < thresh && (tca > 0.05 || d2 < 36))) {
+        threats.push({ o, isGiveWay, isPortVsStbd, cpa, sep1, tca, alongO, d2 });
       }
     }
+    this.hasPortStbdThreat = threats.some((th) => th.isPortVsStbd);
     if (!threats.length) return null;
 
     // ポートタック走行中にスタボ艇と交差接近(10m〜25m)した際、スタボへ返してクリーンエアーで走れるなら早めにタックして回避
@@ -607,32 +838,56 @@ export class AI {
     if (!prestart && stbdThreat && b.tack === -1 && b.twa < 1.32 && !b.maneuver && !b.pole && t - this.lastTack > 8.0) {
       if (this.canTackCleanly('tack', false)) {
         this.lastTack = t;
-        this.prefSideC = clamp(b.c - 42, -110, 110);
+        this.prefSideC = clamp(b.c - 42, -90, 90);
         b.startManeuver('tack');
         return null;
       }
     }
 
-    const hasPortStbd = threats.some((th) => th.isPortVsStbd);
+    const hasPortStbd = this.hasPortStbdThreat;
+    const hasVeryClose = threats.some((th) => th.d2 < 14.5);
+    const onM1Leg = !prestart && (b.leg === 0 || b.leg === 3);
+    // 1マーク頂点(a >= 301.2)でスタボ回航中に他艇回避で風上(twa < 65°)へラフし直して a > 314 へ登り続けるのを防止
+    const inM1TopBearAway = onM1Leg && b.tack === 1 && b.a >= MARKS.m1.a + 1.2 && b.c >= -5.0 && b.c <= 18.0;
+    // 1マーク手前右レイライン上(a = 286..301.2, c > 1.5)でスタボ進入中に他艇回避で風下へ落としすぎてマーク下側へ落ちるのを防止
+    const inM1StbdApproach = onM1Leg && b.tack === 1 && b.a >= MARKS.m1.a - 14.0 && b.a < MARKS.m1.a + 1.2 && b.c > 1.5;
     let best = null, bestScore = -1e9, bestMinCpa = 0;
     const maxStep = prestart ? 7 : 18;
-    const minTwaAllow = hasPortStbd ? 0.63 : 0.57;
+    // クローズ走行中にピンチしすぎて失速・アイアンズに陥らないよう最小真風角を厳守(密着離間時は少しだけラフ余地を広げて風上艇が右へ逃げられるようにする)
+    const minTwaAllow = inM1TopBearAway
+      ? Math.min(twa0, 1.12)
+      : (isCloseHauled ? Math.max(0.62, this.closeAngle - (hasVeryClose ? 0.11 : 0.045)) : (hasPortStbd ? 0.65 : 0.62));
     for (let i = 0; i <= maxStep; i++) {
       for (const s of i ? [1, -1] : [1]) {
         const dh = s * i * 0.084, h = wrap(h0 + dh);
-        const twaH = Math.abs(wrap(W - h));
+        const relH = wrap(W - h);
+        const twaH = Math.abs(relH);
         if (twaH < minTwaAllow) continue;
+        // クローズ走行中または1マーク頂点回航中はタックなしで風向眼の反対側へ舵を切ることを禁止
+        if ((isCloseHauled || inM1TopBearAway) && relH * (b.tack || 1) < 0) continue;
         // プリスタート中は回避で風下へベアアウェイしすぎてスタートラインから離れるのを防ぐ
-        if (prestart && twaH > this.closeAngle + 0.25) continue;
-        // クローズ走行中にスタボ艇との交差(hasPortStbd)ではない通常の同タック回避では、謎に大きく角度を落とさないよう最大でもcloseAngle+0.10までに制限
-        if (!prestart && isCloseHauled && !hasPortStbd && twaH > this.closeAngle + 0.10) continue;
+        if (prestart && twaH > this.closeAngle + 0.24) continue;
+        // 1マークへのスターボード最終アプローチ中はベアアウェイしすぎてレイライン下に落ちるのを禁止
+        if (inM1StbdApproach && twaH > this.closeAngle + 0.07) continue;
+        // クローズ走行中にスタボ艇との交差(hasPortStbd)時は最大closeAngle+0.34(約62°)までのダックに抑え、通常の同タック回避では+0.10(密着時は+0.16)までに制限
+        if (!prestart && isCloseHauled) {
+          const maxUpwindAvoidTwa = hasPortStbd ? this.closeAngle + 0.34 : this.closeAngle + (hasVeryClose ? 0.16 : 0.10);
+          if (twaH > maxUpwindAvoidTwa) continue;
+        }
         if (b.pole && twaH < POLE_MIN) continue;
         let minCpa = 99;
         let bowCrossPenalty = 0;
+        let closeSepBonus = 0;
         for (const th of threats) {
-          const { cpa, alongO } = cpaInfo(h, th.o);
-          const wCpa = th.isGiveWay || th.o.isPlayer ? cpa : cpa + 0.6;
+          const { cpa, sep1, alongO } = cpaInfo(h, th.o);
+          const effCpa = th.d2 < 14.5 ? Math.min(cpa, sep1) : cpa;
+          const wCpa = th.isGiveWay || th.o.isPlayer ? effCpa : effCpa + 0.5;
           if (wCpa < minCpa) minCpa = wCpa;
+          // 既に接触・密着(d < 3.8m)している相手からは、1.15秒後の距離(sep1)が広がる方向へ強く舵を切って即座に離れる
+          if (th.d2 < 14.5) {
+            const curD = Math.sqrt(th.d2);
+            closeSepBonus += (sep1 - curD) * 24.0;
+          }
           // ポート艇がスタボ艇の前(alongO > -3.2)を8.2m未満の距離で横切ろうとする針路は衝突の危険が極めて高いため厳禁とし、必ずスターン後方(alongO <= -3.2)を通過させる
           if (th.isPortVsStbd && cpa < 8.2 && alongO > -3.2) {
             bowCrossPenalty += 220;
@@ -643,7 +898,7 @@ export class AI {
         // ポート艇がスタボ艇を避ける際は、風下へ落として相手のスターン(後ろ)を通る針路を強く優先
         const duckBonus = hasPortStbd ? (isBearAway ? 18.0 : (dh !== 0 ? -25.0 : 0)) : 0;
         const base = minCpa >= CLEAR ? 100 - Math.abs(dh) * 6.5 + duckBonus : minCpa * 14 - Math.abs(dh) * 0.4 + duckBonus;
-        const score = base - bowCrossPenalty - Math.max(0, 3.5 - this.markClear(h)) * 4.0;
+        const score = base + closeSepBonus - bowCrossPenalty - Math.max(0, 3.5 - this.markClear(h)) * 4.0;
         if (score > bestScore) { bestScore = score; best = h; bestMinCpa = minCpa; }
       }
     }
@@ -654,7 +909,7 @@ export class AI {
       b.startManeuver('tack');
       return null;
     }
-    if (best !== null) { this.avoidUntil = t + (b.tack === -1 ? 0.14 : 0.42); this.avoidH = best; }
+    if (best !== null) { this.avoidUntil = t + (b.tack === -1 || hasVeryClose ? 0.12 : 0.36); this.avoidH = best; }
     return best;
   }
 
@@ -699,11 +954,15 @@ export class AI {
     const score = (h) => Math.min(clr(h, look), clr(wrap(b.h + wrap(h - b.h) * 0.5), 6));
     const NEED = 1.85;
     if (score(heading) > NEED) return heading;
-    const onUpwindMid = !prestart && (b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind') && b.a < MARKS.m1.a - 18;
+    const onM1Leg = !prestart && (b.leg === 0 || b.leg === 3);
+    const onUpwindMid = !prestart && (b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind') && (b.a < MARKS.m1.a - 18 || (b.tack === 1 && b.a < MARKS.m1.a + 0.8 && b.c > 1.5));
+    const inM1TopBearAway = onM1Leg && b.tack === 1 && b.a >= MARKS.m1.a + 1.2 && b.c >= -5.0 && b.c <= 18.0;
     const ok = (h) => {
-      const tw = Math.abs(wrap(W - h));
-      if (onUpwindMid && tw > ca + 0.14) return false;
-      return tw > ca - 0.08 && (!b.pole || tw > POLE_MIN);
+      const rel = wrap(W - h);
+      const tw = Math.abs(rel);
+      if (onUpwindMid && (tw > ca + 0.14 || rel * (b.tack || 1) < 0)) return false;
+      if (inM1TopBearAway && (tw < 1.10 || rel * (b.tack || 1) < 0)) return false;
+      return tw > Math.max(0.68, ca - 0.05) && (!b.pole || tw > POLE_MIN);
     };
     const wrongSide = (h) => {
       if (!active) return 0;
@@ -754,9 +1013,9 @@ export class AI {
     const curOptDeg = b.bestCloseDeg || bestCloseDeg(BASE_WIND_KT * (b.windF || 1));
     this.closeAngle = (curOptDeg * Math.PI) / 180 + this.closeAngleOffset;
     if (b.maneuver) {
-      // タックしてポート(tack === -1)になる最中にスタボ艇が近くにいる場合は、タック完了角(relNew)を風下へ深く落としてタック後すぐにスタボ艇のスターン後方へ逃げる
-      if (b.maneuver.kind === 'tack' && b.tack === -1 && this.hasStbdTackConflict()) {
-        const duckRel = this.findPostTackDuckAngle() || -(this.closeAngle + 0.42);
+      // スタボ(s0 === 1)からポート(relNew < 0)へタックする最中にスタボ艇が近くにいる場合は、タック完了角(relNew)を風下へ深く落としてタック後すぐにスタボ艇のスターン後方へ逃げる
+      if (b.maneuver.kind === 'tack' && b.maneuver.s0 === 1 && b.maneuver.relNew < 0 && this.hasStbdTackConflict()) {
+        const duckRel = this.findPostTackDuckAngle() || -(this.closeAngle + 0.36);
         b.maneuver.relNew = Math.min(b.maneuver.relNew, duckRel);
         this.postTackDuckUntil = t + 3.8;
         this.postTackDuckRel = b.maneuver.relNew;
@@ -779,7 +1038,7 @@ export class AI {
         this.lastTack = t;
         this.coverTime = 0;
         // 脱出後のタック方向に合わせて回廊中心もシフトし、直後にまた元のブランケットへ戻らないようにする
-        this.prefSideC = clamp(b.c + b.tack * 65, -130, 130);
+        this.prefSideC = clamp(b.c + b.tack * 48, -90, 90);
         b.startManeuver('tack');
         return;
       } else if (b.twa > 2.15 && this.canEscapeBlanket('gybe')) {
@@ -791,6 +1050,7 @@ export class AI {
     }
 
     let heading;
+    let isUpwindStrictlyClose = false;
     const prestart = t < 0;
     if (b.finished) {
       b.throttle = 0.5;
@@ -821,6 +1081,11 @@ export class AI {
           heading = this.bearing(sternW.x, sternW.z);
         }
       } else {
+        // 後ろ(第2列)で待機し、スタート前に前線の船と船の間(ギャップ)を狙って滑り込むCP艇(gapShooter)の隙間スキャン
+        if (role === 'gapShooter' && t > -26 && t < -2.2 && t >= (this.nextGapScanT || -99)) {
+          this.nextGapScanT = t + 1.1;
+          this.scanPrestartGap(t);
+        }
         // プリスタート: 強いCP艇は上側の端っこ(本部船すぐ内側)や有利端からも確実にスタートできるよう、
         // 本部船よりも右側(c > LINE_HALF)からスターボードタックでアプローチして本部船スターンをかわして上端へ入る
         const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 5, LINE_HALF - 3.8);
@@ -832,13 +1097,14 @@ export class AI {
         const tw = Math.min(b.twa, 1.1);
         const upf = Math.max(0.48, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
         if (this.gap0 === null) this.gap0 = Math.max(16, posGap);
-        const holdDist = role === 'secondRow' ? 11.2 : 5.6;
-        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -9.5 || posGap > holdDist + 3.0)) this.go = true;
-        if (gap < holdDist + 0.4 && t < (role === 'secondRow' ? -0.4 : -2.2)) this.go = false; // 加速スペースを残して早すぎるライン接近を防止
+        const holdDist = role === 'gapShooter' ? 12.6 : (role === 'secondRow' ? 11.2 : 5.6);
+        const holdEndT = role === 'gapShooter' ? -6.8 : (role === 'secondRow' ? -0.4 : -2.2);
+        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -9.8 || posGap > holdDist + 3.0)) this.go = true;
+        if (gap < holdDist + 0.4 && t < holdEndT) this.go = false; // 加速スペースを残して早すぎるライン接近を防止
         if (this.go) {
           b.throttle = 1;
           b.sheet = sheetOpt(b.twa);
-        } else if (gap < holdDist && t < (role === 'secondRow' ? -0.4 : -2.2)) {
+        } else if (gap < holdDist && t < holdEndT) {
           // ラインから少し離れた待機ラインで待機する際も、本部船側(tgtC>=12)の艇が左(-c)へ流されて本部船側が空かないよう微速を維持して横流れを抑える
           const isComSide = tgtC >= 12;
           b.throttle = isComSide ? 0.16 : 0.06;
@@ -868,8 +1134,10 @@ export class AI {
         const cPred = b.c - posGap * Math.tan(this.closeAngle) * 0.88 - driftLeft;
         let preAngle = this.closeAngle;
         if (b.tack === 1) {
-          // 目標tgtCより右(+c)に余裕がある時は少しだけベアして左へ流し、左(-c)へ流れすぎそうな時はピンチして本部船側(上側)を維持
-          preAngle = clamp(this.closeAngle + (cPred - tgtC) * 0.015, this.closeAngle - 0.10, this.closeAngle + 0.12);
+          // gapShooterが加速突入中(t > -7.5)は狙った船間のギャップ(tgtC)へ正確に入るよう角度を微調整
+          const gainC = role === 'gapShooter' && this.go ? 0.024 : 0.015;
+          const maxBear = role === 'gapShooter' && this.go ? 0.18 : 0.12;
+          preAngle = clamp(this.closeAngle + (cPred - tgtC) * gainC, this.closeAngle - 0.06, this.closeAngle + maxBear);
           if (b.c > LINE_HALF - 2.5 && b.a > MARKS.com.a - 5.0) {
             // 本部船のすぐ真下に迫った時だけ少しベアして本部船の左(ライン内側)へかわす
             preAngle = Math.max(preAngle, this.closeAngle + 0.22);
@@ -910,11 +1178,12 @@ export class AI {
       const returnC = clamp(b.c, -LINE_HALF + 6, LINE_HALF - 6);
       heading = this.headingFor({ a: lineA(returnC) - 14, c: returnC }, t, false, true);
     } else if (!b.started) {
-      // まだスタートライン(ピン〜本部船の間)を切っていない艇は、必ずライン内側を通過してからコースへ出る
+      // まだスタートライン(ピン〜本部船の間)を切っていない艇は、現在のクローズホールド角度を維持したままライン内側を通過する
+      // (初期targetStartCへ無理に向かおうとして風向眼へバウを向け失速する現象を防止)
       b.throttle = 1;
       if (b.pole) b.setPole(false);
-      const crossC = clamp(this.targetStartC ?? b.c, -LINE_HALF + 5, LINE_HALF - 5);
-      const la = lineA(crossC);
+      const naturalCrossC = clamp(b.c - b.tack * 5.0, -LINE_HALF + 5, LINE_HALF - 5);
+      const la = lineA(naturalCrossC);
       if (b.c > LINE_HALF - 2.0 && b.a > MARKS.com.a - 5.5) {
         // 本部船の上側でスタート失敗した艇が本部船のスターン側(風下・内側)をかわして第二線からスタートする
         const sternW = toWorld(MARKS.com.a - 7.2, LINE_HALF - 6.5);
@@ -923,7 +1192,8 @@ export class AI {
         // ラインの横外側に出てしまっている場合は一度ライン手前内側へ戻る
         heading = this.headingFor({ a: la - 10, c: clamp(b.c, -LINE_HALF + 8, LINE_HALF - 8) }, t, false, true);
       } else {
-        heading = this.headingFor({ a: la + 12, c: crossC }, t, false);
+        isUpwindStrictlyClose = true;
+        heading = wrap(b.windFrom - b.tack * this.closeAngle);
       }
     } else {
       b.throttle = 1;
@@ -943,12 +1213,21 @@ export class AI {
         if (L.type === 'mark') {
           tgt = this.roundingTarget(L);
           distMark = Math.hypot(b.c - L.mark.c, b.a - L.mark.a);
-          rounding = (this.rp ? this.rp.idx > 0 : false) || distMark < 30;
+          rounding = (this.rp ? this.rp.idx > 0 : false) || distMark < 28;
+          if (tgt && tgt.forceDirect) directDownwind = true;
         } else {
           tgt = L.aim;
           distMark = Math.hypot(b.c - L.center.c, b.a - L.center.a);
+          // トラペゾイド最終レグ(leg 6: 3マーク→フィニッシュ)でフィニッシュライン手前75m以内に入ったら、無駄なジャイブをせずフィニッシュライン中央へ直進
+          if (COURSE_MODE === 'trapezoid' && L.type === 'finish' && distMark < 75) {
+            directDownwind = true;
+          }
         }
       }
+      const onUpwindLeg = b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind';
+      const inGateExitNow = b.leg === 3 && this.gateRp && this.gateRp.phase !== 'done';
+      const inMarkOrbitNow = L.type === 'mark' && this.rp && (this.rp.phase === 'orbit' || this.rp.phase === 'exit');
+      isUpwindStrictlyClose = onUpwindLeg && !inGateExitNow && !inMarkOrbitNow && !directDownwind && b.a < MARKS.m1.a - 5.0;
       heading = this.headingFor(tgt, t, false, directDownwind);
       // リーチング(真風角60°〜136°付近・マークから十分離れている区間)での「上し合い(ラフマッチ)」戦術:
       // 前後に密着した展開では、後ろの艇がラフ(のぼす)して艇速を上げながら風上へ登り前の艇をブランケットに入れようとし、
@@ -989,11 +1268,58 @@ export class AI {
         heading = wrap(heading + b.tack * dH);
         b.sheet = sheetOpt(Math.abs(wrap(W - heading)));
       }
+
+      // 下レグ(ランニング: leg 2, 4, 5, 6)で戦術的に強いCP艇が「前の船をブランケット(風影)に入れようと少しだけ意識する」処理
+      // (ただしそのために大きくプロパーコースを逸れることはしないよう、最大±5.4°=0.095radの微調整に制限)
+      if (!rounding && !onUpwindLeg && distMark > 28 && this.isTacticalStrong && twaBrg > 1.85) {
+        const ux = Math.sin(heading), uz = -Math.cos(heading);
+        let bestBlanketBrg = null, bestDist = 99;
+        for (const o of this.others) {
+          if (o === b || o.finished || o.dsq || o.leg !== b.leg) continue;
+          const dx = o.x - b.x, dz = o.z - b.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 3.5 || d > 25.0) continue;
+          const ahead = dx * ux + dz * uz;
+          if (ahead < 2.8 || ahead > 24.0) continue;
+          // 自艇bの風影(真風の下流方向)がちょうど先行艇oに重なるための目標方位を算出
+          const brgO = this.bearing(o.x, o.z);
+          const diff = wrap(brgO - heading);
+          // 現在のプロパーコースから約17°(0.30rad)以内にいる先行艇のみ対象とし、大きくコースを外れる追いかけはしない
+          if (Math.abs(diff) < 0.30 && d < bestDist) {
+            bestDist = d;
+            bestBlanketBrg = diff;
+          }
+        }
+        if (bestBlanketBrg !== null) {
+          const nudge = clamp(bestBlanketBrg * 0.42, -0.095, 0.095);
+          const candH = wrap(heading + nudge);
+          const candTwa = Math.abs(wrap(W - candH));
+          if (candTwa >= 2.25 && (!b.pole || candTwa > POLE_MIN)) {
+            heading = candH;
+          }
+        }
+      }
+
       this.updatePole(dt, heading, distMark, rounding);
     }
     const av = prestart ? this.avoid(t, heading) : this.avoid(t, heading);
     if (av !== null && av !== undefined) heading = av;
     heading = this.avoidMarks(heading, prestart);
+
+    // クローズホールド走行中の角度安定ガード:
+    // 上りレグ中盤(isUpwindStrictlyClose)でタック中でもOCSでもないのに、回避等の合成で風向眼(twa < 39°)へ突っ込んだり
+    // タックと逆符号の向きや極端なリーチング角へ逸れるのを防ぎ、常に自然なクローズホールド角度帯を厳守させる
+    if (!prestart && isUpwindStrictlyClose && !b.maneuver && !b.ocs) {
+      const W = b.windFrom;
+      const isDuckingStbd = (b.tack === -1 && this.postTackDuckUntil && t < this.postTackDuckUntil) || this.hasPortStbdThreat;
+      const minAllowTwa = Math.max(0.62, this.closeAngle - (this.crowded(3.8) ? 0.11 : 0.045));
+      const maxAllowTwa = this.closeAngle + (isDuckingStbd ? 0.36 : 0.16);
+      const relCurDes = wrap(W - heading);
+      const clampedTwa = clamp(Math.abs(relCurDes), minAllowTwa, maxAllowTwa);
+      const signTack = b.tack || Math.sign(relCurDes) || 1;
+      heading = wrap(W - signTack * clampedTwa);
+    }
+
     let err = wrap(heading - b.h);
     // 下り・リーチングレグで現在針路と目標針路がともに風下(twa > 1.65)かつ反対タックにある場合、
     // 風上(ヘッドトゥウインド)側へ回頭して失速・逆走するのを防ぎ、必ず風下(ジャイブ方向)へ舵を切る
