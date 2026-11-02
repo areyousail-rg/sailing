@@ -82,7 +82,7 @@ export function setCourseMode(mode = 'trapezoid') {
     MARKS.fcom.a = 600; MARKS.fcom.c = 24; // S旗・青旗を掲揚したフィニッシュ運営艇が右端
     const upFinCenter = { a: 600, c: 1 };
     LEGS.push(
-      { id: 0, name: 'F', label: '1マーク(2倍距離)フィニッシュへ [RRS32.2 S旗]', type: 'finish', from: START, center: upFinCenter, aim: { a: 600, c: 0 } }
+      { id: 0, name: 'F', label: '1マーク(2倍距離)フィニッシュへ [RRS32.2 S旗]', type: 'finish', from: START, center: upFinCenter, aim: { a: 606, c: 1 } }
     );
   } else {
     MARKS.m1.a = 300; MARKS.m1.c = 0;
@@ -94,6 +94,7 @@ export function setCourseMode(mode = 'trapezoid') {
     MARKS.fcom.a = -95; MARKS.fcom.c = -70;
     MARKS.fm.a = -135; MARKS.fm.c = -110;
     const FINISHC = { a: (-95 + -135) / 2, c: (-70 + -110) / 2 };
+    const FINISH_AIM = { a: FINISHC.a - 8, c: FINISHC.c + 8 };
     const { m1, m1a, m2, m3 } = MARKS;
     LEGS.push(
       { id: 0, name: '1', markKey: 'm1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: START, next: m1a },
@@ -102,7 +103,7 @@ export function setCourseMode(mode = 'trapezoid') {
       { id: 3, name: '1', markKey: 'm1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: GATEC, next: m2 },
       { id: 4, name: '2', markKey: 'm2', label: '2マーク(ウィング)を左舷に見て回航', type: 'mark', mark: m2, side: -1, from: m1, next: m3 },
       { id: 5, name: '3', markKey: 'm3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISHC },
-      { id: 6, name: 'F', label: 'フィニッシュラインへ', type: 'finish', from: m3, center: FINISHC, aim: FINISHC }
+      { id: 6, name: 'F', label: 'フィニッシュラインへ', type: 'finish', from: m3, center: FINISHC, aim: FINISH_AIM }
     );
   }
   let cum = 0;
@@ -153,27 +154,35 @@ export function updateProgress(b, t) {
   if (L.type === 'mark') {
     const dx = b.c - L.mark.c, dy = b.a - L.mark.a;
     const d = Math.hypot(dx, dy);
-    if (d < ROUND_R) {
+    const alongIn = dx * L.dirIn.c + dy * L.dirIn.a;
+    if (d < ROUND_R && (b.visit || d < 16.5 || alongIn > -6.5)) {
       // マーク周りに掃いた角度(反時計回り=左舷回航で正)を積算して回航方向を判定
       const ang = Math.atan2(dy, dx);
       if (!b.visit) b.visit = { min: 1e9, side: 0, passed: false, sweep: 0, ang };
       let da = ang - b.visit.ang; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
       b.visit.sweep += da; b.visit.ang = ang;
-      if (d < b.visit.min) { b.visit.min = d; b.visit.side = L.dirIn.c * dy - L.dirIn.a * dx; }
-      if (dx * L.dirIn.c + dy * L.dirIn.a > -1.2) b.visit.passed = true;
-      // ROUND_R(22m)圏から離れるのを待たず、マークの横を通過して次レグ方向へ回り込んだ瞬間に即座に回航判定
-      const swept = b.visit.sweep * -L.side;
       const alongOut = dx * L.dirOut.c + dy * L.dirOut.a;
-      if (!b.ocs && b.started !== false && b.visit.passed && ((swept > 0.36 && alongOut > -1.8) || swept > 0.62)) {
+      // マーク手前の正規アプローチ側(dx > 1.2 または alongOut < 0)にいる時点で、手前のタックやライン取りで蓄積した逆方向のsweep負債をクリアする
+      if ((dx > 1.2 || alongOut < -1.0) && b.visit.sweep * -L.side < 0) {
+        b.visit.sweep = 0;
+      }
+      if (d < b.visit.min) { b.visit.min = d; b.visit.side = L.dirIn.c * dy - L.dirIn.a * dx; }
+      if (alongIn > -1.2) b.visit.passed = true;
+      // ROUND_R(22m)圏から離れるのを待たず、マークの横を通過して次レグ方向へ回り込んだ瞬間に即座に回航判定
+      // ただし1マーク等でポートタックのまま右上(+c, +a)へ抜けている最中に誤判定しないよう、必ず次レグ方向(alongOut > -0.8)かつ風上マークではスタボ側へ回り込んだことを確認
+      const swept = b.visit.sweep * -L.side;
+      const topTurnOk = L.dirIn.a > 0.7 ? (dx <= 2.2) : true;
+      if (!b.ocs && b.started !== false && b.visit.passed && swept > 0.32 && alongOut > -0.8 && topTurnOk) {
         b.visit = null;
         b.leg++;
         ev.push({ type: 'rounded', leg: L });
       }
-    } else if (b.visit) {
+    } else if (d >= ROUND_R && b.visit) {
       const v = b.visit; b.visit = null;
-      const sideOk = v.sweep * -L.side > 0.22;
+      const alongOut = dx * L.dirOut.c + dy * L.dirOut.a;
+      const sideOk = v.sweep * -L.side > 0.28 && alongOut > -2.0;
       if (sideOk && v.passed && !b.ocs && b.started !== false) { b.leg++; ev.push({ type: 'rounded', leg: L }); }
-      else if (!sideOk || !v.passed) ev.push({ type: 'wrongSide', leg: L });
+      else if (v.passed && v.min < 10.0 && v.sweep * -L.side < -0.25) ev.push({ type: 'wrongSide', leg: L });
     }
   } else if (L.type === 'gate') {
     const crossedGate = prevA > L.center.a + 3.0 && b.a <= L.center.a + 3.0 && Math.abs(b.c) < 35;
