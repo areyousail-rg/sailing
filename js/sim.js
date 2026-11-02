@@ -964,9 +964,28 @@ export function resolveCollisions(boats, t) {
         if (pp > pen) { pen = pp; nx = dx / d; nz = dz / d; hit = true; }
       }
       if (!hit) continue;
-      A.x -= nx * pen * 0.5; A.z -= nz * pen * 0.5;
-      B.x += nx * pen * 0.5; B.z += nz * pen * 0.5;
-      A.v *= 0.99; B.v *= 0.99;
+      const sep = pen * 0.56 + 0.03;
+      A.x -= nx * sep; A.z -= nz * sep;
+      B.x += nx * sep; B.z += nz * sep;
+      A.v *= 0.985; B.v *= 0.985;
+      // 接触したCP艇同士が貼り付いたまま並走し続けないよう、外向きへ自然にバウを逃がす微小分離角を与える(ただし風向眼へは入れない)
+      const nudgeAway = (boat, outX, outZ, amt) => {
+        if (boat.isPlayer || boat.maneuver) return;
+        const rx = Math.cos(boat.h), rz = Math.sin(boat.h);
+        const side = outX * rx + outZ * rz;
+        const dh = (side >= 0 ? 1 : -1) * amt;
+        const hNext = wrap(boat.h + dh);
+        const relNext = wrap(boat.windFrom - hNext);
+        if (Math.abs(relNext) > 0.66 && relNext * (boat.rel || boat.tack || 1) > 0) {
+          boat.h = hNext;
+          boat.rel = relNext;
+          boat.twa = Math.abs(relNext);
+        }
+        const fx = Math.sin(boat.h), fz = -Math.cos(boat.h);
+        if (outX * fx + outZ * fz < -0.35) boat.v *= 0.94;
+      };
+      nudgeAway(A, -nx, -nz, 0.024);
+      nudgeAway(B, nx, nz, 0.024);
       if (A.contactCD <= 0 && B.contactCD <= 0 && !A.finished && !B.finished) {
         const r = giveWayBoat(A, B, OBSTACLES);
         A.contactCD = 3; B.contactCD = 3;
