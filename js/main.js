@@ -279,11 +279,13 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
-    // スタートに失敗して第二線からスタートするCP艇(secondRow: 2艇)と、
-    // 本部船の上で待って結局スタートに失敗し第二線から出るCP艇(highComFail: 1艇)を設定
+    // スタートに失敗して第二線からスタートするCP艇(secondRow: 2艇)、
+    // 本部船の上で待って結局スタートに失敗し第二線から出るCP艇(highComFail: 1艇)、
+    // そして後ろで待機しスタート前に船と船の間(ギャップ)に入ろうとするCP艇(gapShooter: 3艇)を設定
     const startRole =
       (kIdx === 15) ? 'highComFail' :
       (kIdx === 11 || kIdx === 13) ? 'secondRow' :
+      (kIdx === 5 || kIdx === 8 || kIdx === 10) ? 'gapShooter' :
       'firstRow';
     if (startRole === 'highComFail') {
       const a0 = -10 - (i % 2) * 2.5;
@@ -292,7 +294,11 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
     }
     const isUpperEnd = targetC >= 22;
     const baseA0 = isUpperEnd ? -18 - (i % 2) * 2.0 : -20 - (i % 3) * 2.2;
-    const a0 = startRole === 'secondRow' ? baseA0 - 8.0 : baseA0;
+    const a0 = startRole === 'secondRow'
+      ? baseA0 - 8.0
+      : startRole === 'gapShooter'
+        ? baseA0 - 9.5
+        : baseA0;
     // 1分間のスターボードタック前進と低速下流れによる左(-c)への移動量を見越し、
     // 本部船側狙い(targetC>=22)のCP艇は最初から十分な右(+c)余裕を持たせて配置する
     const driftMargin = isUpperEnd ? 22 : 16;
