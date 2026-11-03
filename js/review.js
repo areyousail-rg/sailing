@@ -125,10 +125,10 @@ export class Recorder {
             s.distAngleDiff += ds * (1 - Math.cos(b.twa) / cosOpt);
             s.distShiftDiff += ds * ((Math.cos(b.twa) - Math.cos(Math.max(0.08, b.twa - liftRad))) / cosOpt);
           }
-          // 1) 上しすぎ(ピンチング < 39.8°)による艇速低下の積算
-          if (!b.maneuver && !b.tacking && !b.penalty && twaDeg < 39.8) {
+          // 1) 上しすぎ(ピンチング < 37.5°)による艇速低下の積算
+          if (!b.maneuver && !b.tacking && !b.penalty && twaDeg < 37.5) {
             s.pinchT += dt;
-            const pinchSeverity = Math.min(1.2, (39.8 - twaDeg) / 8.0 + (b.luff || 0) * 0.8);
+            const pinchSeverity = Math.min(1.2, (37.5 - twaDeg) / 7.5 + (b.luff || 0) * 0.8);
             s.lossPinch += Math.max(0.4, v) * (0.14 + 0.36 * pinchSeverity) * dt;
           }
           // 2) 落としすぎ(> 45.8°)による上りVMG低下の積算
