@@ -20,7 +20,7 @@ let LINE_T = 0;
 export let FAVORED = 'pin';
 export const lineA = (c) => c * LINE_T; // スタートライン上で横位置cにおける風上距離a
 
-export const ROUND_R = 22;
+export const ROUND_R = 28;
 export let COURSE_MODE = 'trapezoid'; // 'trapezoid' | 'upwind'
 
 // トラペゾイドコース: 1(風上) → 2(ウィング) → 3(リーチ終点) → 4(ゲート)
@@ -164,32 +164,39 @@ export function updateProgress(b, t) {
     const dx = b.c - L.mark.c, dy = b.a - L.mark.a;
     const d = Math.hypot(dx, dy);
     const alongIn = dx * L.dirIn.c + dy * L.dirIn.a;
-    if (d < ROUND_R && (b.visit || d < 16.5 || alongIn > -6.5)) {
+    if (d < ROUND_R || (b.visit && d < ROUND_R + 10)) {
       // マーク周りに掃いた角度(反時計回り=左舷回航で正)を積算して回航方向を判定
       const ang = Math.atan2(dy, dx);
       if (!b.visit) b.visit = { min: 1e9, side: 0, passed: false, sweep: 0, ang };
       let da = ang - b.visit.ang; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
       b.visit.sweep += da; b.visit.ang = ang;
       const alongOut = dx * L.dirOut.c + dy * L.dirOut.a;
-      // マーク手前の正規アプローチ側(dx > 1.2 または alongOut < 0)にいる時点で、手前のタックやライン取りで蓄積した逆方向のsweep負債をクリアする
-      if ((dx > 1.2 || alongOut < -1.0) && b.visit.sweep * -L.side < 0) {
+      // マーク手前のアプローチ段階(alongIn < -1.0)にいる時点で、手前のタックやライン取りで蓄積した逆方向のsweep負債をクリアする
+      if (alongIn < -1.0 && b.visit.sweep * -L.side < 0) {
         b.visit.sweep = 0;
       }
       if (d < b.visit.min) { b.visit.min = d; b.visit.side = L.dirIn.c * dy - L.dirIn.a * dx; }
-      if (alongIn > -1.2) b.visit.passed = true;
-      // ROUND_R(22m)圏から離れるのを待たず、マークの横を通過して次レグ方向へ回り込んだ瞬間に即座に回航判定
+      if (alongIn > -1.8) b.visit.passed = true;
+      // ROUND_R圏から離れるのを待たず、マークの横を通過して次レグ方向へ回り込んだ瞬間に即座に回航判定
       // ただし1マーク等でポートタックのまま右上(+c, +a)へ抜けている最中に誤判定しないよう、必ず次レグ方向(alongOut > -0.8)かつ風上マークではスタボ側へ回り込んだことを確認
       const swept = b.visit.sweep * -L.side;
-      const topTurnOk = L.dirIn.a > 0.7 ? (dx <= 2.2) : true;
-      if (!b.ocs && b.started !== false && b.visit.passed && swept > 0.32 && alongOut > -0.8 && topTurnOk) {
+      const isUpwindMark = L.dirIn.a > 0.7;
+      const topTurnOk = isUpwindMark ? (dx <= 2.2) : true;
+      // リーチング・下マーク(1a, 2, 3)で大回り回航した際も、正規の外側を通過して次レグ方向へ抜けていれば確実に回航完了とする
+      const properOutsidePass = !isUpwindMark && b.visit.min < 24 && alongOut > 2.2 && (
+        (L.markKey === 'm1a' && dx < 0 && dy < -1.5) ||
+        (L.markKey === 'm2' && dx < -0.5 && dy < -1.5) ||
+        (L.markKey === 'm3' && dy < 2.0 && dx > 1.5)
+      );
+      if (!b.ocs && b.started !== false && b.visit.passed && ((swept > 0.26 && alongOut > -0.8 && topTurnOk) || (properOutsidePass && swept > 0.08))) {
         b.visit = null;
         b.leg++;
         ev.push({ type: 'rounded', leg: L });
       }
-    } else if (d >= ROUND_R && b.visit) {
+    } else if (d >= ROUND_R + 10 && b.visit) {
       const v = b.visit; b.visit = null;
       const alongOut = dx * L.dirOut.c + dy * L.dirOut.a;
-      const sideOk = v.sweep * -L.side > 0.28 && alongOut > -2.0;
+      const sideOk = v.sweep * -L.side > 0.24 && alongOut > -2.0;
       if (sideOk && v.passed && !b.ocs && b.started !== false) { b.leg++; ev.push({ type: 'rounded', leg: L }); }
       else if (v.passed && v.min < 10.0 && v.sweep * -L.side < -0.25) ev.push({ type: 'wrongSide', leg: L });
     }
