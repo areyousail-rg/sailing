@@ -66,9 +66,21 @@ export class DroneCam {
   resetAngle() {
     this.targetYaw = 0;
     this.targetPitch = 0;
+    this.yaw = 0;
+    this.pitch = 0;
     this.vYaw = 0;
     this.vPitch = 0;
     this.zoom = 1;
+  }
+
+  isMoved() {
+    return (
+      Math.abs(this.targetYaw) > 0.015 ||
+      Math.abs(this.targetPitch) > 0.015 ||
+      Math.abs(this.yaw) > 0.02 ||
+      Math.abs(this.pitch) > 0.02 ||
+      Math.abs(this.zoom - 1) > 0.02
+    );
   }
 
   setMode(m) {
