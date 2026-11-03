@@ -201,9 +201,32 @@ export function updateProgress(b, t) {
       else if (v.passed && v.min < 10.0 && v.sweep * -L.side < -0.25) ev.push({ type: 'wrongSide', leg: L });
     }
   } else if (L.type === 'gate') {
-    const crossedGate = prevA > L.center.a + 3.0 && b.a <= L.center.a + 3.0 && Math.abs(b.c) < 35;
-    const inGateBottom = b.a <= L.center.a + 2.5 && b.a >= L.center.a - 14.0 && Math.abs(b.c) < 32;
-    if (crossedGate || inGateBottom) { b.leg++; ev.push({ type: 'gate', leg: L }); }
+    // 4ゲート(4S=gL: c=-22, 4P=gR: c=+22, a=40):
+    // まず両ゲートマークの間(|c| <= 23.0)を風上から風下(a <= 41.2)へ通過したことを記録し、
+    // プレイヤー艇はゲート間を通過した時点で次レグ表示へ更新、CP艇は実際に4S(c < -21.8)または4P(c > +21.8)の外側を回って風上へ向かった時点でレグ完了とする
+    if (b.a <= L.center.a + 2.2 && b.a >= L.center.a - 14.0 && Math.abs(b.c) <= 23.2) {
+      b.gatePassedBetween = true;
+    }
+    if (b.gatePassedBetween && b.a <= L.center.a + 2.5 && (b.c <= MARKS.gL.c - 0.2 || b.c >= MARKS.gR.c + 0.2)) {
+      b.gateWentOutside = true;
+    }
+    if (b.isPlayer) {
+      const crossedGate = prevA > L.center.a + 1.5 && b.a <= L.center.a + 1.5 && Math.abs(b.c) <= 24.5;
+      const inGateBottom = b.gatePassedBetween && b.a <= L.center.a + 0.8;
+      if (crossedGate || inGateBottom) {
+        b.gatePassedBetween = false;
+        b.gateWentOutside = false;
+        b.leg++;
+        ev.push({ type: 'gate', leg: L });
+      }
+    } else {
+      if (b.gatePassedBetween && b.gateWentOutside && b.a >= L.center.a - 0.5) {
+        b.gatePassedBetween = false;
+        b.gateWentOutside = false;
+        b.leg++;
+        ev.push({ type: 'gate', leg: L });
+      }
+    }
   } else if (L.type === 'finish') {
     const F = MARKS.fcom, G = MARKS.fm;
     const side = (a, c) => (G.a - F.a) * (c - F.c) - (G.c - F.c) * (a - F.a);
