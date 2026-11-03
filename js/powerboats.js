@@ -44,6 +44,16 @@ function flagMesh(w, h, color, text) {
     x.fillStyle = '#ffffff'; x.fillRect(30, 18, 68, 48);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
+  } else if (text === 'X') {
+    // 国際信号旗「X旗」(RRS規則29.1 個別リコール): 白地に青い十字
+    const c = document.createElement('canvas'); c.width = 128; c.height = 84; const x = c.getContext('2d');
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 84);
+    x.strokeStyle = '#cbd5e1'; x.lineWidth = 4; x.strokeRect(2, 2, 124, 80);
+    x.fillStyle = '#1d4ed8';
+    x.fillRect(0, 29, 128, 26);
+    x.fillRect(51, 0, 26, 84);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.85 });
   } else if (text === 'SNIPE') {
     // スナイプ級クラス旗(5分前に掲揚・0秒スタートで降下): 白地に赤いスナイプ鳥シルエット
     const c = document.createElement('canvas'); c.width = 160; c.height = 104; const x = c.getContext('2d');
@@ -195,8 +205,9 @@ function pole(h, flags) {
   flags.forEach((f, i) => {
     const fm = flagMesh(f.w || 1.2, f.h || 0.8, f.color, f.text);
     const h2 = new THREE.Group();
-    const topY = h - 0.35 - i * ((f.h || 0.8) * 1.08) - (f.dy || 0);
+    const topY = f.topY !== undefined ? f.topY : (h - 0.35 - i * ((f.h || 0.8) * 1.08) - (f.dy || 0));
     h2.position.set(0.035, topY, 0);
+    if (f.initHidden) h2.visible = false;
     h2.add(fm);
     h2.userData.flag = true;
     h2.userData.flagKey = f.key || f.text || 'ORG';
