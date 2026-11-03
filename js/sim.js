@@ -407,6 +407,40 @@ export function computeBlanket(boats) {
       const ahead = rx * fx + rz * fz;
       const leeDist = rx * lx + rz * lz;
 
+      // 1b) クローズホールド走行時(twa ≈ 36°〜68°)の「真後ろ〜やや風下」のダウンウインド(セール後流の悪風・ダウンウォッシュ領域):
+      // クローズ中のセールは翼として揚力を生む反作用で気流を船尾方向〜やや風下へ強く偏向・減速させるため、
+      // 真風方向のブランケットだけでなく、先行艇Aの「真後ろ(leeDist ≈ 0)」から「そのやや風下(leeDist > 0)」にかけて長い悪風(ダウンウインド/バックウインド)の帯が発生する
+      if (A.twa > 0.45 && A.twa < 1.22) {
+        const behind = -ahead;
+        if (behind > 1.5 && behind < 22.0) {
+          const upwindWakeK = (1 - smoothstep(0.92, 1.22, A.twa)) * (1 - A.luff * 0.65);
+          const wHalf = 1.15 + behind * 0.04; // 真後ろから風上側へのわずかな広がり
+          const lHalf = 2.45 + behind * 0.27; // 真後ろからやや風下側への広がり(メインブランケットへ連続接続)
+          if (leeDist >= -wHalf && leeDist <= lHalf) {
+            const normB = clamp((behind - 1.5) / 20.5, 0, 1);
+            const distWake = Math.pow(1 - Math.pow(normB, 1.25), 1.35);
+            // 真後ろ(leeDist=0)〜やや風下(leeDist = 0.16*behind + 1.2)を中心コアとする非対称ガウス分布
+            const plateauMax = 1.20 + behind * 0.16;
+            let latWake = 1.0;
+            if (leeDist < 0) {
+              latWake = Math.exp(-Math.pow(leeDist / (wHalf * 0.65), 2)) * (1 - Math.abs(leeDist) / wHalf);
+            } else if (leeDist > plateauMax) {
+              const over = (leeDist - plateauMax) / Math.max(0.5, lHalf - plateauMax);
+              latWake = Math.exp(-Math.pow(over * 1.45, 2)) * (1 - over);
+            }
+            const wakeS = clamp(upwindWakeK * distWake * latWake * 0.88, 0, 0.92);
+            if (wakeS > 0.02) {
+              B.coverT = clamp(Math.max(B.coverT, wakeS), 0, 1.0);
+              B.backT = clamp(Math.max(B.backT, wakeS * 0.85), 0, 1.0);
+              if (B.twa < 1.55) {
+                B.windBendT = Math.min(B.windBendT, -wakeS * 0.052);
+              }
+              if (wakeS > 0.20 && !B.aeroTag) B.aeroTag = 'downwash';
+            }
+          }
+        }
+      }
+
       // 2) リーバウ効果(Lee-Bow / Safe Leeward):
       // クローズ〜クローズリーチで同タックの2艇において、B艇がA艇の風下側かつ斜め前方にいるとき:
       // ・風下艇BはA艇セールの循環によるアップウォッシュ(吹き上げ)とスロット効果で「わずかにのぼせる」(効果は従来の1/3に抑制)
@@ -489,6 +523,7 @@ export class Boat {
     this.windFrom = W0; this.windF = 1;
     this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null; this.penaltyUpgraded = null;
     this.leg = 0; this.ocs = false; this.started = false; this.finished = false; this.finishTime = 0;
+    this.finishHeading = 0; this.finishTack = 1; this.postFinishStop = false;
     this.a = undefined; this.c = 0; this.visit = null;
     this.contactCD = 0; this.touchCD = 0; this.heel = 0; this.rollBias = 0; this.hike = 0.15; this.turned = 0;
     this.sOpt = 1; this.luff = 0; this.stall = 0;
@@ -678,11 +713,19 @@ export class Boat {
     this.rudderDrag += (rudderTarget - this.rudderDrag) * (1 - Math.exp(-dt * (rudderTarget > this.rudderDrag ? 7.5 : 3.8)));
     if (this.penalty) {
       this.penalty.turned += Math.abs(dh);
-      // 他艇が2艇身(約9.5m)以内にいる間は「クリアウオーター確保中」としてタイマー減少を0.25倍に緩和、回頭中も0.2倍に緩和
+      // 他艇が2艇身(約9.5m)以内またはマーク・運営艇が5.2m以内にいる間は「クリアウオーター確保中」としてタイマー減少を0.25倍に緩和、回頭中も0.2倍に緩和
       let clearWater = true;
       if (boats) {
         for (const o of boats) {
           if (o !== this && !o.finished && !o.dsq && Math.hypot(o.x - this.x, o.z - this.z) < BOAT_LEN * 2) {
+            clearWater = false;
+            break;
+          }
+        }
+      }
+      if (clearWater) {
+        for (const obs of OBSTACLES) {
+          if (Math.hypot(obs.x - this.x, obs.z - this.z) < obs.r + 5.2) {
             clearWater = false;
             break;
           }
@@ -870,18 +913,23 @@ export class Boat {
       }
     }
     // 風上(真風角 ±10°以内)に向くと風圧でバック(後退)する
-    if (twaDeg <= 10.5 && !turning) {
+    // ただしフィニッシュ後に十分進んでから風上へ上してシバー停止中(postFinishStop)の艇は、バックせずセールをシバーさせてその場に止まる
+    if (this.postFinishStop) {
+      this.luff = 1.0;
+      target = 0;
+    } else if (twaDeg <= 10.5 && !turning) {
       const irons = clamp(0.46 + ((10.5 - twaDeg) / 10.5) * 0.54, 0.46, 1.0); // ±10°以内は確実にバックし、0°で最大1.0
       target = -irons * 0.48 * SPEED_SCALE * w.f;
     }
-    const tau = (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : 2.2) : turning ? 8.5 : 1.5; // ±10°では速やかに失速してバックへ遷移
+    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : 2.2) : turning ? 8.5 : 1.5; // ±10°では速やかに失速してバックへ遷移
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
+    if (this.postFinishStop && Math.abs(this.v) < 0.04) this.v = 0;
 
     // 風下側への流され(リーウェイ＆風圧ドリフト) ＋ 潮の満ち引きによる潮流(TIDE)の影響:
     // スタート時など船が止まっている・極微速時の下流れを従来のさらに2倍(計3倍)に設定し、一定の速度が出るとセンターボードが効いて流されなくなる
     // また、リアルタイムの潮の流れ(八景島沖・江の島沖の上げ潮/下げ潮)もスタート時や微風時に若干反映される
     const vCut = 1.35 * KT * SPEED_SCALE;
-    const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.3);
+    const slowF = Math.pow(clamp(1 - Math.abs(this.v) / vCut, 0, 1), 1.3) * (this.postFinishStop ? 0.12 : 1.0);
     const leewayV = 0.60 * slowF * SPEED_SCALE * w.f * Math.sin(twa); // 艇の風下横方向への下流れ(低速時2倍)
     const windageV = 0.36 * slowF * SPEED_SCALE * w.f;                // 風下方向への吹き流され(低速時2倍)
     // リーバウ・スターン通過リフト時はセンターボードの揚力で風上側へわずかにせり上がる(効果1/3)
@@ -964,28 +1012,33 @@ export function resolveCollisions(boats, t) {
         if (pp > pen) { pen = pp; nx = dx / d; nz = dz / d; hit = true; }
       }
       if (!hit) continue;
-      const sep = pen * 0.56 + 0.03;
+      const sep = pen * 0.56 + 0.04;
       A.x -= nx * sep; A.z -= nz * sep;
       B.x += nx * sep; B.z += nz * sep;
-      A.v *= 0.985; B.v *= 0.985;
-      // 接触したCP艇同士が貼り付いたまま並走し続けないよう、外向きへ自然にバウを逃がす微小分離角を与える(ただし風向眼へは入れない)
-      const nudgeAway = (boat, outX, outZ, amt) => {
+      A.v *= 0.99; B.v *= 0.99;
+      // 接触したCP艇同士が貼り付いたまま並走・正対ロックし続けないよう、外向きへ自然にバウを逃がし最低離脱速度を保つ
+      const nudgeAway = (boat, other, outX, outZ, amt) => {
         if (boat.isPlayer || boat.maneuver) return;
         const rx = Math.cos(boat.h), rz = Math.sin(boat.h);
         const side = outX * rx + outZ * rz;
-        const dh = (side >= 0 ? 1 : -1) * amt;
+        // 異タック同士の接触で自艇がポート(tack === -1)なら風下(左舷側・スターン通過方向)へ優先的に逃がす
+        let dh = (side >= 0 ? 1 : -1) * amt;
+        if (boat.tack === -1 && other.tack === 1 && boat.twa < 1.55) {
+          dh = Math.abs(amt) * 2.2;
+        }
         const hNext = wrap(boat.h + dh);
         const relNext = wrap(boat.windFrom - hNext);
-        if (Math.abs(relNext) > 0.66 && relNext * (boat.rel || boat.tack || 1) > 0) {
+        if (Math.abs(relNext) > 0.65 && relNext * (boat.rel || boat.tack || 1) > 0) {
           boat.h = hNext;
           boat.rel = relNext;
           boat.twa = Math.abs(relNext);
         }
-        const fx = Math.sin(boat.h), fz = -Math.cos(boat.h);
-        if (outX * fx + outZ * fz < -0.35) boat.v *= 0.94;
+        if (boat.v < 1.25 * SPEED_SCALE && !boat.postFinishStop) {
+          boat.v = 1.25 * SPEED_SCALE;
+        }
       };
-      nudgeAway(A, -nx, -nz, 0.024);
-      nudgeAway(B, nx, nz, 0.024);
+      nudgeAway(A, B, -nx, -nz, 0.032);
+      nudgeAway(B, A, nx, nz, 0.032);
       if (A.contactCD <= 0 && B.contactCD <= 0 && !A.finished && !B.finished) {
         const r = giveWayBoat(A, B, OBSTACLES);
         A.contactCD = 3; B.contactCD = 3;
@@ -1004,7 +1057,29 @@ export function resolveCollisions(boats, t) {
         const pp = o.r + CR - d;
         if (pp > 0) {
           const preV = Math.abs(A.v);
-          A.x += (dx / d) * pp; A.z += (dz / d) * pp; A.v *= 0.97;
+          const push = pp + 0.06;
+          A.x += (dx / d) * push; A.z += (dz / d) * push;
+          if (!A.isPlayer) {
+            // CP艇がマークや運営艇にぶつかったままスタックしないよう、障害物から接線方向(反時計回り優先、4Sのみ時計回り)へ船首を逃がし最低離脱速度を確保する
+            const cdx = A.x - o.x, cdz = A.z - o.z;
+            const cd = Math.hypot(cdx, cdz) || 1;
+            const nxO = cdx / cd, nzO = cdz / cd;
+            const fxA = Math.sin(A.h), fzA = -Math.cos(A.h);
+            // 船首が障害物側を向いている場合(内積 < 0.35)、外向き接線方向へ回頭補助
+            if (fxA * nxO + fzA * nzO < 0.35) {
+              const ccwSign = o.key === 'gL' ? -1 : 1;
+              const tx = ccwSign * nzO + nxO * 0.45;
+              const tz = -ccwSign * nxO + nzO * 0.45;
+              const tanH = Math.atan2(tx, -tz);
+              const dTan = wrap(tanH - A.h);
+              A.h = wrap(A.h + clamp(dTan, -0.22, 0.22));
+              A.rel = wrap(A.windFrom - A.h);
+              A.twa = Math.abs(A.rel);
+            }
+            A.v = Math.max(A.v * 0.96, 1.15 * SPEED_SCALE);
+          } else {
+            A.v *= 0.97;
+          }
           if (A.touchCD <= 0 && !A.finished) {
             A.touchCD = 6;
             const impact = clamp(preV / (2.10 * SPEED_SCALE), 0.10, 1.20);
