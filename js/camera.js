@@ -7,8 +7,8 @@ export const CAM_MODES = ['ドローンカメラ', '艇内カメラ(オンボー
 export const COCKPIT = 1;
 // スマホ(小さい画面)ではドローンを少し引いて周囲を見やすくする
 const SMALL = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
-// 海面近くを低空チェイスして波・航跡・スプレーが勢いよく後方へ流れるスピード感重視のドローン設定
-const DRONE_D = SMALL ? 19.5 : 15.0, DRONE_H = SMALL ? 6.6 : 4.7, DRONE_FOV = SMALL ? 66 : 63;
+// デフォルトのドローンカメラ距離・高さを元の見やすい位置に設定
+const DRONE_D = SMALL ? 20.5 : 16.2, DRONE_H = SMALL ? 7.8 : 6.2, DRONE_FOV = SMALL ? 66 : 63;
 
 export class DroneCam {
   constructor(camera, dom) {
@@ -149,16 +149,15 @@ export class DroneCam {
     const menuLift = this.menuOffset ? (SMALL ? 6.8 : 5.4) : 0;
     const menuDistAdd = this.menuOffset ? 4.5 : 0;
     const menuHgtAdd = this.menuOffset ? 2.2 : 0;
-    const speedLow = this.menuOffset ? 0 : spdRatio * 0.85;
-    const d = (DRONE_D + menuDistAdd - spdRatio * 1.1) * this.zoom;
-    const hgt = (DRONE_H + menuHgtAdd - speedLow + this.pitch * 10) * this.zoom;
-    // ヒールや回頭に合わせてカメラがわずかに外측へスイングし、船体とセールの迫力を見せる
+    const d = (DRONE_D + menuDistAdd - spdRatio * 0.9) * this.zoom;
+    const hgt = (DRONE_H + menuHgtAdd + this.pitch * 10) * this.zoom;
+    // ヒールや回頭に合わせてカメラがわずかに外側へスイングし、船体とセールの迫力を見せる
     const latOffset = this.menuOffset ? 0 : clamp(-hDiff * 3.2 - boat.heel * 1.4, -2.4, 2.4);
     const rx = Math.cos(ang), rz = Math.sin(ang);
     w.set(boat.x - Math.sin(ang) * d + rx * latOffset, hgt, boat.z + Math.cos(ang) * d + rz * latOffset);
     const yawAlign = Math.max(0, Math.cos(this.yaw));
     const lookAhead = (9.5 + spdRatio * 3.5) * yawAlign;
-    lk.set(boat.x + Math.sin(boat.h) * lookAhead, 1.45 + (1 - yawAlign) * 0.45 + menuLift - spdRatio * 0.18, boat.z - Math.cos(boat.h) * lookAhead);
+    lk.set(boat.x + Math.sin(boat.h) * lookAhead, 1.85 + (1 - yawAlign) * 0.45 + menuLift, boat.z - Math.cos(boat.h) * lookAhead);
 
     w.x += wob(1); w.y += wob(1.7) * 0.7; w.z += wob(2.3);
     if (!this.inited) { this.pos.copy(w); this.look.copy(lk); this.inited = true; }
