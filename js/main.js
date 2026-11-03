@@ -465,7 +465,7 @@ function drawMinimap() {
   }
   if (isUpwind) {
     mctx.fillStyle = '#38bdf8'; mctx.beginPath(); mctx.arc(X(M.fcom.c), Y(M.fcom.a), 3.8, 0, 7); mctx.fill();
-    mctx.fillStyle = '#e0f2fe'; mctx.font = 'bold 10px sans-serif'; mctx.fillText('FIN(S旗)', X(M.fcom.c) + 6, Y(M.fcom.a) + 3);
+    mctx.fillStyle = '#e0f2fe'; mctx.font = 'bold 10px sans-serif'; mctx.fillText('FIN', X(M.fcom.c) + 6, Y(M.fcom.a) + 3);
   }
   // 次のマーク強調
   const L = LEGS[Math.min(player.leg, LEGS.length - 1)];
@@ -535,24 +535,88 @@ function updateMarkPointer(b) {
   if (markPtr.label) markPtr.label.textContent = `${shortName} ${distM}m`;
 }
 
-// ---------- 周囲の接近艇インジケーター (画面端に接近する他艇の方向・距離を表示) ----------
+// ---------- 周囲の接近艇インジケーター (画面外の衝突危険艇・タック時衝突危険艇・リーチング/ランニング時の後方接近艇のみ表示) ----------
 const nearBoatsBox = $('nearBoats');
 const nearBoatPool = [];
+const nearBoatV3 = new THREE.Vector3();
 function updateNearBoatsHUD(b) {
   if (!nearBoatsBox) return;
-  if (!b || b.finished || b.dsq || state.phase === 'menu' || state.phase === 'orientation') {
+  // スタート前(state.t < 0 または未スタート)、メニュー中、オリエンテーション中、フィニッシュ後は非表示
+  if (!b || b.finished || b.dsq || state.phase !== 'race' || state.t < 0 || !b.started || state.resultShown) {
     for (const el of nearBoatPool) el.style.display = 'none';
     return;
   }
+  const bfx = Math.sin(b.h), bfz = -Math.cos(b.h);
+  const bvx = bfx * b.v, bvz = bfz * b.v;
+  const isUpwind = (b.twa || 0) < 1.35 && !b.pole;
+  const isReachOrRun = (b.twa || 0) >= 1.10 || !!b.pole;
+  // タックした場合の想定方位・速度ベクトル
+  const hTack = wrap((b.windFrom || 0) + (b.tack || 1) * clamp(b.twa || 0.75, 0.68, 0.90));
+  const tfx = Math.sin(hTack), tfz = -Math.cos(hTack);
+  const vTack = Math.max(2.2, b.v * 0.82);
+  const wfx = -Math.sin(b.windFrom || 0), wfz = Math.cos(b.windFrom || 0); // 風上向き単位ベクトル
+
   const near = [];
   for (const o of boats) {
-    if (o === b || o.dsq) continue;
+    if (o === b || o.dsq || o.finished) continue;
     const dx = o.x - b.x, dz = o.z - b.z;
     const distM = Math.hypot(dx, dz) / 1.5; // ワールド距離(1.5x)から実距離[m]へ換算
-    if (distM <= 24) near.push({ o, dx, dz, distM });
+    if (distM > 20.0) continue;
+
+    // カメラ画面内に見えている船は表示不要
+    nearBoatV3.set(o.x, 1.4, o.z).project(camera);
+    const inFront = nearBoatV3.z > 0 && nearBoatV3.z < 1.0;
+    const onScreen = inFront && Math.abs(nearBoatV3.x) <= 0.90 && Math.abs(nearBoatV3.y) <= 0.84;
+    if (onScreen) continue;
+
+    const rx = dx / 1.5, rz = dz / 1.5;
+    const ofx = Math.sin(o.h), ofz = -Math.cos(o.h);
+    const ovx = ofx * o.v, ovz = ofz * o.v;
+    const rvx = ovx - bvx, rvz = ovz - bvz;
+    const rv2 = rvx * rvx + rvz * rvz;
+    const closingSpd = -(rx * rvx + rz * rvz) / (distM || 1);
+    const tCPA = rv2 > 0.04 ? -(rx * rvx + rz * rvz) / rv2 : -1;
+    const cpaT = clamp(tCPA, 0, 6.5);
+    const dCPA = Math.hypot(rx + rvx * cpaT, rz + rvz * cpaT);
+
+    // 条件1: 明らかにこのままだとぶつかる船 (進路交差・直近衝突コース)
+    const isCollisionCourse =
+      (distM < 3.8 && closingSpd > -0.15) ||
+      (distM <= 19.0 && closingSpd > 0.45 && tCPA > 0 && tCPA <= 6.2 && dCPA <= 3.6);
+
+    // 条件2: タックしたらぶつかる可能性がある船 (クローズホールド時に今タックすると交錯する他艇)
+    let isTackRisk = false;
+    if (isUpwind && distM <= 18.0) {
+      let minTackDist = 999;
+      for (const ts of [0.8, 1.5, 2.2, 3.0, 3.8, 4.6]) {
+        // タック開始〜1.2秒は風上へ回り込み、その後新タック方位(tfx, tfz)へ加速
+        const turnT = Math.min(ts, 1.2);
+        const sailT = Math.max(0, ts - 1.2);
+        const pxT = (bfx * 0.55 + wfx * 0.45) * (b.v * 0.72) * turnT + tfx * vTack * sailT;
+        const pzT = (bfz * 0.55 + wfz * 0.45) * (b.v * 0.72) * turnT + tfz * vTack * sailT;
+        const oxT = rx + ovx * ts;
+        const ozT = rz + ovz * ts;
+        const dT = Math.hypot(oxT - pxT, ozT - pzT);
+        if (dT < minTackDist) minTackDist = dT;
+      }
+      if (minTackDist <= 4.3) isTackRisk = true;
+    }
+
+    // 条件3: ランニングとリーチングで後ろからきている近い船
+    let isAsternClose = false;
+    if (isReachOrRun && distM <= 15.0) {
+      const alongM = rx * bfx + rz * bfz; // < 0 が自艇より後方
+      const latM = Math.abs(-rx * bfz + rz * bfx);
+      if (alongM <= -0.8 && alongM >= -15.0 && latM <= 9.0 && (closingSpd > -0.3 || distM <= 8.5)) {
+        isAsternClose = true;
+      }
+    }
+
+    if (!isCollisionCourse && !isTackRisk && !isAsternClose) continue;
+    near.push({ o, dx, dz, distM, isCollisionCourse, isTackRisk });
   }
   near.sort((a, c) => a.distM - c.distM);
-  const count = Math.min(near.length, 5);
+  const count = Math.min(near.length, 4);
   const W = window.innerWidth, H = window.innerHeight;
   const viewHdg = b.h + (cam.yaw || 0); // 現在のカメラ視線方位
 
@@ -564,13 +628,11 @@ function updateNearBoatsHUD(b) {
       nearBoatsBox.appendChild(el);
       nearBoatPool.push(el);
     }
-    const { o, dx, dz, distM } = near[i];
-    // カメラ視線に対する相対方位 relAng (0=正面, +π/2=右, -π/2=左, ±π=後方)
+    const { o, dx, dz, distM, isCollisionCourse } = near[i];
     const brg = Math.atan2(dx, -dz);
     const relB = wrap(brg - b.h);       // 自艇船首基準の相対角(左舷/右舷表現用)
     const relCam = wrap(brg - viewHdg); // カメラ画面基準の方向角(画面端の配置用)
 
-    // 画面端の楕円・矩形フレームに沿って配置 (視界を邪魔せず端っこで直感的に位置と距離がわかる)
     const dirX = Math.sin(relCam);
     const dirY = Math.cos(relCam);
     const edgeX = 0.85, edgeY = 0.76;
@@ -592,7 +654,7 @@ function updateNearBoatsHUD(b) {
 
     const distStr = distM < 10 ? `${distM.toFixed(1)}m` : `${Math.round(distM)}m`;
     const colHex = '#' + o.color.toString(16).padStart(6, '0');
-    const lv = distM < 7.5 ? ' danger' : distM < 15 ? ' warn' : '';
+    const lv = (isCollisionCourse || distM < 7.5) ? ' danger' : distM < 15 ? ' warn' : '';
     el.className = 'nearBoatTag' + lv;
     el.style.display = 'flex';
     el.style.left = `${sx}px`;
@@ -1643,9 +1705,22 @@ function signals(prevT, t) {
   if (t < 0 && t > -6 && c !== state.count) { state.count = c; beep(c <= 1 ? 1200 : 880); }
 }
 function atGun() {
+  let anyOcs = false;
   for (const b of boats) if (b.a > lineA(b.c)) {
     b.ocs = true;
-    if (b.isPlayer) toast('OCS(スタート前にラインを越えた)! ラインの下へ戻って再スタートしてください', 'bad', 7000);
+    anyOcs = true;
+    if (b.isPlayer) toast('OCS(リコール)! 本部船にX旗掲揚・ラインの下へ戻って再スタートしてください', 'bad', 7000);
+  }
+  if (anyOcs) {
+    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗を掲揚し、追加のホーン1回(スタート号砲と合わせて計2回)を鳴らす
+    setTimeout(() => {
+      if ((state.phase === 'race' || state.phase === 'orientation') && !state.paused && !state.ff) {
+        signalHorn('short');
+      }
+    }, 480);
+    if (!player || !player.ocs) {
+      toast('個別リコール: 本部船にX旗掲揚 (ホーン2回)', 'warn', 4500);
+    }
   }
 }
 
@@ -2245,17 +2320,15 @@ function loop() {
   if (player) {
     if (isPostFinishView && world.markObjs && world.markObjs.fcom) {
       // フィニッシュ後の背景映像(リザルト画面表示後):
-      // フィニッシュ船(fcom)のオープンバウデッキ(z = 1.65..3.85)に立つ「大型望遠一眼レフを構えたたぬきカメラマン(local: 0.34, 0.88, 2.55)」のすぐ斜め後ろから、
-      // キャビン壁や屋根に一切遮られず、たぬきカメラマンを画面右手前に映しつつフィニッシュライン〜3マーク側の海面と後続艇群を望むアングル
+      // カメラマン本人のタヌキが映り込むのではなく、カメラマンが構えているカメラのファインダー映像(レンズ視点)として
+      // フィニッシュライン〜3マーク側の海面と後続艇群を直接映す
       const fc = world.markObjs.fcom;
       if (fc.userData && fc.userData.tanukiCam) {
-        const tk = fc.userData.tanukiCam;
-        tk.rotation.y = (Math.PI - 0.18) + Math.sin(time * 0.85) * 0.10;
-        if (tk.userData.head) tk.userData.head.rotation.y = Math.sin(time * 1.4) * 0.08;
+        fc.userData.tanukiCam.visible = false;
       }
       const isUpwindFin = COURSE_MODE === 'upwind';
-      // キャビンフロントガラス(z = 1.56)より前方かつ屋根より高いオープンバウデッキ上(local: -0.24, 1.82, 1.92)にカメラを配置
-      const camLocal = new THREE.Vector3(-0.24, 1.82, 1.92);
+      // 船首デッキ先端のカメラレンズ位置(local: 0.34, 1.68, 3.35)にカメラを配置
+      const camLocal = new THREE.Vector3(0.34, 1.68, 3.35);
       fc.updateMatrixWorld(true);
       const camWorld = camLocal.applyMatrix4(fc.matrixWorld);
       camera.position.copy(camWorld);
@@ -2265,6 +2338,9 @@ function loop() {
         : toWorld((MARKS.fm.a * 0.56 + MARKS.m3.a * 0.44), (MARKS.fm.c * 0.56 + MARKS.m3.c * 0.44) + Math.sin(time * 0.45) * 3.5);
       camera.lookAt(lookCourse.x, 1.45, lookCourse.z);
     } else {
+      if (world.markObjs && world.markObjs.fcom && world.markObjs.fcom.userData && world.markObjs.fcom.userData.tanukiCam) {
+        world.markObjs.fcom.userData.tanukiCam.visible = true;
+      }
       cam.update(dt, time, player, boats);
       if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
     }
