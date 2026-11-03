@@ -22,27 +22,26 @@ const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); retu
 // ランチャー(ウィスカーポール): 上げている間はこの真風角より風上には向けない
 export const POLE_MIN = (100 * Math.PI) / 180;
 
-// スナイプ級の実態に即した風域別ベストクローズ角度(TWA deg)
-// ・VMGが最大になるスイートスポットは 40°〜44° を維持
-// ・38°〜39° でもシバーせずに走ることができ、VMGは40°〜44°よりほんのわずかに遅い程度
-export function bestCloseDeg(windKt = BASE_WIND_KT) {
-  if (windKt <= 5.5) return 44.0;
-  if (windKt <= 9.0) return 44.0 - ((windKt - 5.5) / 3.5) * 2.5;   // 5.5kt:44° → 9.0kt:41.5°
-  if (windKt <= 13.5) return 41.5 - ((windKt - 9.0) / 4.5) * 1.5;  // 9.0kt:41.5° → 13.5kt:40°
-  return 40.0;
+// スナイプ級の実態に即した風域・波高別ベストクローズ角度(TWA deg)
+// ・VMGが最大になる角度は風速や波の高さ(SEA.H)によって 38°〜44° の範囲で変化
+// ・38°でも失速せずしっかり艇速とVMGを維持して走ることができる
+export function bestCloseDeg(windKt = BASE_WIND_KT, waveH = SEA.H) {
+  const windNorm = clamp((windKt - 5.5) / 8.5, 0, 1); // 5.5kt:0 → 14kt:1
+  const waveOffset = clamp(((waveH || 0.28) - 0.18) / 0.42, 0, 1) * 1.8; // 波が高い時は少し落としてパワーを維持
+  return clamp(43.0 - windNorm * 4.8 + waveOffset, 38.0, 44.0);
 }
 
 // スナイプ級のポーラー(TWA deg, windKt → m/s @ 基準9kt換算)
-// ・クローズ(35°〜45°): ベストVMGは40°〜44°、38°〜39°もシバーせずVMGよりほんのわずかに遅い程度で走れる
+// ・クローズ(35°〜45°): ベストVMGは38°〜44°、38°でも艇速が落ちすぎずそこそこしっかり走れる特性
 // ・リーチング(60°〜135°): 実艇同様にラフ(のぼす: 120°→95°→75°)すると見かけ風速(AWS)が増してスロット効果で艇速が明確に速くなる
 const V45_CLOSE = 2.10;
 const VMG_CLOSE = V45_CLOSE * Math.cos((45 * Math.PI) / 180); // ≈ 1.4849 m/s
-const V33_BASE = VMG_CLOSE / Math.cos((33 * Math.PI) / 180);
+const V33_BASE = 1.84;
 const POLAR = [
   [0, 0],
   [20, 0],
-  [25, 0.86],
-  [29, 1.42],
+  [25, 0.90],
+  [29, 1.48],
   [33, V33_BASE],
   [45, V45_CLOSE],
   [48, 2.34],
@@ -62,31 +61,32 @@ const POLAR = [
 
 export function polar(deg, windKt = BASE_WIND_KT) {
   if (deg >= 33 && deg <= 45) {
-    const opt = bestCloseDeg(windKt); // 40°〜44°
+    const opt = bestCloseDeg(windKt, SEA.H); // 38°〜44°
     const vIso = VMG_CLOSE / Math.cos((deg * Math.PI) / 180);
-    // 40°〜44°のスイートスポットでVMGが最大(vmgFactor ≈ 1.015)
+    // 38°〜44°で艇速自体が大きく落ち込まないよう、等VMG曲線(vIso)に実艇のグルーブ艇速(38°でも約1.98m/s)をブレンド
+    const grooveBoost = deg >= 37.5 && deg <= 44.0
+      ? (44.0 - deg) * 0.0145
+      : deg < 37.5
+        ? Math.max(0, 0.094 - (37.5 - deg) * 0.022)
+        : 0;
     let vmgFactor = 1.015;
-    if (deg >= 40 && deg <= 44.5) {
+    if (deg >= 38 && deg <= 44.5) {
       const diff = deg - opt;
-      vmgFactor = 1.015 - 0.00035 * diff * diff;
-    } else if (deg >= 38 && deg < 40) {
-      // 38°〜39°はベストVMG(40°〜44°)よりほんのわずかに遅い程度(VMG比で約1.2%〜2.2%差)でしっかり上れる
-      const d40 = 40 - deg; // 0..2
-      vmgFactor = 1.002 - 0.0055 * d40;
+      vmgFactor = 1.016 - 0.00028 * diff * diff;
     } else if (deg < 38) {
-      // 37°以下はさらにピンチングとなり風域に応じて減速
+      // 37°以下はピンチングとなり風域に応じて徐々に減速
       const lightNess = clamp((9.0 - windKt) / 3.8, 0, 1);
       const overPinch = 38 - deg;
-      vmgFactor = 0.991 - overPinch * overPinch * (0.0045 + 0.0045 * lightNess);
+      vmgFactor = 1.004 - overPinch * overPinch * (0.0038 + 0.0038 * lightNess);
     } else {
       const overFoot = deg - 44.5;
       vmgFactor = 1.012 - 0.0025 * overFoot * overFoot;
     }
-    return vIso * clamp(vmgFactor, 0.78, 1.02);
+    return vIso * clamp(vmgFactor, 0.80, 1.025) + grooveBoost;
   }
   if (deg > 20 && deg < 33) {
     const v33 = polar(33, windKt);
-    if (deg >= 29) return 1.42 + ((deg - 29) / 4) * (v33 - 1.42);
+    if (deg >= 29) return 1.48 + ((deg - 29) / 4) * (v33 - 1.48);
   }
   for (let i = 1; i < POLAR.length; i++) {
     if (deg <= POLAR[i][0]) {
@@ -353,10 +353,11 @@ export function computeBlanket(boats) {
     const lx = -A.tack * Math.cos(A.h), lz = -A.tack * Math.sin(A.h);
     // 真風(True Wind)の流下方向ベクトル(twx, twz)
     const twx = -Math.sin(A.windFrom), twz = Math.cos(A.windFrom);
-    // クローズホールド(twa < 55°)では見かけ風とリーチ排気で風影がわずかに風下後方へ傾くが、
-    // リーチング〜ランニング(twa >= 60°)では他艇が「明確に真風上の方向」にいる時のみブランケットになるよう真風軸ベースにする
+    // クローズホールド(twa < 55°)では見かけ風とリーチ排気で風影が風下後方へ傾き、
+    // リーチング(twa ≈ 60°〜135°)でも見かけ風と艇の前進により風下ブランケットが真風下から後ろ側へも少し広がる
     const upwindFactor = 1 - smoothstep(0.92, 1.32, A.twa);
-    const awWeight = 0.12 + 0.24 * upwindFactor;
+    const reachFactor = Math.sin(clamp((A.twa - 0.95) / 1.45, 0, 1) * Math.PI);
+    const awWeight = 0.14 + 0.22 * upwindFactor;
     const leechDeflect = upwindFactor * 0.06 * (1 - A.luff * 0.7);
     let sx = twx * (1 - awWeight) + A.awx * awWeight - fx * leechDeflect;
     let sz = twz * (1 - awWeight) + A.awz * awWeight - fz * leechDeflect;
@@ -364,9 +365,8 @@ export function computeBlanket(boats) {
     sx /= sl; sz /= sl;
 
     const maxLen = SHADOW_LEN + (A.poleK || 0) * 3.5;
-    const sailProj = 1.08 + 0.28 * Math.sin(clamp(A.twa, 0.35, 2.85)) + 0.24 * (A.poleK || 0);
-    // リーチング・ランニング時はA艇がB艇から見て真風上方向(cos >= 0.76 ≒ 真風軸から±40°以内)にいることを必須とする
-    const minTrueCos = 0.52 + 0.26 * (1 - upwindFactor);
+    const sailProj = 1.08 + 0.34 * Math.sin(clamp(A.twa, 0.35, 2.85)) + 0.24 * (A.poleK || 0);
+    const baseMinTrueCos = 0.50 + 0.22 * (1 - upwindFactor);
 
     for (const B of boats) {
       if (A === B || B.dsq) continue;
@@ -375,22 +375,30 @@ export function computeBlanket(boats) {
       if (dist2 > (maxLen + 4) * (maxLen + 4) || dist2 < 0.25) continue;
       const dist = Math.sqrt(dist2);
 
-      // 真風方向でA艇が明確に風上側にいない場合(横並びやリーチングで単に前方を走っているだけの場合)はブランケットにならない
+      // A艇基準のB艇相対位置 (ahead: Aの前方+, leeDist: Aの風下横方向+)
+      const ahead = rx * fx + rz * fz;
+      const leeDist = rx * lx + rz * lz;
+      const isRearSide = ahead < 0.8;
+      // リーチングでは風下ブランケットが後ろ側(isRearSide)にもう少し広がるよう真風角余弦と横幅を拡張
+      const minTrueCos = isRearSide ? baseMinTrueCos - 0.26 * reachFactor : baseMinTrueCos;
+
+      // 真風方向でA艇が風上側にいない場合(横並びや前方を走っている場合)はブランケットにならない
       const alongTrue = rx * twx + rz * twz;
-      if (alongTrue <= 1.2 || alongTrue / dist < minTrueCos) {
+      if (alongTrue <= 1.0 || alongTrue / dist < minTrueCos) {
         // ブランケット圏外
       } else {
         const along = rx * sx + rz * sz;
         if (along > 1.1 && along < maxLen) {
-          const lat = Math.abs(-rx * sz + rz * sx);
-          const half = sailProj + along * 0.125;
+          const signedLat = -rx * sz + rz * sx;
+          const lat = Math.abs(signedLat);
+          const rearSpread = isRearSide ? 1 + 0.78 * reachFactor * clamp((-ahead + 1.5) / 6.5, 0, 1) : 1.0;
+          const half = (sailProj + along * (0.125 + (isRearSide ? 0.115 * reachFactor : 0))) * rearSpread;
           if (lat < half) {
             const normDist = clamp((along - 1.1) / (maxLen - 1.1), 0, 1);
             const distFactor = Math.pow(1 - Math.pow(normDist, 1.28), 1.45);
             const coreFactor = Math.exp(-Math.pow(lat / (half * 0.65), 2));
             const edgeFactor = Math.max(0, 1 - lat / half);
-            // リーチング時は真風軸からのズレに応じてさらに厳격に減衰させる
-            const trueAlign = smoothstep(minTrueCos, Math.min(0.96, minTrueCos + 0.18), alongTrue / dist);
+            const trueAlign = smoothstep(minTrueCos, Math.min(0.95, minTrueCos + 0.18), alongTrue / dist);
             const bestS = clamp(distFactor * trueAlign * (0.80 * coreFactor + 0.20 * edgeFactor), 0, 1.0);
             if (bestS > 0.01) {
               B.coverT = clamp(B.coverT + bestS, 0, 1.0);
@@ -403,39 +411,50 @@ export function computeBlanket(boats) {
         }
       }
 
-      // A艇基準のB艇相対位置 (ahead: Aの前方+, leeDist: Aの風下横方向+)
-      const ahead = rx * fx + rz * fz;
-      const leeDist = rx * lx + rz * lz;
-
-      // 1b) クローズホールド走行時(twa ≈ 36°〜68°)の「真後ろ〜やや風下」のダウンウインド(セール後流の悪風・ダウンウォッシュ領域):
-      // クローズ中のセールは翼として揚力を生む反作用で気流を船尾方向〜やや風下へ強く偏向・減速させるため、
-      // 真風方向のブランケットだけでなく、先行艇Aの「真後ろ(leeDist ≈ 0)」から「そのやや風下(leeDist > 0)」にかけて長い悪風(ダウンウインド/バックウインド)の帯が発生する
+      // 1b) クローズホールド走行時(twa ≈ 36°〜68°)の悪風領域:
+      // ・「真後ろ〜やや風上(leeDist <= +0.55m, leeDist >= -wHalf)」はセールの吹き返しによる【バックウインド(backT + coverT)】
+      // ・「やや風下〜風下(leeDist > +0.55m)」はすべて【ブランケット(coverTのみ、backT=0)】として扱う
       if (A.twa > 0.45 && A.twa < 1.22) {
         const behind = -ahead;
-        if (behind > 1.5 && behind < 22.0) {
+        if (behind > 1.3 && behind < 22.0) {
           const upwindWakeK = (1 - smoothstep(0.92, 1.22, A.twa)) * (1 - A.luff * 0.65);
-          const wHalf = 1.15 + behind * 0.04; // 真後ろから風上側へのわずかな広がり
-          const lHalf = 2.45 + behind * 0.27; // 真後ろからやや風下側への広がり(メインブランケットへ連続接続)
+          const wHalf = 2.65 + behind * 0.30; // 真後ろからやや風上側への広がり(バックウインド帯)
+          const lHalf = 2.85 + behind * 0.54; // やや風下から風下ブランケットへの連続接続帯
           if (leeDist >= -wHalf && leeDist <= lHalf) {
-            const normB = clamp((behind - 1.5) / 20.5, 0, 1);
+            const normB = clamp((behind - 1.3) / 20.7, 0, 1);
             const distWake = Math.pow(1 - Math.pow(normB, 1.25), 1.35);
-            // 真後ろ(leeDist=0)〜やや風下(leeDist = 0.16*behind + 1.2)を中心コアとする非対称ガウス分布
-            const plateauMax = 1.20 + behind * 0.16;
-            let latWake = 1.0;
-            if (leeDist < 0) {
-              latWake = Math.exp(-Math.pow(leeDist / (wHalf * 0.65), 2)) * (1 - Math.abs(leeDist) / wHalf);
-            } else if (leeDist > plateauMax) {
-              const over = (leeDist - plateauMax) / Math.max(0.5, lHalf - plateauMax);
-              latWake = Math.exp(-Math.pow(over * 1.45, 2)) * (1 - over);
-            }
-            const wakeS = clamp(upwindWakeK * distWake * latWake * 0.88, 0, 0.92);
-            if (wakeS > 0.02) {
-              B.coverT = clamp(Math.max(B.coverT, wakeS), 0, 1.0);
-              B.backT = clamp(Math.max(B.backT, wakeS * 0.85), 0, 1.0);
-              if (B.twa < 1.55) {
-                B.windBendT = Math.min(B.windBendT, -wakeS * 0.052);
+            if (leeDist <= 0.55) {
+              // 真後ろ〜やや風上: バックウインド扱い
+              const windwardCore = -(1.15 + behind * 0.12);
+              let latBack = 1.0;
+              if (leeDist < windwardCore) {
+                const uW = clamp((windwardCore - leeDist) / Math.max(0.6, wHalf + windwardCore), 0, 1);
+                latBack = Math.exp(-Math.pow(uW * 1.45, 2)) * (1 - uW);
               }
-              if (wakeS > 0.20 && !B.aeroTag) B.aeroTag = 'downwash';
+              const backS = clamp(upwindWakeK * distWake * latBack * 0.88, 0, 0.92);
+              if (backS > 0.02) {
+                B.coverT = clamp(Math.max(B.coverT, backS), 0, 1.0);
+                B.backT = clamp(Math.max(B.backT, backS * 0.90), 0, 1.0);
+                if (B.twa < 1.55) {
+                  B.windBendT = Math.min(B.windBendT, -backS * 0.052);
+                }
+                if (backS > 0.20 && !B.aeroTag) B.aeroTag = 'backwind';
+              }
+            } else {
+              // やや風下〜風下: ブランケット扱い (backT は加算しない)
+              const plateauMax = 1.35 + behind * 0.25;
+              let latBlk = 1.0;
+              if (leeDist > plateauMax) {
+                const over = (leeDist - plateauMax) / Math.max(0.5, lHalf - plateauMax);
+                latBlk = Math.exp(-Math.pow(over * 1.45, 2)) * (1 - over);
+              }
+              const blkS = clamp(upwindWakeK * distWake * latBlk * 0.86, 0, 0.90);
+              if (blkS > 0.02) {
+                B.coverT = clamp(Math.max(B.coverT, blkS), 0, 1.0);
+                if (B.twa < 1.55) {
+                  B.windBendT = Math.min(B.windBendT, -blkS * 0.048);
+                }
+              }
             }
           }
         }
@@ -800,13 +819,13 @@ export class Boat {
     this.effTwaDeg = effTwaDeg;
     this.byTheLee = isByTheLee ? clamp((effTwaDeg - 180) / 20, 0, 1) : 0;
 
-    // トリム評価(オーバー/アンダー)とラフ・ストール (38°〜39°ではシバーせず、37°未満でシバーし始める)
+    // トリム評価(オーバー/アンダー)とラフ・ストール (38°〜44°ではシバーせず、36°未満でシバーし始める)
     const localWindKt = BASE_WIND_KT * w.f;
-    const optCloseDeg = bestCloseDeg(localWindKt);
+    const optCloseDeg = bestCloseDeg(localWindKt, SEA.H);
     this.bestCloseDeg = optCloseDeg;
     const so = sheetOpt(twa); this.sOpt = so;
     const d = this.sheet - so;
-    const pinchDeg = clamp(optCloseDeg - 6.0, 33.5, 37.0); // 38°・39°でもシバーせず走れるようシバー開始角を2°低く設定
+    const pinchDeg = clamp(optCloseDeg - 6.2, 33.0, 35.8); // 38°でも全くシバーせず走れるようシバー開始角を35.8°以下に抑える
     const PINCH = (pinchDeg * Math.PI) / 180;
     const pinch = twa < PINCH ? clamp((PINCH - twa) * 3.8, 0, 1) : 0;
     this.luff = clamp(Math.max(Math.max(0, -d - 0.05) * 3.2, pinch * 0.9), 0, 1);
@@ -847,7 +866,7 @@ export class Boat {
       this.waveH = ws.h; this.waveSlope = ws.slope;
       const Hn = SEA.H / 0.5;
       const climb = clamp(ws.slope / SEA.maxSlope, -1, 1);
-      const speedNorm = clamp(Math.abs(this.v) / (1.85 * SPEED_SCALE), 0, 1);
+      const speedNorm = clamp(Math.abs(this.v) / (1.58 * SPEED_SCALE), 0, 1);
       const slowFactor = Math.pow(1 - speedNorm, 1.35); // 艇速がない時は 1.0 (大きくはたかれる)、艇速が出ると急速に小さくなる
       const downFactor = smoothstep(1.05, 1.70, twa);   // 下レグ・リーチングでは 1.0
       const upw = 1 - downFactor;
