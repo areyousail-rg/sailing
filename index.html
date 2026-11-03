@@ -237,17 +237,6 @@
         px(102 + (sp % 5), 77 - (sp % 3), 2, 2, '#ffffff');
         px(105 + ((sp + 2) % 6), 79 - ((sp + 2) % 4), 1, 1, '#e0f2fe');
 
-        // 7) 実ゲーム風の上部ミニHUDバー (左上に海面バッジ・右上にRANK表示)
-        px(4, 4, 54, 10, 'rgba(12, 18, 24, 0.82)');
-        px(4, 4, 2, 10, '#ebb800');
-        ctx.fillStyle = '#e6edf3';
-        ctx.font = 'bold 6px monospace';
-        ctx.fillText(venue === 'hakkeijima' ? 'HAKKEIJIMA' : 'ENOSHIMA', 9, 11);
-
-        px(122, 4, 34, 10, 'rgba(12, 18, 24, 0.82)');
-        ctx.fillStyle = '#ebb800';
-        ctx.fillText('SNIPE', 126, 11);
-
         requestAnimationFrame(renderPixelScene);
       };
       requestAnimationFrame(renderPixelScene);
