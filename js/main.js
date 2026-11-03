@@ -979,8 +979,8 @@ const ORIENT_STEPS = [
   },
   {
     en: '',
-    title: 'クローズホールドは真風角40°〜44°でVMGを維持！',
-    body: 'スタート後のクローズホールドでは<strong>下の計器バー中央「真風角」</strong>を確認！ <strong>40°〜44°</strong>がベストだが、<strong>ブローに入ったら「◀ ▶」で少し上し、抜けたら少し落とし気味</strong>で走ってVMGを維持しよう！',
+    title: 'クローズホールドは真風角38°〜44°でVMGを維持！',
+    body: 'スタート後のクローズホールドでは<strong>下の計器バー中央「真風角」</strong>を確認！ 風速や波の高さにもよるが<strong>38°〜44°</strong>がベスト。<strong>ブローに入ったら「◀ ▶」で少し上し、抜けたら少し落とし気味</strong>で走ってVMGを維持しよう！',
     dur: 11.5,
   },
   {
@@ -991,8 +991,8 @@ const ORIENT_STEPS = [
   },
   {
     en: '',
-    title: '上マーク回航後はランチャーUP！ 下マーク回航前はDOWNして回航！',
-    body: '<strong>上マーク回航後</strong>の風下レグでは、<strong>画面左の「ランチャー」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>下マーク回航前</strong>にはランチャーを下げ、クローズに上した時にマークが真横になる軌道できれいに回航しよう。',
+    title: '上マーク回航後はランチャーUP！ 下マーク(4S)回航前はDOWNして回航！',
+    body: '<strong>上マーク回航後</strong>の風下レグでは、<strong>画面左の「ランチャー」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>4Sマーク回航前</strong>にはランチャーを下げ、クローズに上した時にマークが真横になる軌道できれいに回航しよう。',
     dur: 13.6,
   },
   {
@@ -1208,9 +1208,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
   } else if (stepIdx === 5) {
     updateOrientVisualPointer(['#tPole']);
   } else if (stepIdx === 6) {
-    updateOrientVisualPointer([
-      { worldObj: world.finLabel, u0: 0.068, u1: 0.932, v0: 0.10, v1: 0.90, arrowDir: 'down' },
-    ]);
+    updateOrientVisualPointer([]);
   } else if (stepIdx === 7) {
     const revDemo = $('orientReviewDemo');
     if (elapsed < 5.2) {
@@ -1459,9 +1457,9 @@ function orientationStep(dt, time) {
     cam.yaw = cam.targetYaw = 0.22;
     cam.pitch = cam.targetPitch = 0.04;
   } else if (idx === 3) {
-    // STEP 4: クローズホールド 40°〜44° + ブローで少し上す動き
+    // STEP 4: クローズホールド 38°〜44° + ブローで少し上す動き
     const inPuff = orientState.elapsed > 2.5 && orientState.elapsed < 7.2;
-    const optRad = ((inPuff ? 40.5 : 43.2) * Math.PI) / 180;
+    const optRad = ((inPuff ? 39.0 : 42.6) * Math.PI) / 180;
     const tgtH = wrap(player.windFrom - player.tack * optRad);
     player.steer = clamp(wrap(tgtH - player.h) * 3.2, -1, 1);
     player.sheet = sheetOpt(player.twa);
@@ -1483,7 +1481,7 @@ function orientationStep(dt, time) {
     cam.yaw = cam.targetYaw = 0.15;
     cam.pitch = cam.targetPitch = 0.04;
   } else if (idx === 5) {
-    // STEP 6: 前半(0〜4.8s)＝上マーク(1a)回航直後にランチャーUP ／ 後半(4.8s〜)＝下マーク(3)回航前にランチャーDOWN → クローズの角度に上した時にマークが真横にあるきれいなアウト・イン・アウト回航
+    // STEP 6: 前半(0〜4.8s)＝上マーク(1a)回航直後にランチャーUP ／ 後半(4.8s〜)＝4Sマーク(MARKS.gL)回航前にランチャーDOWN → クローズの角度に上した時に4Sマークが右舷真横にあるきれいなアウト・イン・アウト回航
     if (orientState.elapsed >= 0.55 && !orientState.poleUpDone) {
       orientState.poleUpDone = true;
       player.setPole(true);
@@ -1492,7 +1490,7 @@ function orientationStep(dt, time) {
     if (orientState.elapsed >= 4.8 && !orientState.phase2) {
       orientState.phase2 = true;
       player.pole = true; player.poleK = 1;
-      player.leg = Math.min(5, LEGS.length - 1);
+      player.leg = Math.min(2, LEGS.length - 1); // 4ゲート(4S/4P)レグにして4Sマークと看板を表示
       cam.inited = false;
     }
     if (!orientState.phase2) {
@@ -1508,46 +1506,47 @@ function orientationStep(dt, time) {
         player.setPole(false);
         poleClank(false);
       }
-      // 下マーク(m3)のアウト・イン・アウト回航軌道:
-      // クローズホールド角度(theta1 = 0.73 rad ≒ 41.8°)に上し切った瞬間に、マークm3が左舷真横(90° abeam, 距離3.0m)に来る円弧軌道
-      const m3 = MARKS.m3 || MARKS.gL;
-      const theta0 = Math.PI - 0.12; // 進入角 (約173°)
-      const theta1 = 0.73;           // 脱出クローズホールド角 (約41.8°)
-      const R_turn = 8.4;            // 回航旋回半径 [m]
-      const R_abeam = 3.0;           // クローズに上した瞬間のマーク真横クリアランス [m]
-      const centerA = m3.a + (R_turn - R_abeam) * Math.sin(theta1);
-      const centerC = m3.c - (R_turn - R_abeam) * Math.cos(theta1);
-      const L_arc = R_turn * (theta0 - theta1);
+      // 4Sマーク(MARKS.gL: 右舷回航＝時計回り)のアウト・イン・アウト回航軌道:
+      // ゲート内側(c > gL.c)から進入し、スターボード・クローズホールド角度(theta1 = -0.73 rad ≒ -41.8°)に上し切った瞬間に、
+      // 4Sマーク(gL)が右舷真横(90° abeam, 距離3.0m)に来る円弧軌道
+      const gL = MARKS.gL || MARKS.m3;
+      const theta0 = -(Math.PI - 0.12); // 進入角 (約-173° スターボード・ランニング)
+      const theta1 = -0.73;             // 脱出クローズホールド角 (約-41.8° スターボード・クローズ)
+      const R_turn = 8.4;               // 回航旋回半径 [m]
+      const R_abeam = 3.0;              // クローズに上した瞬間のマーク真横クリアランス [m]
+      const centerA = gL.a - (R_turn - R_abeam) * Math.sin(theta1);
+      const centerC = gL.c + (R_turn - R_abeam) * Math.cos(theta1);
+      const L_arc = R_turn * (theta1 - theta0);
       const vRound = 3.22 * SPEED_SCALE;
       const t2 = orientState.elapsed - 4.8;
       const s = (t2 - 1.55) * vRound;
       let desA, desC, theta, steerCmd = 0;
       if (s < 0) {
         theta = theta0;
-        const a0 = centerA - R_turn * Math.sin(theta0);
-        const c0 = centerC + R_turn * Math.cos(theta0);
+        const a0 = centerA + R_turn * Math.sin(theta0);
+        const c0 = centerC - R_turn * Math.cos(theta0);
         desA = a0 + s * Math.cos(theta0);
         desC = c0 + s * Math.sin(theta0);
         steerCmd = 0;
       } else if (s <= L_arc) {
-        theta = theta0 - s / R_turn;
-        desA = centerA - R_turn * Math.sin(theta);
-        desC = centerC + R_turn * Math.cos(theta);
-        steerCmd = -0.52;
+        theta = theta0 + s / R_turn;
+        desA = centerA + R_turn * Math.sin(theta);
+        desC = centerC - R_turn * Math.cos(theta);
+        steerCmd = 0.52;
       } else {
         theta = theta1;
-        const a1 = centerA - R_turn * Math.sin(theta1);
-        const c1 = centerC + R_turn * Math.cos(theta1);
+        const a1 = centerA + R_turn * Math.sin(theta1);
+        const c1 = centerC - R_turn * Math.cos(theta1);
         desA = a1 + (s - L_arc) * Math.cos(theta1);
         desC = c1 + (s - L_arc) * Math.sin(theta1);
         steerCmd = 0;
-        player.leg = Math.min(6, LEGS.length - 1);
       }
+      player.leg = Math.min(2, LEGS.length - 1); // 4Sの表示を維持
       orientState._m3Sync = { a: desA, c: desC, h: wrap(W0 + theta), v: vRound, steer: steerCmd, twa: Math.abs(theta) };
       player.steer = steerCmd;
       player.sheet = sheetOpt(Math.abs(theta));
       player.throttle = 1.0;
-      cam.yaw = cam.targetYaw = -0.22;
+      cam.yaw = cam.targetYaw = 0.22;
       cam.pitch = cam.targetPitch = 0.05;
     }
   } else if (idx === 6) {
@@ -1706,23 +1705,15 @@ function playerControl(dt) {
 // スタート画面(メニュー)表示中または練習モード中の航行ステップ
 function practiceStep(dt, time) {
   if (!player) return;
-  if (state.phase === 'menu') {
-    const L = keys.has('ArrowLeft') || keys.has('KeyA');
-    const R = keys.has('ArrowRight') || keys.has('KeyD');
-    if (!L && !R && !player.maneuver) {
-      hTarget = Math.atan2(SUN_DIR.x, -SUN_DIR.z);
-    }
-  }
   playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
   if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && state.phase !== 'menu') sailFlog(0.85); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   player.update(dt, time, boats);
-  if (state.phase === 'menu' && player.twa < 0.72) {
-    player.v = Math.max(player.v, 2.2 * SPEED_SCALE);
+  if (state.phase === 'menu' && player.twa < 0.68) {
+    player.v = Math.max(player.v, 2.1 * SPEED_SCALE);
     player.luff = 0;
-    player.sheet = sheetOpt(0.78);
   }
   if (state.phase === 'practice') {
     for (const e of updateProgress(player, 10)) {
