@@ -377,7 +377,7 @@ function rebuildPlayerModel() {
 const hud = {
   clock: $('clock'), phase: $('phase'), big: $('bigCount'), wkt: $('windKt'), wdir: $('windDir'), needle: $('needle'), spd: $('spd'), hdg: $('hdg'), twa: $('twa'),
   tack: $('tackLbl'), sheet: $('sheetFill'), pen: $('penBadge'), leg: $('legLbl'), legDist: $('legDist'), legArrow: $('legArrow'), leaders: $('leaders'), rank: $('rank'),
-  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), blkTxt: $('blkTxt'), blkFill: $('blkFill'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'),
+  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), blkTxt: $('blkTxt'), blkFill: $('blkFill'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'), tCamReset: $('tCamReset'),
 };
 function toast(text, kind = 'info', ms = 5200) {
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = text;
@@ -535,36 +535,24 @@ function updateMarkPointer(b) {
   if (markPtr.label) markPtr.label.textContent = `${shortName} ${distM}m`;
 }
 
-// ---------- 艇内カメラ(COCKPIT)専用: カメラ視界外(死角)から近づいている15m以内の他艇のみ画面端に表示 ----------
+// ---------- 周囲の接近艇インジケーター (画面端に接近する他艇の方向・距離を表示) ----------
 const nearBoatsBox = $('nearBoats');
 const nearBoatPool = [];
-const nearBoatV3 = new THREE.Vector3();
 function updateNearBoatsHUD(b) {
   if (!nearBoatsBox) return;
-  if (!b || cam.mode !== COCKPIT || b.finished || b.dsq || state.phase === 'menu') {
+  if (!b || b.finished || b.dsq || state.phase === 'menu' || state.phase === 'orientation') {
     for (const el of nearBoatPool) el.style.display = 'none';
     return;
   }
   const near = [];
-  const bvx = Math.sin(b.h) * b.v, bvz = -Math.cos(b.h) * b.v;
   for (const o of boats) {
     if (o === b || o.dsq) continue;
     const dx = o.x - b.x, dz = o.z - b.z;
     const distM = Math.hypot(dx, dz) / 1.5; // ワールド距離(1.5x)から実距離[m]へ換算
-    if (distM > 15) continue; // 15m以内から表記
-    // 離れていく船は表示しない (相対速度ベクトルと位置ベクトルの内積が負＝接近中のみ表示)
-    const ovx = Math.sin(o.h) * o.v, ovz = -Math.cos(o.h) * o.v;
-    const closingDot = dx * (ovx - bvx) + dz * (ovz - bvz);
-    if (closingDot >= -0.02) continue;
-    // カメラ視界内に入っている他艇は直接見えるため表示せず、カメラに見えない(画面外の)接近艇だけ表示する
-    nearBoatV3.set(o.x, 1.8, o.z).project(camera);
-    const behind = nearBoatV3.z > 1;
-    const inView = !behind && Math.abs(nearBoatV3.x) <= 0.90 && Math.abs(nearBoatV3.y) <= 0.84;
-    if (inView) continue;
-    near.push({ o, dx, dz, distM });
+    if (distM <= 24) near.push({ o, dx, dz, distM });
   }
   near.sort((a, c) => a.distM - c.distM);
-  const count = Math.min(near.length, 3);
+  const count = Math.min(near.length, 5);
   const W = window.innerWidth, H = window.innerHeight;
   const viewHdg = b.h + (cam.yaw || 0); // 現在のカメラ視線方位
 
@@ -577,10 +565,12 @@ function updateNearBoatsHUD(b) {
       nearBoatPool.push(el);
     }
     const { o, dx, dz, distM } = near[i];
+    // カメラ視線に対する相対方位 relAng (0=正面, +π/2=右, -π/2=左, ±π=後方)
     const brg = Math.atan2(dx, -dz);
     const relB = wrap(brg - b.h);       // 自艇船首基準の相対角(左舷/右舷表現用)
     const relCam = wrap(brg - viewHdg); // カメラ画面基準の方向角(画面端の配置用)
 
+    // 画面端の楕円・矩形フレームに沿って配置 (視界を邪魔せず端っこで直感的に位置と距離がわかる)
     const dirX = Math.sin(relCam);
     const dirY = Math.cos(relCam);
     const edgeX = 0.85, edgeY = 0.76;
@@ -602,8 +592,7 @@ function updateNearBoatsHUD(b) {
 
     const distStr = distM < 10 ? `${distM.toFixed(1)}m` : `${Math.round(distM)}m`;
     const colHex = '#' + o.color.toString(16).padStart(6, '0');
-    // 15m〜10mまでは薄い表示(.faint)、10m以内ははっきり警告表示
-    const lv = distM < 6.5 ? ' danger' : distM <= 10 ? ' warn' : ' faint';
+    const lv = distM < 7.5 ? ' danger' : distM < 15 ? ' warn' : '';
     el.className = 'nearBoatTag' + lv;
     el.style.display = 'flex';
     el.style.left = `${sx}px`;
@@ -809,6 +798,7 @@ function updateHUD(sorted) {
   hud.ocs.style.display = !isPrac && !isOrient && b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
   hud.cam.textContent = 'CAM  ' + CAM_MODES[cam.mode] + ' [C]';
   if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== nx) hud.tCam.textContent = nx; }
+  if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
   if (!isPrac) {
     const c = Math.ceil(-t);
     if (t < 0 && t > -11) { hud.big.textContent = c; hud.big.style.opacity = 1; hud.big.classList.toggle('flash', t > -1); }
@@ -2276,6 +2266,7 @@ function loop() {
       camera.lookAt(lookCourse.x, 1.45, lookCourse.z);
     } else {
       cam.update(dt, time, player, boats);
+      if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
     }
     // ドローンカメラ時に他艇(CP艇)が「カメラと自艇の視線上(水平射影)」に入って自艇と重なった時だけ半透明化する
     if (models.length > 1) {
@@ -2445,7 +2436,12 @@ function initTouch() {
     });
   };
   tapTouch('tPole', () => setPlayerPole(!player.pole));
-  tapTouch('tCam', () => setCamera(cam.mode + 1)); tapTouch('tAuto', () => setAuto(!autoTrim));
+  tapTouch('tCam', () => setCamera(cam.mode + 1));
+  tapTouch('tCamReset', () => {
+    cam.resetAngle();
+    if (hud.tCamReset) hud.tCamReset.classList.add('hidden');
+  });
+  tapTouch('tAuto', () => setAuto(!autoTrim));
   if ($('tAuto')) $('tAuto').classList.add('on');
   if (IS_TOUCH) document.addEventListener('contextmenu', (e) => e.preventDefault());
 }
