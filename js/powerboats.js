@@ -423,10 +423,13 @@ export function makeMotorboat(type, o = {}) {
     // 4) 船首から海底へ垂れるアンカー係留ロープ(スタート前後にヨットが船首すぐ前を通ると引っかかる)
     addAnchorMooring(g, sh(L / 2 - 0.08), L / 2 - 0.08, 5.0, 4.6);
     // 5) アウター艇の運営スタッフ（人間＆動物、右舷 +X 方向のスタートラインを見守る）
+    // フィニッシュ運営艇(isFinishBoat)ではバウデッキ先端にたぬきカメラマンとフィニッシュ後カメラを配置するため、バウのダックは後部へ配置して視界を遮らないようにする
     addOfficialCrew(g, [
       { type: 'human_m', x: 0.36,  y: H + 0.02, z: -0.65, rotY: Math.PI * 0.48, vest: 0xf97316, suit: 0x0f172a, cap: 0x1e3a8a, scale: 1.06, stand: true },
       { type: 'dog',     x: -0.34, y: H + 0.02, z: -1.65, rotY: Math.PI * 0.52, vest: 0x2563eb, suit: 0x1e293b, cap: 0xfef08a, scale: 1.08 },
-      { type: 'duck',    x: 0.12,  y: sh(1.90), z: 1.90,  rotY: Math.PI * 0.44, vest: 0x16a34a, suit: 0x1e293b, cap: 0xffffff, scale: 1.10 },
+      ...(o.isFinishBoat
+        ? []
+        : [{ type: 'duck', x: 0.12, y: sh(1.90), z: 1.90, rotY: Math.PI * 0.44, vest: 0x16a34a, suit: 0x1e293b, cap: 0xffffff, scale: 1.10 }]),
     ]);
   } else if (type === 'cruiser') {
     const L = 13, B = 4.2, H = 1.15;
