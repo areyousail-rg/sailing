@@ -1131,12 +1131,13 @@ export function createWorld(scene) {
   const ORG = { color: '#ff7a1a', w: 1.5, h: 1.0, key: 'ORG' };
   markObjs.pin = putBoat(makeMotorboat('outer', { flags: [ORG] }), MARKS.pin.a, MARKS.pin.c, 0.06);
 
-  // スタート運営艇(右端): オレンジ旗 + スナイプ級クラス旗(0秒で降下) + P旗(1分前に降下)
+  // スタート運営艇(右端): オレンジ旗 + スナイプ級クラス旗(0秒で降下) + P旗(1分前に降下) + X旗(個別リコール時に掲揚)
   const com = putBoat(makeMotorboat('committee', {
     flags: [
       ORG,
       { color: '#ffffff', w: 1.40, h: 0.90, text: 'SNIPE', key: 'SNIPE' },
       { color: '#1d4ed8', w: 1.35, h: 0.88, text: 'P', key: 'P' },
+      { color: '#ffffff', w: 1.38, h: 0.88, text: 'X', key: 'X', topY: 2.45, initHidden: true },
     ],
   }), MARKS.com.a, MARKS.com.c, -0.05);
   markObjs.com = com;
@@ -1341,8 +1342,8 @@ export function createWorld(scene) {
   };
   const finLabel = lineLabel('FINISH', 'rgba(20,20,20,0.88)', 0, 0);
 
-  // フィニッシュ運営艇(アウターと同じ種類の和船型サポートボート + 青旗・S旗・オレンジ旗)と反対側の通常マークブイ
-  const fComBoat = putBoat(makeMotorboat('outer', { isFinishBoat: true, flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.95);
+  // フィニッシュ運営艇(アウターと同じ種類の和船型サポートボート + 青色旗のみ掲揚)と反対側の通常マークブイ
+  const fComBoat = putBoat(makeMotorboat('outer', { isFinishBoat: true, flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0, key: 'BLUE' }] }), MARKS.fcom.a, MARKS.fcom.c, 0.95);
   // フィニッシュ船の船首オープンデッキ先端に、3マーク〜フィニッシュライン側へ「大きい白レンズの一眼レフ」を構えるたぬきカメラマンを配置
   {
     const tanukiCam = buildFigure('tanuki', { vest: 0xf97316, suit: 0x1e293b });
@@ -1978,6 +1979,36 @@ export function createWorld(scene) {
             const prog = clampN(wt / 0.26, 0, 1);
             const ease = Math.pow(prog, 1.65);
             f.position.y = topY + (botY - topY) * ease;
+          } else {
+            f.visible = false;
+            f.position.y = botY;
+          }
+        } else if (fk === 'X') {
+          // 個別リコール「X旗」: スタート(wt >= 0.12)時点でリコール(OCS)艇がいる場合に掲揚し、全リコール艇がライン下へ戻ったら降下
+          const hasOcs = wt >= 0.12 && wt < 240 && Array.isArray(boats) && boats.some((b) => b && b.ocs && !b.dsq);
+          if (wt < 0.12) {
+            f.visible = false;
+            f.position.y = botY;
+            f.userData.hoistT = null;
+            f.userData.dropT = null;
+          } else if (hasOcs) {
+            if (f.userData.hoistT == null) f.userData.hoistT = wt;
+            f.userData.dropT = null;
+            const prog = clampN((wt - f.userData.hoistT) / 0.30, 0, 1);
+            const ease = 1 - Math.pow(1 - prog, 2.2);
+            f.visible = true;
+            f.position.y = botY + (topY - botY) * ease;
+          } else if (f.userData.hoistT != null) {
+            if (f.userData.dropT == null) f.userData.dropT = wt;
+            const prog = clampN((wt - f.userData.dropT) / 0.40, 0, 1);
+            if (prog < 1) {
+              f.visible = true;
+              f.position.y = topY + (botY - topY) * prog;
+            } else {
+              f.visible = false;
+              f.position.y = botY;
+              f.userData.hoistT = null;
+            }
           } else {
             f.visible = false;
             f.position.y = botY;
