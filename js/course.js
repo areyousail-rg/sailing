@@ -39,6 +39,16 @@ export const MARKS = {
   fm: { a: -135, c: -110 },
 };
 
+export function setFixedStartLine(deg = 5) {
+  LINE_SKEW = (deg * Math.PI) / 180;
+  LINE_T = Math.tan(LINE_SKEW);
+  FAVORED = deg > 0 ? 'com' : deg < 0 ? 'pin' : 'even';
+  MARKS.pin.a = lineA(-LINE_HALF);
+  MARKS.pin.c = -LINE_HALF;
+  MARKS.com.a = lineA(LINE_HALF);
+  MARKS.com.c = LINE_HALF;
+}
+
 export function randomizeStartLine() {
   // -15°〜+15°の範囲で確率的にライン傾きを決定 (約20%の確率で0°=有利サイドなし、残りは上有利・下有利が半々)
   let deg = 0;
@@ -139,13 +149,12 @@ export function updateProgress(b, t) {
   const prevA = b.a, prevC = b.c;
   b.a = cp.a; b.c = cp.c;
   if (b.finished || t < 0 || prevA === undefined) return ev;
-  // スタートライン通過判定 (ピン c=-LINE_HALF と本部船 c=+LINE_HALF の間を風下から風上へ切る)
+  // スタートライン通過判定 (ピン c=-LINE_HALF と本部船 c=+LINE_HALF の間を風下から風上へ確実に切った艇のみ started=true とする)
   if (!b.ocs && !b.started) {
     const laNow = lineA(b.c), laPrev = lineA(prevC);
-    const inSpan = Math.abs(b.c) <= LINE_HALF + 5.5 || Math.abs(prevC) <= LINE_HALF + 5.5;
-    if (inSpan && b.a >= laNow - 0.5 && (prevA <= laPrev + 8.0 || t < 20)) {
-      b.started = true;
-    } else if (!b.isPlayer && b.a >= laNow + 2.0) {
+    const cMid = 0.5 * (b.c + prevC);
+    const inSpan = Math.abs(cMid) <= LINE_HALF + 0.6 && (Math.abs(b.c) <= LINE_HALF + 0.8 || Math.abs(prevC) <= LINE_HALF + 0.8);
+    if (inSpan && prevA <= laPrev + 1.5 && b.a >= laNow - 0.25) {
       b.started = true;
     }
   }
@@ -197,7 +206,13 @@ export function updateProgress(b, t) {
     if (s0 * sRef > 0 && s1 * sRef <= 0 && !b.ocs && b.started !== false) {
       const ll = Math.hypot(G.a - F.a, G.c - F.c);
       const proj = ((b.a - F.a) * (G.a - F.a) + (b.c - F.c) * (G.c - F.c)) / ll;
-      if (proj > -6 && proj < ll + 6) { b.finished = true; b.finishTime = t; ev.push({ type: 'finish' }); }
+      if (proj > -6 && proj < ll + 6) {
+        b.finished = true;
+        b.finishTime = t;
+        b.finishHeading = b.h;
+        b.finishTack = b.tack || 1;
+        ev.push({ type: 'finish' });
+      }
     }
   }
   return ev;
