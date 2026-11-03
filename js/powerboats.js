@@ -463,13 +463,15 @@ export function makeMotorboat(type, o = {}) {
       const u = clamp01((z + L / 2) / L);
       return 0.48 + 0.28 * Math.pow(Math.max(0, (u - 0.35) / 0.65), 2.2);
     };
-    const navyHullMat = gelcoat(0x142c58);
-    const tubeMat = mat(o.tube ?? 0x263759, 0.58, 0.08);
-    const strakeMat = mat(0x3b4048, 0.78);
-    const consoleNavy = gelcoat(0x152b54);
+    const isNavyTube = (o.tube ?? 0x263759) === 0x263759;
+    const hullCol = isNavyTube ? 0x142c58 : 0xf1f5f9;
+    const navyHullMat = gelcoat(hullCol);
+    const tubeMat = mat(o.tube ?? 0x263759, 0.52, 0.08);
+    const strakeMat = mat(0x2d333b, 0.78);
+    const consoleNavy = gelcoat(isNavyTube ? 0x152b54 : 0xe2e8f0);
 
-    // 1) チューブ下の濃紺ディープVハル(FRP船底)
-    const vHull = hullGroup(L * 0.90, B * 0.74, 0.42, 0x142c58, 0x142c58, { bottomColor: 0x0e2042 });
+    // 1) チューブ下のディープVハル(FRP船底)
+    const vHull = hullGroup(L * 0.90, B * 0.74, 0.42, hullCol, hullCol, { bottomColor: 0x0e2042 });
     vHull.position.set(0, 0.02, -0.05);
     g2.add(vHull);
 
