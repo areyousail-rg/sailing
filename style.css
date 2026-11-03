@@ -146,13 +146,13 @@ body.touch #miniLog div{font-size:.6rem}
 /* マーク方向・近接艇タグ */
 .markPointer{position:fixed;z-index:3;pointer-events:none;display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:2px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:.74rem;font-variant-numeric:tabular-nums;transform:translate(-50%,-50%);white-space:nowrap}
 .markPointer .mpArrow{display:inline-block;font-size:.85rem;line-height:1;transform-origin:center}
-.nearBoats{position:fixed;inset:0;pointer-events:none;z-index:3}
-.nearBoatTag{position:fixed;pointer-events:none;display:flex;align-items:center;gap:4px;padding:2px 7px;border-radius:2px;background:var(--panel);border:1px solid var(--line-2);color:var(--txt);font-weight:600;font-size:.7rem;transform:translate(-50%,-50%);white-space:nowrap;font-variant-numeric:tabular-nums;transition:opacity .15s}
-.nearBoatTag .mpArrow{display:inline-block;font-size:.7rem;line-height:1}
-.nearBoatTag.faint{opacity:.45;background:rgba(14,20,25,.55);border-color:var(--line);color:var(--mute);font-size:.62rem;padding:1px 6px}
-.nearBoatTag.warn{border-color:var(--accent);color:var(--accent)}
-.nearBoatTag.danger{border-color:var(--port);background:#2a1214;color:#ffc9cb;font-weight:700}
-.nearBoatTag .nbSw{width:7px;height:7px;border-radius:1px;display:inline-block;flex-shrink:0}
+.nearBoats{position:fixed;inset:0;pointer-events:none;z-index:13}
+.nearBoatTag{position:fixed;pointer-events:none;display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:rgba(7,22,40,.84);border:1.5px solid #38bdf8;color:#e0f2fe;font-weight:700;font-size:.76rem;box-shadow:0 4px 14px rgba(0,0,0,.45);transform:translate(-50%,-50%);white-space:nowrap;font-variant-numeric:tabular-nums;backdrop-filter:blur(3px);transition:opacity .15s}
+.nearBoatTag .mpArrow{display:inline-block;font-size:.82rem;line-height:1}
+.nearBoatTag.faint{opacity:.56;border-color:rgba(56,189,248,.65);background:rgba(7,22,40,.58);font-size:.72rem;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.nearBoatTag.warn{border-color:var(--accent);color:#fde047;background:rgba(40,30,6,.86)}
+.nearBoatTag.danger{border-color:#ff5a5f;color:#fecdd3;background:rgba(88,14,22,.88);box-shadow:0 0 16px rgba(255,90,95,.5)}
+.nearBoatTag .nbSw{width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,255,255,.85);display:inline-block;flex-shrink:0}
 
 /* 中断ボタン(#hud が pointer-events:none のため auto を明示) */
 .pauseBtn{pointer-events:auto;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;position:fixed;top:14px;right:286px;z-index:15;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line-2);color:var(--txt);padding:7px 12px;border-radius:var(--r);font-weight:700;font-size:.82rem;letter-spacing:.04em;cursor:pointer}
@@ -164,45 +164,8 @@ body.touch #miniLog div{font-size:.6rem}
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10}
 #loading{background:radial-gradient(circle at 50% 38%,#12263f 0%,#0b1015 72%);flex-direction:column;gap:14px;z-index:30;transition:opacity .35s ease}
 .spinner{display:none}
-.loadingAnimeWrap{width:min(360px,86vw);border-radius:8px;overflow:hidden;border:2px solid #355472;box-shadow:0 12px 36px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.08)}
-.loadingAnimeSvg{display:block;width:100%;height:auto}
-.laYachtRock{transform-origin:0 0;animation:laYachtSail 1.9s ease-in-out infinite alternate}
-.laWaveBack{animation:laWaveSlide 3.2s linear infinite}
-.laWaveFront{animation:laWaveSlideRev 2.3s linear infinite}
-.laWaveFoam{animation:laWaveSlideRev 2.3s linear infinite}
-.laWind{animation:laWindStream 1.35s linear infinite}
-.laWind.w2{animation-delay:-.45s}
-.laWind.w3{animation-delay:-.85s}
-.laWind.w4{animation-delay:-.25s}
-.laSpray{animation:laSprayPulse .65s ease-in-out infinite alternate}
-.laSprayDot{animation:laSprayFly .8s ease-out infinite}
-.laSprayDot.d2{animation-delay:-.35s}
-@keyframes laYachtSail{
-  0%{transform:translateY(1px) rotate(-7deg)}
-  100%{transform:translateY(-4px) rotate(-12.5deg)}
-}
-@keyframes laWaveSlide{
-  0%{transform:translateX(0)}
-  100%{transform:translateX(-60px)}
-}
-@keyframes laWaveSlideRev{
-  0%{transform:translateX(0)}
-  100%{transform:translateX(-70px)}
-}
-@keyframes laWindStream{
-  0%{transform:translateX(35px);opacity:0}
-  30%{opacity:.7}
-  80%{opacity:.6}
-  100%{transform:translateX(-95px);opacity:0}
-}
-@keyframes laSprayPulse{
-  0%{transform:scale(.92);opacity:.78}
-  100%{transform:scale(1.08);opacity:1}
-}
-@keyframes laSprayFly{
-  0%{transform:translate(0,0) scale(1);opacity:.95}
-  100%{transform:translate(-14px,-8px) scale(.35);opacity:0}
-}
+.loadingAnimeWrap{width:min(384px,88vw);border-radius:6px;overflow:hidden;border:2px solid #355472;box-shadow:0 12px 36px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.08);background:#0c1828;position:relative}
+.loadingPixelCanvas{display:block;width:100%;height:auto;aspect-ratio:16/10;image-rendering:pixelated;image-rendering:crisp-edges}
 #loading p{margin:0;font-family:var(--f-num);font-weight:700;letter-spacing:.2em;font-size:.86rem;color:var(--mute);text-transform:uppercase;font-variant-numeric:tabular-nums}
 #loading p span{color:var(--accent)}
 .loadBar{width:min(280px,72vw);height:4px;background:var(--line);border-radius:2px;overflow:hidden}
@@ -303,16 +266,22 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 .btnSec.danger{color:#ff9a9d;border-color:#6b2a2d}
 .btnSec.danger:hover{background:#2a1214;border-color:var(--port)}
 
-/* 結果表 */
+/* 結果表 (フィニッシュ後の背景カメラ映像が透けて見えるマリオカート風半透明リザルト) */
+#result.menu{background:rgba(6,12,20,.14)}
+.resultCard{width:min(660px,95vw)!important;max-height:94vh!important;padding:14px 20px!important;background:rgba(12,20,32,.46)!important;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:1px solid rgba(180,220,255,.28)!important;border-top:2px solid var(--accent)!important;box-shadow:0 12px 36px rgba(0,0,0,.34)!important}
 .tableWrap{overflow:auto;margin-top:12px;border:1px solid var(--line);border-radius:var(--r)}
+.resultCard .tableWrap{background:rgba(8,14,24,.22);border:1px solid rgba(180,220,255,.22)}
 table{width:100%;border-collapse:collapse;font-size:.88rem}
 th,td{padding:6px 12px;text-align:left;border-bottom:1px solid var(--line)}
 td:first-child,td:last-child{font-family:var(--f-num);font-variant-numeric:tabular-nums}
 th{color:var(--mute);font-weight:600;font-size:.64rem;letter-spacing:.14em;position:sticky;top:0;background:var(--bg-2)}
+.resultCard th{background:rgba(12,20,32,.56);color:#d8ecff;border-bottom:1px solid rgba(180,220,255,.2)}
+.resultCard td{background:rgba(12,20,32,.22);border-bottom:1px solid rgba(255,255,255,.1);text-shadow:0 1px 3px rgba(0,0,0,.8)}
 tbody tr:last-child td{border-bottom:none}
 tr.me td{background:var(--bg-3);font-weight:700}
+.resultCard tr.me td{background:rgba(235,184,0,.32);color:#fffef2;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 tr.me td:first-child{box-shadow:inset 3px 0 0 var(--accent);color:var(--accent)}
-#resultTitle{font-family:var(--f-num);font-size:2rem;margin-top:4px}
+#resultTitle{font-family:var(--f-num);font-size:2rem;margin-top:4px;text-shadow:0 2px 6px rgba(0,0,0,.75)}
 
 /* スタート画面(menuOpen)表示中: 上部や下部の計器・左側のAUTOボタン等を非表示にしてすっきり見せる */
 #tAuto,
@@ -339,7 +308,8 @@ body.menuOpen .menuPractice{padding-top:34px}
 .tgrp.left button:active,.tgrp.left button.on,.tgrp.right button:active,.tgrp.right button.on{background:var(--line-2);color:var(--txt);border-color:var(--mute)}
 .tgrp{position:absolute;display:flex;gap:10px}
 .tgrp.left{left:14px;bottom:14px}.tgrp.left button{width:104px;height:96px;font-size:2rem;border-radius:4px}
-.tgrp.mid{left:14px;top:42%;flex-direction:column;gap:6px}.tgrp.mid button{width:72px;height:42px;font-size:.72rem;border-radius:3px}
+.tgrp.mid{left:14px;top:42%;flex-direction:column;gap:6px}.tgrp.mid button{width:76px;height:42px;font-size:.72rem;border-radius:3px;line-height:1.15;padding:0 4px}
+#tCamReset{font-size:.64rem;letter-spacing:-.02em}
 .tgrp.right{right:14px;bottom:14px;width:190px;flex-wrap:wrap;justify-content:flex-end}.tgrp.right button{width:90px;height:60px;font-size:.86rem}
 
 body.touch #help,body.touch #leaders{display:none}
@@ -630,10 +600,10 @@ body.orientOpen #result{z-index:14;pointer-events:none}
   background:
     radial-gradient(circle at 92% 18%,rgba(196,255,14,.18) 0%,transparent 48%),
     radial-gradient(circle at 8% 85%,rgba(255,46,136,.18) 0%,transparent 52%),
-    #101520;
-  border:2px solid #2b384e;
+    rgba(12,18,28,.52);
+  border:1.5px solid rgba(180,220,255,.28);
   border-radius:8px;
-  box-shadow:0 6px 20px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.06);
+  box-shadow:0 6px 20px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.06);
   position:relative;
   overflow:hidden;
 }
