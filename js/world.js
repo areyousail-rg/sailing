@@ -1141,23 +1141,26 @@ export function createWorld(scene) {
   }), MARKS.com.a, MARKS.com.c, -0.05);
   markObjs.com = com;
 
-  // 1マーク・2マークの風上側近めに配置する濃紺RIB観覧・コーチボート(各マーク1艇のみ) ＋ コース外周の観覧艇
+  // 1マーク・2マークの風上側近めに配置するRIB観覧・コーチボート ＋ コース外周の観覧艇(濃紺・赤・水色のゴムボート＆クルーザー)
   const specPositions = [
-    // 1マーク風上側近めの濃紺RIB観覧艇 (1艇のみ)
-    { markRef: 'm1', da: 26, dc: 10, rot: 2.75, type: 'rib', tube: 0x263759, noFlag: true },
-    // 2マーク風上側近めの濃紺RIB観覧艇 (1艇のみ)
-    { markRef: 'm2', da: 25, dc: -9, rot: 2.55, type: 'rib', tube: 0x263759, noFlag: true },
-    // コース外周の観覧艇・サポート艇
+    // 1マーク風上側近めの赤色RIB観覧・コーチボート
+    { markRef: 'm1', da: 26, dc: 10, rot: 2.75, type: 'rib', tube: 0xd93829, noFlag: true },
+    // 2マーク風上側近めの水色RIB観覧・コーチボート
+    { markRef: 'm2', da: 25, dc: -9, rot: 2.55, type: 'rib', tube: 0x2ea8e6, noFlag: true },
+    // コース外周の観覧艇・サポート艇 (濃紺・赤・水色のRIBゴムボートとクルーザー)
     { a: 365, c: 52, rot: 1.2, type: 'cruiser' },
-    { a: 180, c: 180, rot: -0.8, type: 'rib', tube: 0x263759 },
+    { a: 95, c: 135, rot: -1.1, type: 'rib', tube: 0x2ea8e6 },
+    { a: -32, c: -138, rot: 0.8, type: 'rib', tube: 0xd93829 },
+    { a: 180, c: 175, rot: -0.8, type: 'rib', tube: 0x263759 },
     { a: 245, c: -232, rot: 2.1, type: 'cruiser' },
-    { a: 60, c: -228, rot: 0.4, type: 'rib', tube: 0x263759 },
+    { a: 60, c: -210, rot: 0.4, type: 'rib', tube: 0x2ea8e6 },
+    { a: 195, c: -195, rot: 1.4, type: 'rib', tube: 0xd93829 },
     { a: -90, c: -232, rot: -1.5, type: 'cruiser' },
     { a: 20, c: 190, rot: -2.2, type: 'cruiser' },
-    { a: 290, c: 192, rot: 0.1, type: 'rib', tube: 0x263759 },
+    { a: 290, c: 185, rot: 0.1, type: 'rib', tube: 0x263759 },
     { a: -195, c: -20, rot: 2.6, type: 'cruiser' },
   ];
-  const TUBES = [0x263759, 0x1e3a8a, 0x2d3748, 0x263759];
+  const TUBES = [0x263759, 0xd93829, 0x2ea8e6, 0x263759];
   specPositions.forEach((s, i) => {
     const a0 = s.markRef ? MARKS[s.markRef].a + s.da : s.a;
     const c0 = s.markRef ? MARKS[s.markRef].c + s.dc : s.c;
@@ -1214,14 +1217,14 @@ export function createWorld(scene) {
   const finCurtain = new THREE.Mesh(new THREE.PlaneGeometry(flen, 2.2), finCurtainMat);
   const fin = new THREE.Group(); fin.add(finBand, finCurtain); scene.add(fin);
 
-  // START LINE ラベル(AI風の斜め枠やSFフォントを廃し、クリーンで視認性の高い端正なスポーツ中継プレート)
+  // START LINE ラベル(AI風の斜め枠やSFフォントを廃し、クリーンで視認性の高い大型スポーツ中継プレート)
   const startCanvas = document.createElement('canvas');
-  startCanvas.width = 960; startCanvas.height = 350;
+  startCanvas.width = 1200; startCanvas.height = 440;
   const startTex = new THREE.CanvasTexture(startCanvas);
   startTex.anisotropy = 4;
   const startLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: startTex, transparent: true, depthWrite: false }));
-  startLabel.scale.set(22.0, 8.0, 1);
-  startLabel.position.set(0, 5.2, 0);
+  startLabel.scale.set(34.0, 12.5, 1);
+  startLabel.position.set(0, 6.4, 0);
   startLabel.renderOrder = 5;
   scene.add(startLabel);
   let showPreStartFav = true;
@@ -1236,57 +1239,62 @@ export function createWorld(scene) {
     const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
     const favStr = FAVORED === 'even' || skewDeg === 0 ? 'EVEN  0° 有利なし' : `${skewDeg}° ${FAVORED === 'com' ? '上有利 (本部船側)' : '下有利 (アウター側)'}`;
     const ctx = startCanvas.getContext('2d');
-    ctx.clearRect(0, 0, 960, 350);
+    ctx.clearRect(0, 0, 1200, 440);
 
-    // メインプレート (落ち着いた濃紺ソリッド＋白枠の端正なサインボード)
+    // メインプレート (落ち着いた濃紺ソリッド＋白太枠の大型サインボード)
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 8, 20, 0.55)';
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetY = 5;
-    drawRoundPlate(ctx, 84, 22, 792, 144, 14);
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.shadowColor = 'rgba(0, 8, 20, 0.65)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 6;
+    drawRoundPlate(ctx, 36, 18, 1128, 204, 20);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
     ctx.fill();
     ctx.restore();
 
-    drawRoundPlate(ctx, 84, 22, 792, 144, 14);
+    drawRoundPlate(ctx, 36, 18, 1128, 204, 20);
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 8;
     ctx.stroke();
 
     // 左端のオレンジフラッグ色バー
     ctx.save();
-    drawRoundPlate(ctx, 84, 22, 792, 144, 14);
+    drawRoundPlate(ctx, 36, 18, 1128, 204, 20);
     ctx.clip();
     ctx.fillStyle = '#f97316';
-    ctx.fillRect(84, 22, 22, 144);
+    ctx.fillRect(36, 18, 30, 204);
     ctx.restore();
 
-    // START LINE タイトル文字
+    // START LINE タイトル文字 (遠目でもくっきり大きく読める特大ボールド文字)
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
     ctx.fillStyle = '#ffffff';
-    ctx.font = '800 86px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+    ctx.font = '900 134px "Outfit", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('START LINE', 488, 96);
+    ctx.fillText('START LINE', 612, 122);
+    ctx.restore();
 
     // 下段: 有利サイドバッジ
     if (showPreStartFav) {
       ctx.save();
-      ctx.shadowColor = 'rgba(0, 8, 20, 0.55)';
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetY = 4;
-      drawRoundPlate(ctx, 168, 184, 624, 98, 12);
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      ctx.shadowColor = 'rgba(0, 8, 20, 0.6)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 5;
+      drawRoundPlate(ctx, 150, 242, 900, 128, 16);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.78)';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 5;
       ctx.stroke();
       ctx.restore();
 
       ctx.fillStyle = '#fde047';
-      ctx.font = '700 50px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      ctx.font = '800 68px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(favStr, 480, 234);
+      ctx.fillText(favStr, 600, 308);
     }
     startTex.needsUpdate = true;
   };
@@ -2035,15 +2043,15 @@ export function createWorld(scene) {
         sp.visible = v > 0.02;
       }
 
-      // 2) START LINE / FINISH ラベル: 遠くからでもしっかり大きく読めつつ、接近時はコンパクトになるよう距離比例スケールを調整
+      // 2) START LINE / FINISH ラベル: 遠くからでもしっかり大きく読めつつ、接近時も十分な大きさを保つよう距離比例スケールを調整
       if (startLabel) {
         const dStart = Math.hypot(startLabel.position.x - cx, startLabel.position.z - cz);
-        const sw = clampN(2.6 + dStart * 0.22, 5.6, 58.0);
-        const sh = sw * (350 / 960);
+        const sw = clampN(7.2 + dStart * 0.34, 12.0, 82.0);
+        const sh = sw * (440 / 1200);
         startLabel.scale.set(sw, sh, 1);
-        startLabel.position.y = 2.2 + sh * 0.58;
-        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 8, 9, false) * postStartFade;
-        startLabel.material.opacity = 0.96 * v;
+        startLabel.position.y = 2.6 + sh * 0.56;
+        const v = calcVis(startLabel.position.x, startLabel.position.y, startLabel.position.z, 7, 8, false) * postStartFade;
+        startLabel.material.opacity = 0.98 * v;
         startLabel.visible = courseVisible && v > 0.02;
       }
       if (finLabel) {
