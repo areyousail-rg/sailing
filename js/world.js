@@ -1334,20 +1334,14 @@ export function createWorld(scene) {
   const finLabel = lineLabel('FINISH', 'rgba(20,20,20,0.88)', 0, 0);
 
   // フィニッシュ運営艇(アウターと同じ種類の和船型サポートボート + 青旗・S旗・オレンジ旗)と反対側の通常マークブイ
-  const fComBoat = putBoat(makeMotorboat('outer', { flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.1);
-  // フィニッシュ船の船首デッキおよび屋根上に、3マーク〜フィニッシュライン側(+z/+x方向)へ「大きい白レンズの一眼レフ」を構えるたぬきカメラマンを配置
+  const fComBoat = putBoat(makeMotorboat('outer', { isFinishBoat: true, flags: [{ color: '#1d4ed8', w: 1.5, h: 1.0 }, { color: '#ffffff', w: 1.45, h: 0.95, text: 'S' }, ORG] }), MARKS.fcom.a, MARKS.fcom.c, 0.95);
+  // フィニッシュ船の船首オープンデッキ先端に、3マーク〜フィニッシュライン側へ「大きい白レンズの一眼レフ」を構えるたぬきカメラマンを配置
   {
-    // 既存の船首アヒルスタッフを隠して、船首デッキに特大望遠一眼レフを持ったたぬきカメラマンを目立つよう配置
-    fComBoat.traverse((o) => {
-      if (o.userData && o.userData.officialCrew && o.children && o.children[2]) {
-        o.children[2].visible = false;
-      }
-    });
     const tanukiCam = buildFigure('tanuki', { vest: 0xf97316, suit: 0x1e293b });
-    tanukiCam.scale.setScalar(1.36);
-    // 屋根に隠れないオープンなバウデッキ(z=1.88, y=0.76)に立ち、正面(-z)が船首・3マーク・フィニッシュライン方向(+z, +x)を向くよう rotY = Math.PI - 0.32 に設定
-    tanukiCam.position.set(0.22, 0.76, 1.88);
-    tanukiCam.rotation.y = Math.PI - 0.32;
+    tanukiCam.scale.setScalar(1.30);
+    // キャビン風防(z=1.56)より十分前方のオープンなバウデッキ先端(z=2.55, x=0.34, y=0.88)に立ち、船首前方(+z)の海面・3マーク側へ望遠レンズを向ける
+    tanukiCam.position.set(0.34, 0.88, 2.55);
+    tanukiCam.rotation.y = Math.PI - 0.18;
     if (tanukiCam.userData.upper) {
       const tu = tanukiCam.userData.upper;
       if (tu.userData.armL) tu.userData.armL.rotation.set(-0.78, 0.26, -0.18);
@@ -1407,6 +1401,8 @@ export function createWorld(scene) {
       let ca = cb.a, cc = cb.c;
       if (cb.b === fComBoat) {
         ca = MARKS.fcom.a; cc = MARKS.fcom.c;
+        // フィニッシュ船のバウ(+z)を3マーク〜フィニッシュライン(上マークF時は1マーク手前海面)方向へ向け、キャビンがカメラ視界を遮らないようにする
+        cb.relRot = isUpwindMode ? (Math.PI - 0.55) : 0.95;
       } else if (cb.b === markObjs.pin) {
         ca = MARKS.pin.a; cc = MARKS.pin.c;
       } else if (cb.b === markObjs.com) {
@@ -2101,9 +2097,9 @@ function addTori(scene, x, h, z) {
 // ---------- 八景島ステージ構築 (実地図・セーリングガイド準拠) ----------
 // ワールド座標: x=東(+), 西(-), z=南(+), 北(-)。コースは八景島の東側海面(x≈0, z≈0)で北風(15°)スタート(北が風上)。
 function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
-  // 八景島の実際のレース海面は八景島マリーナから北東へ沖出しし、テクノタワーホテル正面沖付近まで出るため、
-  // 八景島本島を以前より少し沖側(+x)・横浜側(-z)へ寄せて配置
-  root.position.set(-210, 0, 860);
+  // 八景島のローカルルール「横浜市大医学部病院(福浦岸壁・ヘリポート)より南側ではレースをしてはいけない」を厳守し、
+  // レース海面全体(スタートライン・3マーク・フィニッシュラインを含む全水域)が市大医学部病院より明確に北側(テクノタワーホテル正面〜幸浦沖)になるよう配置
+  root.position.set(-210, 0, 1220);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), tc = new THREE.Color(), eul = new THREE.Euler();
   // 八景島本島 (従来より沖側+x・横浜側-zへ移動)
   const H_ISLAND = { x: -1010, z: -60, rx: 430, rz: 460 };
