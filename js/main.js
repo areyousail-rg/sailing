@@ -1,13 +1,13 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
-import { createWorld, MOBILE } from './world.js';
+import { createWorld, MOBILE, SUN_DIR } from './world.js';
 import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
 import { Recorder, openReview, serializeReviewSnapshot, deserializeReviewSnapshot, buildFallbackReviewFromRecord } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew, animatePreviewFigure } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
-import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
+import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, setFixedStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
 import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -322,8 +322,18 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
     const hasBlackBall = prof ? !!prof.hasBlackBall : false;
     const b = new Boat({ id: k, isPlayer: isP, sailNo: isP ? cfg.sailNo : no, nat: isP ? 'JPN' : NATS[(rng() * NATS.length) | 0], color: isP ? 0xff5a1f : color, skill: isP ? 1 : cpSkill, startTargetC: s.targetC, startRole: s.startRole, hasBlackBall });
     const p = toWorld(s.a + lineA(s.targetC), s.c);
-    b.place(p.x, p.z, W0 - 0.75 + (rng() - 0.5) * 0.05);
-    b.v = 0.4; b.sheet = sheetOpt(b.twa);
+    if (isP && onlyPlayer && state.phase === 'menu') {
+      // スタート画面(メニュー待機中)で向いているデフォルトの方角は太陽の方面にする(画がきれいなため)
+      const sunHeading = Math.atan2(SUN_DIR.x, -SUN_DIR.z);
+      b.place(p.x, p.z, sunHeading);
+      b.v = 2.4 * SPEED_SCALE;
+      b.sheet = sheetOpt(Math.max(0.75, b.twa));
+      b.luff = 0;
+      hTarget = sunHeading;
+    } else {
+      b.place(p.x, p.z, W0 - 0.75 + (rng() - 0.5) * 0.05);
+      b.v = 0.4; b.sheet = sheetOpt(b.twa);
+    }
     boats.push(b);
     let helm, crew;
     if (isP) {
@@ -1234,12 +1244,13 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
 
 function setupOrientStepScene(stepIdx) {
   orientState.subDone = false;
+  orientState.poleUpDone = false;
   orientState.phase2 = false;
   orientState.resultPopulated = false;
   clearOrientHighlight();
 
   if (!player) return;
-  player.maneuver = null; player.tacking = false; player.ocs = false; player.penalty = null; player.finished = false;
+  player.maneuver = null; player.tacking = false; player.ocs = false; player.penalty = null; player.finished = false; player.postFinishStop = false;
   cam.inited = false;
   if (stepIdx === 0) {
     // STEP 1: スタート1分前・海上のSTART LINE＆有利サイド表記が画面中央にはっきり映る位置に配置
@@ -1294,12 +1305,6 @@ function setupOrientStepScene(stepIdx) {
     player.place(p.x, p.z, wrap(W0 + 2.68));
     player.v = 3.25 * SPEED_SCALE; player.pole = false; player.poleK = 0; player.leg = Math.min(2, LEGS.length - 1); player.started = true;
     cam.yaw = cam.targetYaw = 0.56; cam.pitch = cam.targetPitch = 0.03;
-    setTimeout(() => {
-      if (state.phase === 'orientation' && orientState.step === 5 && player) {
-        player.setPole(true);
-        poleClank(true);
-      }
-    }, 550);
   } else if (stepIdx === 6) {
     // STEP 7: 下マーク回航からフィニッシュへ → フィニッシュラインを切った瞬間にホーンを鳴らす
     state.t = 210;
@@ -1372,12 +1377,14 @@ function startOrientation() {
   initAudio();
   playBgm('orientation');
   state.phase = 'orientation'; state.t = -50; state.paused = false; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.ff = false; state.pAI = null;
-  // オリエンテーション01で海上の有利サイド表記が分かりやすく出るよう、有利サイドあり(上有利または下有利)を保証
-  for (let tries = 0; tries < 12; tries++) {
-    randomizeStartLine();
-    if (FAVORED !== 'even' && Math.abs((LINE_SKEW * 180) / Math.PI) >= 4) break;
-  }
-  applyVenue();
+  // オリエンテーション動画は複数パターン不要・常に「八景島の北風(15°・9kt・トラペゾイド・5°上有利)」の1パターンに固定
+  setFixedStartLine(5);
+  setCourseMode('trapezoid');
+  const { bias } = computeSideBias('hakkeijima', 15);
+  setWindParams(9, bias);
+  world.setVenue('hakkeijima', 15, bias);
+  applySea(15, 9);
+  rebuildObstacles();
   if (world.setCourseVisible) world.setCourseVisible(true);
   makeFleet(true);
   const pBtn = $('orientPauseBtn');
@@ -1402,7 +1409,11 @@ function exitOrientation(toRace = false) {
   } else {
     $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('menu').classList.remove('hidden');
     state.phase = 'menu'; document.body.classList.add('menuOpen'); cam.menuOffset = true;
+    randomizeStartLine();
+    applyVenue();
     makeFleet(true);
+    cam.inited = false; cam.yaw = 0; cam.pitch = 0;
+    if (player) cam.update(0, performance.now() / 1000, player, boats);
     playBgm('menu');
   }
 }
@@ -1473,6 +1484,11 @@ function orientationStep(dt, time) {
     cam.pitch = cam.targetPitch = 0.04;
   } else if (idx === 5) {
     // STEP 6: 前半(0〜4.8s)＝上マーク(1a)回航直後にランチャーUP ／ 後半(4.8s〜)＝下マーク(3)回航前にランチャーDOWN → クローズの角度に上した時にマークが真横にあるきれいなアウト・イン・アウト回航
+    if (orientState.elapsed >= 0.55 && !orientState.poleUpDone) {
+      orientState.poleUpDone = true;
+      player.setPole(true);
+      poleClank(true);
+    }
     if (orientState.elapsed >= 4.8 && !orientState.phase2) {
       orientState.phase2 = true;
       player.pole = true; player.poleK = 1;
@@ -1600,6 +1616,7 @@ function orientationStep(dt, time) {
       b.tack = b.rel >= 0 ? 1 : -1;
       b.sOpt = sheetOpt(b.twa);
       b.sheet = b.sOpt;
+      b.heel = -b.tack * Math.sin(b.twa) * 0.20;
     }
     if (!(idx === 5 && orientState.phase2)) updateProgress(b, state.t);
     if (idx === 6) {
@@ -1689,12 +1706,24 @@ function playerControl(dt) {
 // スタート画面(メニュー)表示中または練習モード中の航行ステップ
 function practiceStep(dt, time) {
   if (!player) return;
+  if (state.phase === 'menu') {
+    const L = keys.has('ArrowLeft') || keys.has('KeyA');
+    const R = keys.has('ArrowRight') || keys.has('KeyD');
+    if (!L && !R && !player.maneuver) {
+      hTarget = Math.atan2(SUN_DIR.x, -SUN_DIR.z);
+    }
+  }
   playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
-  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined) sailFlog(0.85); state.lastTack = player.tack; }
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && state.phase !== 'menu') sailFlog(0.85); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   player.update(dt, time, boats);
+  if (state.phase === 'menu' && player.twa < 0.72) {
+    player.v = Math.max(player.v, 2.2 * SPEED_SCALE);
+    player.luff = 0;
+    player.sheet = sheetOpt(0.78);
+  }
   if (state.phase === 'practice') {
     for (const e of updateProgress(player, 10)) {
       if (e.type === 'rounded') toast(`${e.leg.name}マーク回航`, 'good', 2500);
@@ -1762,7 +1791,7 @@ function snapshotLiveFleet() {
       maneuver: b.maneuver ? { ...b.maneuver } : null,
       penalty: b.penalty ? { ...b.penalty } : null,
       penaltyDone: b.penaltyDone, penaltyExpired: b.penaltyExpired, penaltyUpgraded: b.penaltyUpgraded,
-      leg: b.leg, ocs: b.ocs, started: b.started, finished: b.finished, finishTime: b.finishTime, late: b.late,
+      leg: b.leg, ocs: b.ocs, started: b.started, finished: b.finished, finishTime: b.finishTime, finishHeading: b.finishHeading, finishTack: b.finishTack, postFinishStop: b.postFinishStop, late: b.late,
       a: b.a, c: b.c, visit: b.visit ? { ...b.visit } : null,
       contactCD: b.contactCD, touchCD: b.touchCD, heel: b.heel, rollBias: b.rollBias, hike: b.hike, turned: b.turned,
       sOpt: b.sOpt, luff: b.luff, stall: b.stall, cover: b.cover, coverT: b.coverT, back: b.back, backT: b.backT,
@@ -2235,17 +2264,17 @@ function loop() {
   if (player) {
     if (isPostFinishView && world.markObjs && world.markObjs.fcom) {
       // フィニッシュ後の背景映像(リザルト画面表示後):
-      // フィニッシュ船(fcom)のオープンバウデッキに立つ「大型望遠一眼レフを構えたたぬきカメラマン」のすぐ斜め後ろから、
-      // たぬきカメラマンを画面右手前にしっかり映しつつ、フィニッシュライン〜3マーク側(自分以降にフィニッシュしてくる後続艇群)を望むアングル
+      // フィニッシュ船(fcom)のオープンバウデッキ(z = 1.65..3.85)に立つ「大型望遠一眼レフを構えたたぬきカメラマン(local: 0.34, 0.88, 2.55)」のすぐ斜め後ろから、
+      // キャビン壁や屋根に一切遮られず、たぬきカメラマンを画面右手前に映しつつフィニッシュライン〜3マーク側の海面と後続艇群を望むアングル
       const fc = world.markObjs.fcom;
       if (fc.userData && fc.userData.tanukiCam) {
         const tk = fc.userData.tanukiCam;
-        tk.rotation.y = (Math.PI - 0.32) + Math.sin(time * 0.85) * 0.12;
+        tk.rotation.y = (Math.PI - 0.18) + Math.sin(time * 0.85) * 0.10;
         if (tk.userData.head) tk.userData.head.rotation.y = Math.sin(time * 1.4) * 0.08;
       }
       const isUpwindFin = COURSE_MODE === 'upwind';
-      // たぬきカメラマン(local: 0.22, 0.76, 1.88)のすぐ左後ろ(local: -0.14, 1.38, 1.15)にカメラを置き、屋根に遮られずカメラマンと3マーク側を同時に捉える
-      const camLocal = isUpwindFin ? new THREE.Vector3(-0.12, 1.38, 1.12) : new THREE.Vector3(-0.14, 1.38, 1.15);
+      // キャビンフロントガラス(z = 1.56)より前方かつ屋根より高いオープンバウデッキ上(local: -0.24, 1.82, 1.92)にカメラを配置
+      const camLocal = new THREE.Vector3(-0.24, 1.82, 1.92);
       fc.updateMatrixWorld(true);
       const camWorld = camLocal.applyMatrix4(fc.matrixWorld);
       camera.position.copy(camWorld);
@@ -2253,7 +2282,7 @@ function loop() {
       const lookCourse = isUpwindFin
         ? toWorld(MARKS.m1.a - 36, (MARKS.m1.c + MARKS.fcom.c) * 0.42 + Math.sin(time * 0.45) * 3.5)
         : toWorld((MARKS.fm.a * 0.56 + MARKS.m3.a * 0.44), (MARKS.fm.c * 0.56 + MARKS.m3.c * 0.44) + Math.sin(time * 0.45) * 3.5);
-      camera.lookAt(lookCourse.x, 1.35, lookCourse.z);
+      camera.lookAt(lookCourse.x, 1.45, lookCourse.z);
     } else {
       cam.update(dt, time, player, boats);
     }
