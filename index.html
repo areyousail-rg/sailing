@@ -6,24 +6,24 @@
   <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261103c">
+  <link rel="stylesheet" href="style.css?v=20261103d">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261103c",
-      "./js/sim.js": "./js/sim.js?v=20261103c",
-      "./js/review.js": "./js/review.js?v=20261103c",
-      "./js/ai.js": "./js/ai.js?v=20261103c",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261103c",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261103c",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261103c",
-      "./js/crew.js": "./js/crew.js?v=20261103c",
-      "./js/camera.js": "./js/camera.js?v=20261103c",
-      "./js/course.js": "./js/course.js?v=20261103c",
-      "./js/rules.js": "./js/rules.js?v=20261103c",
-      "./js/audio.js": "./js/audio.js?v=20261103c"
+      "./js/world.js": "./js/world.js?v=20261103d",
+      "./js/sim.js": "./js/sim.js?v=20261103d",
+      "./js/review.js": "./js/review.js?v=20261103d",
+      "./js/ai.js": "./js/ai.js?v=20261103d",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261103d",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261103d",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261103d",
+      "./js/crew.js": "./js/crew.js?v=20261103d",
+      "./js/camera.js": "./js/camera.js?v=20261103d",
+      "./js/course.js": "./js/course.js?v=20261103d",
+      "./js/rules.js": "./js/rules.js?v=20261103d",
+      "./js/audio.js": "./js/audio.js?v=20261103d"
     }
   }
   </script>
@@ -31,114 +31,228 @@
 <body>
   <div id="loading" class="overlay">
     <div class="loadingAnimeWrap" aria-hidden="true">
-      <svg class="loadingAnimeSvg" viewBox="0 0 360 210" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="laSky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#1e68b8"/>
-            <stop offset="58%" stop-color="#57b5f7"/>
-            <stop offset="100%" stop-color="#bce8ff"/>
-          </linearGradient>
-          <linearGradient id="laSea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#0e6cc4"/>
-            <stop offset="100%" stop-color="#072c58"/>
-          </linearGradient>
-          <linearGradient id="laSailMain" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#ffffff"/>
-            <stop offset="68%" stop-color="#f0f7ff"/>
-            <stop offset="100%" stop-color="#cfe4fa"/>
-          </linearGradient>
-          <linearGradient id="laSailJib" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#ffffff"/>
-            <stop offset="100%" stop-color="#d5e8fc"/>
-          </linearGradient>
-          <clipPath id="laClip">
-            <rect x="0" y="0" width="360" height="210" rx="8"/>
-          </clipPath>
-        </defs>
-        <g clip-path="url(#laClip)">
-          <!-- 空と太陽・入道雲 -->
-          <rect width="360" height="210" fill="url(#laSky)"/>
-          <circle cx="296" cy="44" r="26" fill="#fff9d2" opacity="0.85"/>
-          <circle cx="296" cy="44" r="42" fill="#ffffff" opacity="0.22"/>
-          <!-- アニメ風の積乱雲・遠景シルエット -->
-          <g class="laClouds" fill="#ffffff" opacity="0.92">
-            <path d="M-10,128 Q18,102 48,116 Q72,90 106,108 Q132,98 152,122 L152,145 L-10,145 Z"/>
-            <path d="M210,130 Q235,104 266,115 Q294,88 330,108 Q352,102 372,126 L372,145 L210,145 Z" opacity="0.82"/>
-          </g>
-          <!-- 江の島・シーキャンドル風シルエット -->
-          <path d="M36,138 L52,124 L74,122 L95,130 L114,138 Z" fill="#2b5d7c" opacity="0.65"/>
-          <path d="M68,122 L70,107 L73,107 L75,122 Z" fill="#1e445e" opacity="0.75"/>
-          <line x1="71.5" y1="107" x2="71.5" y2="99" stroke="#1e445e" stroke-width="1.5"/>
-
-          <!-- 風のスピードライン -->
-          <g class="laWindLines" stroke="#ffffff" stroke-linecap="round">
-            <line class="laWind w1" x1="330" y1="34" x2="250" y2="34" stroke-width="2" opacity="0.65"/>
-            <line class="laWind w2" x1="350" y1="68" x2="285" y2="68" stroke-width="1.6" opacity="0.5"/>
-            <line class="laWind w3" x1="160" y1="48" x2="88" y2="48" stroke-width="1.8" opacity="0.55"/>
-            <line class="laWind w4" x1="320" y1="96" x2="245" y2="96" stroke-width="1.5" opacity="0.45"/>
-          </g>
-
-          <!-- 奥の海と波 -->
-          <rect x="0" y="135" width="360" height="75" fill="url(#laSea)"/>
-          <path class="laWaveBack" d="M-40,142 Q-10,135 20,142 T80,142 T140,142 T200,142 T260,142 T320,142 T380,142 L400,190 L-40,190 Z" fill="#1380dc" opacity="0.65"/>
-
-          <!-- 帆走するスナイプ級ヨット (アニメ風セルシェーディング) -->
-          <g class="laYachtGroup" transform="translate(182, 146)">
-            <g class="laYachtRock">
-              <!-- ジブセール (前帆) -->
-              <path d="M -10,-8 L -78,-14 L -16,-106 Q -2,-56 -10,-8 Z" fill="url(#laSailJib)" stroke="#13293d" stroke-width="2.2" stroke-linejoin="round"/>
-              <path d="M -78,-14 L -19,-18 Q -13,-54 -16,-106 Z" fill="#b7d7f7" opacity="0.45"/>
-              <!-- ジブのウインドウ -->
-              <polygon points="-38,-26 -22,-24 -20,-38 -35,-39" fill="#5aa9e6" opacity="0.45" stroke="#13293d" stroke-width="1"/>
-
-              <!-- メインセール (主帆) -->
-              <path d="M -4,-12 L -14,-124 Q 54,-82 70,-16 Q 32,-18 -4,-12 Z" fill="url(#laSailMain)" stroke="#13293d" stroke-width="2.4" stroke-linejoin="round"/>
-              <!-- セール陰影＆バテンライン -->
-              <path d="M -14,-124 Q 24,-78 16,-13 L -4,-12 Z" fill="#bddbfa" opacity="0.38"/>
-              <line x1="20" y1="-92" x2="36" y2="-90" stroke="#7ea8cc" stroke-width="1.6"/>
-              <line x1="34" y1="-66" x2="54" y2="-63" stroke="#7ea8cc" stroke-width="1.6"/>
-              <line x1="44" y1="-40" x2="65" y2="-38" stroke="#7ea8cc" stroke-width="1.6"/>
-              <!-- スナイプ級エンブレム(赤い鳥シルエット) -->
-              <path d="M 15,-76 L 34,-82 L 26,-73 L 37,-71 L 19,-67 L 23,-73 Z" fill="#d9383a"/>
-
-              <!-- マスト＆ブーム -->
-              <line x1="-3" y1="-2" x2="-14" y2="-126" stroke="#1a2634" stroke-width="3.2" stroke-linecap="round"/>
-              <line x1="-4" y1="-12" x2="72" y2="-15" stroke="#2c3e50" stroke-width="3" stroke-linecap="round"/>
-
-              <!-- ハイクアウトするスキッパー＆クルー -->
-              <!-- クルー(前) -->
-              <circle cx="8" cy="-14" r="5.5" fill="#ffcf40" stroke="#13293d" stroke-width="1.8"/>
-              <path d="M 2,-9 Q 12,-9 16,1 L 2,1 Z" fill="#0e52b8" stroke="#13293d" stroke-width="1.8"/>
-              <!-- スキッパー(後) -->
-              <circle cx="28" cy="-13" r="5.8" fill="#ffffff" stroke="#13293d" stroke-width="1.8"/>
-              <path d="M 21,-8 Q 33,-8 36,2 L 20,2 Z" fill="#0e52b8" stroke="#13293d" stroke-width="1.8"/>
-
-              <!-- スナイプ船体 (ハル) -->
-              <path d="M -84,-6 L 62,-3 L 56,11 Q -8,14 -74,9 Z" fill="#ffffff" stroke="#13293d" stroke-width="2.4" stroke-linejoin="round"/>
-              <!-- 赤いシアーライン＆ボトム -->
-              <path d="M -81,-2 L 60,0 L 58,4 L -78,2 Z" fill="#e63946"/>
-              <path d="M -74,6 L 57,7 L 55,11 Q -8,14 -72,9 Z" fill="#d62828"/>
-
-              <!-- バウの白い波しぶき (アニメ風エフェクト) -->
-              <path class="laSpray" d="M -86,8 Q -98,-2 -108,6 Q -96,12 -82,12 Z" fill="#ffffff" opacity="0.92"/>
-              <circle class="laSprayDot d1" cx="-98" cy="-4" r="3" fill="#ffffff"/>
-              <circle class="laSprayDot d2" cx="-108" cy="1" r="2.2" fill="#ffffff"/>
-              <circle class="laSprayDot d3" cx="68" cy="8" r="3.5" fill="#ffffff" opacity="0.85"/>
-            </g>
-          </g>
-
-          <!-- 手前の波と白波キラキラ -->
-          <path class="laWaveFront" d="M-40,155 Q-5,146 30,155 T100,155 T170,155 T240,155 T310,155 T380,155 L400,215 L-40,215 Z" fill="#09529c" opacity="0.88"/>
-          <path class="laWaveFoam" d="M-30,156 Q5,149 40,156 T110,156 T180,156 T250,156 T320,156" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-dasharray="18 26" stroke-linecap="round" opacity="0.75"/>
-        </g>
-      </svg>
+      <canvas id="loadingPixelCanvas" class="loadingPixelCanvas" width="160" height="100"></canvas>
     </div>
     <p>Loading <span id="loadPct">0</span>%</p>
     <div class="loadBar"><div id="loadFill"></div></div>
   </div>
   <script>
-  // 読み込み進捗: モジュール(three.js と js/*.js)の取得数から推定し、main.js の初期化完了で100%
+  // 読み込み進捗 & 実ゲーム画面風ドット絵(八景島 / 江の島 ランダム2パターン)アニメーション
   (function () {
+    var cv = document.getElementById('loadingPixelCanvas');
+    if (cv && cv.getContext) {
+      var ctx = cv.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      var venue = Math.random() < 0.5 ? 'hakkeijima' : 'enoshima';
+      var W = 160, H = 100;
+      var px = function (x, y, w, h, c) {
+        ctx.fillStyle = c;
+        ctx.fillRect(x | 0, y | 0, (w || 1) | 0, (h || 1) | 0);
+      };
+      var poly = function (pts, c) {
+        ctx.fillStyle = c;
+        ctx.beginPath();
+        for (var i = 0; i < pts.length; i++) {
+          if (i === 0) ctx.moveTo(pts[i][0] | 0, pts[i][1] | 0);
+          else ctx.lineTo(pts[i][0] | 0, pts[i][1] | 0);
+        }
+        ctx.closePath();
+        ctx.fill();
+      };
+      var drawSnipeBoat = function (bx, by, scale, hullCol, isPlayer, bob) {
+        ctx.save();
+        ctx.translate(bx | 0, (by + bob) | 0);
+        if (scale !== 1) ctx.scale(scale, scale);
+        // 航跡(ウェーキ)とバウしぶき
+        px(-18, 9, 34, 2, '#d8f3ff');
+        px(-22, 11, 28, 1, '#7dd3fc');
+        px(13, 6, 4, 2, '#ffffff');
+        // 船体ハル (斜め後方ドローン視点の立体スナイプ級ハル: 赤ハル＋白デッキ＋グレーのトランサム)
+        poly([[-14, 5], [14, 2], [16, 6], [10, 9], [-12, 9], [-16, 7]], hullCol);
+        poly([[-13, 4], [13, 1], [14, 3], [-12, 6]], '#f8fafc');
+        px(-15, 5, 4, 4, '#cbd5e1'); // トランサム(船尾)
+        px(-14, 6, 26, 1, '#ffffff'); // シアーストライプ
+        px(-3, 4, 7, 2, '#334155');   // コックピット＆センターボードケース
+        // ハイクアウトするスキッパー＆猫クルー(左舷風上レールに2人並ぶ実ゲーム画面のアングル)
+        px(-6, 0, 3, 4, '#2563eb');   // スキッパー胴(青ライフジャケット)
+        px(-6, -2, 3, 2, '#fde047');  // スキッパー頭(キャップ)
+        px(0, 0, 3, 4, '#f97316');    // クルー胴(オレンジライフジャケット)
+        px(0, -2, 3, 2, '#ffffff');   // 猫クルー頭
+        px(0, -3, 1, 1, '#ffffff');   // 猫耳(左)
+        px(2, -3, 1, 1, '#ffffff');   // 猫耳(右)
+        // ジブセール(前帆) & 青/赤テルテール
+        poly([[3, 2], [15, 1], [3, -25]], '#e2f1ff');
+        poly([[4, 1], [13, 1], [3, -23]], '#ffffff');
+        px(8, -8, 3, 1, '#ef4444');   // テルテール(赤)
+        px(8, -11, 3, 1, '#0284c7');  // テルテール(青)
+        // メインセール(主帆: ドローン視点で斜めに張られた白セール＋陰影＋バテン)
+        poly([[-12, -2], [2, 1], [2, -32], [-5, -26], [-11, -12]], '#f8fafc');
+        poly([[0, 1], [2, 1], [2, -32], [-2, -22]], '#dbeafe');
+        px(-6, -18, 6, 1, '#94a3b8'); // バテン1
+        px(-9, -11, 8, 1, '#94a3b8'); // バテン2
+        px(-10, -5, 9, 1, '#94a3b8'); // バテン3
+        // スナイプ級エンブレム(赤いシギのドットシルエット) & セール番号
+        if (isPlayer) {
+          px(-3, -22, 4, 1, '#dc2626');
+          px(-4, -21, 3, 1, '#dc2626');
+          px(-2, -20, 3, 1, '#dc2626');
+          // セール番号 31804 ドット表現
+          px(-6, -15, 2, 3, '#1e293b');
+          px(-3, -15, 1, 3, '#1e293b');
+          px(-1, -15, 2, 3, '#1e293b');
+        } else {
+          px(-3, -21, 3, 1, '#dc2626');
+          px(-5, -15, 4, 2, '#1e293b');
+        }
+        // マスト＆ブーム
+        px(2, -33, 1, 36, '#1e293b');
+        poly([[-12, -1], [2, 1], [2, 2], [-12, 0]], '#475569');
+        ctx.restore();
+      };
+
+      var startT = performance.now();
+      var renderPixelScene = function (now) {
+        var loadingEl = document.getElementById('loading');
+        if (!loadingEl || loadingEl.classList.contains('hidden')) return;
+        var t = (now - startT) * 0.001;
+
+        // 1) 空のドットグラデーション (実ゲームの快晴の空)
+        px(0, 0, W, 12, '#1d63b8');
+        px(0, 12, W, 12, '#388be0');
+        px(0, 24, W, 12, '#6cbbf5');
+        px(0, 36, W, 9, '#bae6fd');
+        // 太陽と光のリング
+        px(132, 8, 10, 10, '#fef9c3');
+        px(134, 6, 6, 14, '#fef08a');
+        px(130, 10, 14, 6, '#fef08a');
+        px(135, 9, 4, 8, '#ffffff');
+        // 流れるドット雲
+        var cx1 = ((22 - t * 3.5) % 180 + 180) % 180 - 20;
+        var cx2 = ((105 - t * 2.5) % 180 + 180) % 180 - 20;
+        px(cx1, 15, 22, 4, '#ffffff'); px(cx1 + 4, 12, 14, 3, '#ffffff'); px(cx1 + 2, 18, 18, 2, '#dbeafe');
+        px(cx2, 19, 18, 3, '#ffffff'); px(cx2 + 3, 17, 11, 2, '#ffffff');
+
+        // 2) 背景の島 (八景島 / 江の島 の2パターン、どちらも島全体が背景にしっかり映るアングル)
+        if (venue === 'hakkeijima') {
+          // 遠くの対岸稜線
+          poly([[0, 44], [18, 39], [45, 41], [45, 44]], '#64748b');
+          // 八景島の緑の島影 (x=24..148)
+          poly([[24, 44], [32, 34], [54, 31], [88, 30], [118, 33], [142, 38], [148, 44]], '#15803d');
+          poly([[30, 44], [42, 36], [76, 34], [112, 36], [138, 40], [144, 44]], '#166534');
+          // 護岸(防波堤)
+          px(22, 42, 126, 2, '#94a3b8');
+          px(22, 43, 126, 1, '#475569');
+          // サーフコースター リヴァイアサン (海上に張り出す赤/白のループコースター軌道)
+          px(24, 37, 26, 2, '#ef4444');
+          px(28, 35, 16, 2, '#ef4444');
+          for (var rx = 25; rx <= 48; rx += 4) px(rx, 38, 1, 5, '#e2e8f0');
+          // アクアミュージアム (象徴的な白と水色の三角ピラミッド屋根)
+          poly([[58, 42], [72, 24], [86, 42]], '#f8fafc');
+          poly([[72, 24], [86, 42], [76, 42]], '#bae6fd');
+          px(64, 34, 16, 2, '#0284c7');
+          px(61, 39, 22, 3, '#cbd5e1');
+          // シーパラダイスタワー (白マスト＋青い展望キャビン)
+          px(97, 12, 3, 30, '#f1f5f9');
+          px(98, 12, 1, 30, '#cbd5e1');
+          px(94, 17, 9, 4, '#0284c7');
+          px(95, 16, 7, 1, '#facc15');
+          // マリーナクラブハウスと観覧車シルエット
+          px(110, 37, 14, 5, '#f8fafc');
+          px(110, 36, 14, 1, '#0ea5e9');
+        } else {
+          // 湘南海岸・腰越〜稲村ヶ崎の遠景稜線
+          poly([[108, 44], [124, 38], [146, 35], [160, 37], [160, 44]], '#475569');
+          // 江の島 弁天橋 (島と陸をつなぐ桟橋)
+          px(114, 42, 38, 1, '#e2e8f0');
+          for (var bx = 116; bx <= 150; bx += 5) px(bx, 43, 1, 2, '#94a3b8');
+          // 江の島本島の緑のシルエットと西側の海食崖 (x=18..118)
+          poly([[18, 44], [24, 36], [36, 29], [58, 25], [78, 25], [96, 30], [112, 39], [118, 44]], '#15803d');
+          poly([[28, 44], [40, 32], [66, 28], [92, 33], [110, 41], [114, 44]], '#166534');
+          // 稚児ヶ淵・西浦の岩壁と護岸
+          poly([[18, 44], [23, 37], [38, 39], [44, 44]], '#a8a29e');
+          px(44, 42, 74, 2, '#cbd5e1');
+          // 江の島シーキャンドル (展望灯台: 頂上にそびえる白/水色の逆円錐タワーと避雷針)
+          px(65, 9, 1, 4, '#f8fafc');
+          px(63, 13, 5, 3, '#38bdf8');
+          px(62, 16, 7, 2, '#fef08a');
+          poly([[63, 18], [68, 18], [70, 27], [61, 27]], '#f8fafc');
+          px(65, 18, 2, 9, '#93c5fd');
+          // 江の島ヨットハーバー (白い波型屋根のクラブハウス＆防波堤白灯台)
+          px(88, 39, 22, 4, '#f8fafc');
+          px(89, 38, 9, 1, '#0284c7');
+          px(100, 38, 9, 1, '#0284c7');
+          px(116, 41, 24, 2, '#94a3b8'); // 防波堤
+          px(136, 36, 3, 6, '#ffffff');   // 白灯台
+          px(136, 35, 3, 1, '#ef4444');
+        }
+
+        // 3) 海面 (遠景〜中景〜近景のドットグラデーション＋ブロー縞＋白波アニメーション)
+        px(0, 44, W, 10, '#0284c7');
+        px(0, 54, W, 14, '#0369a1');
+        px(0, 68, W, 16, '#075985');
+        px(0, 84, W, 16, '#0c4a6e');
+        // 海面のブロー(風の濃い帯)
+        px(0, 49, W, 3, '#0369a1');
+        px(0, 61, W, 4, '#075985');
+        // 流れるドット白波と太陽のキラキラ反射
+        var wShift = (t * 14) | 0;
+        for (var wy = 47; wy < 96; wy += 6) {
+          var step = wy < 65 ? 22 : 16;
+          var len = wy < 65 ? 4 : 7;
+          for (var wx = -20; wx < W + 20; wx += step) {
+            var xx = ((wx - wShift + wy * 7) % (W + 20) + (W + 20)) % (W + 20) - 10;
+            px(xx, wy, len, 1, wy < 60 ? '#7dd3fc' : '#38bdf8');
+            if ((wx + wy) % 3 === 0) px(xx + 1, wy, 2, 1, '#e0f2fe');
+          }
+        }
+        // 太陽光の海面スパークル
+        for (var sy = 45; sy < 78; sy += 4) {
+          var sx = 132 + Math.sin(t * 4 + sy) * (4 + (sy - 45) * 0.22);
+          px(sx, sy, 4, 1, '#fef08a');
+        }
+
+        // 4) コース上の1マーク(オレンジブイ)＋頭上の黄色い「Next▼」矢印＋赤RIB観覧艇
+        var markBob = Math.round(Math.sin(t * 3.2) * 1);
+        // 観覧艇(赤ゴムボート)
+        px(28, 49, 10, 2, '#dc2626');
+        px(30, 48, 5, 1, '#f8fafc');
+        px(27, 51, 12, 1, '#e0f2fe');
+        // 1マーク(オレンジ円筒ブイ)
+        px(116, 52 + markBob, 5, 6, '#f97316');
+        px(117, 52 + markBob, 2, 5, '#fdba74');
+        px(115, 57 + markBob, 7, 1, '#ffffff');
+        // マーク頭上の黄色いNext矢印
+        var arBob = Math.round(Math.sin(t * 5.0) * 1);
+        poly([[116, 45 + arBob], [121, 45 + arBob], [118.5, 49 + arBob]], '#facc15');
+
+        // 5) 先行するライバルのスナイプ級ヨット (中景)
+        var bob2 = Math.round(Math.sin(t * 2.8 + 1.4) * 1);
+        drawSnipeBoat(56, 56, 0.75, '#0284c7', false, bob2);
+
+        // 6) 手前を疾走する自艇のスナイプ級ヨット (実ゲームのドローン視点と同じ構図)
+        var bob1 = Math.round(Math.sin(t * 3.0) * 1.2);
+        drawSnipeBoat(86, 74, 1.0, '#e11d48', true, bob1);
+        // 自艇バウから飛び散るドットしぶき
+        var sp = (t * 10) | 0;
+        px(102 + (sp % 5), 77 - (sp % 3), 2, 2, '#ffffff');
+        px(105 + ((sp + 2) % 6), 79 - ((sp + 2) % 4), 1, 1, '#e0f2fe');
+
+        // 7) 実ゲーム風の上部ミニHUDバー (左上に海面バッジ・右上にRANK表示)
+        px(4, 4, 54, 10, 'rgba(12, 18, 24, 0.82)');
+        px(4, 4, 2, 10, '#ebb800');
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = 'bold 6px monospace';
+        ctx.fillText(venue === 'hakkeijima' ? 'HAKKEIJIMA' : 'ENOSHIMA', 9, 11);
+
+        px(122, 4, 34, 10, 'rgba(12, 18, 24, 0.82)');
+        ctx.fillStyle = '#ebb800';
+        ctx.fillText('SNIPE', 126, 11);
+
+        requestAnimationFrame(renderPixelScene);
+      };
+      requestAnimationFrame(renderPixelScene);
+    }
+
     var target = 3, shown = 0, done = 0, EXPECT = 14;
     window.__setLoad = function (p) {
       target = Math.max(target, p);
@@ -219,6 +333,7 @@
       </div>
       <div class="tgrp mid">
         <button id="tCam" type="button">船内</button>
+        <button id="tCamReset" class="hidden" type="button">カメラ初期位置</button>
         <button id="tAuto" type="button">AUTO</button>
         <button id="tPole" type="button">ランチャー</button>
       </div>
@@ -476,6 +591,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261103c"></script>
+  <script type="module" src="js/main.js?v=20261103d"></script>
 </body>
 </html>
