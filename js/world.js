@@ -304,7 +304,7 @@ void main(){
     float ang=sin(fi*2.39996+0.6)*spreadA;
     vec2 d=normalize(wd*cos(ang)+wp*sin(ang));
     float stp=stpBase*(0.82+0.36*fract(fi*0.618+0.3))*windAmp*grp;
-    float fk=exp(-dist*k*0.00058);
+    float fk=exp(-dist*k*0.00075);
     float om=sqrt(9.81*k);
     float ph=mod(dot(d,p)*k-om*uWT+fi*4.13+phaseWarp*(0.45+0.08*fi),6.2831853);
     float s=sin(ph), co=cos(ph);
@@ -314,50 +314,47 @@ void main(){
   }
 
   // 4) 海面の細かなざらつき(風紋・さざ波のマルチオクターブ凹凸): つるつる感を消し、マットでざらざらした実際の水面質感を出す
-  //    遠景〜中景でも凹凸の明暗が消えて平らな反射面にならないよう、細かいざらつきを遠くまで残す
-  float microFade=exp(-dist*0.0008);
-  float midFade=exp(-dist*0.00045);
-  float m0=vn(vec2(wu*0.42-wv*0.12+7.7,wv*0.78-uWT*1.9))-0.5;
+  float microFade=exp(-dist*0.0014);
   float m1=vn(vec2(wu*0.95+wv*0.25,wv*1.85-uWT*2.6))-0.5;
   float m2=vn(vec2(wu*2.30-wv*0.45+4.2,wv*4.10-uWT*3.7))-0.5;
   float m3=vn(vec2(wu*5.40+wv*0.80-2.7,wv*9.20-uWT*5.1))-0.5;
   float m4=vn(vec2(wu*11.5-5.1,wv*18.5-uWT*6.8))-0.5;
-  float roughScale=(0.95+0.50*uChop)*(0.78+0.42*gust);
-  vec2 gMicro=(wd*(m0*0.55*midFade+(m1*0.70+m2*0.66+m3*0.55+m4*0.40)*microFade)+wp*(m0*0.30*midFade+(m1*0.30-m2*0.32+m3*0.27-m4*0.22)*microFade))*roughScale;
+  float roughScale=(0.85+0.45*uChop)*(0.75+0.45*gust)*microFade;
+  vec2 gMicro=(wd*(m1*0.65+m2*0.62+m3*0.52+m4*0.38)+wp*(m1*0.28-m2*0.30+m3*0.25-m4*0.20))*roughScale;
 
   vec2 gn=g+gs+gMicro;
-  vec3 n=normalize(vec3(-gn.x*1.42,1.0,-gn.y*1.42));
+  vec3 n=normalize(vec3(-gn.x*1.28,1.0,-gn.y*1.28));
   float ndv=max(dot(n,V),0.0);
 
   // きらきらした鏡面反射・テカリを抑え、細かい波の凹凸ごとの明暗コントラストでざらざらした海面を表現(添付画像準拠)
-  float effNdv=clamp(ndv,0.30,1.0);
-  float F=0.02+0.15*pow(1.0-effNdv,3.4);
+  float effNdv=clamp(ndv,0.28,1.0);
+  float F=0.02+0.22*pow(1.0-effNdv,3.4);
   vec3 R=reflect(-V,n); R.y=abs(R.y);
-  // 空の映り込みは明るくしすぎず、落ち着いたやや暗めのスレートブルーに抑える
-  vec3 refl=skyBase(normalize(vec3(R.x,R.y+0.32,R.z)))*vec3(0.36,0.47,0.58);
+  // 空の映り込みも白飛びせず落ち着いたスレートブルーに抑える(ほんのわずかに暗め)
+  vec3 refl=skyBase(normalize(vec3(R.x,R.y+0.28,R.z)))*vec3(0.50,0.63,0.75);
 
   // 波の斜面陰影: 手前斜面(影側)は深い濃紺〜ダークティール、上向き斜面・波頭は落ち着いた青緑〜スレートブルー
   float sunLit=clamp(dot(n,uSun)*0.5+0.5,0.0,1.0);
   float camSlope=clamp(dot(gn,V.xz)*0.85,-1.0,1.0);
   float elev=clamp(wH*1.35+vH*0.58+chopH*0.85,-1.0,1.0);
-  float microTex=clamp(0.5+(m0*0.30*midFade+(m1*0.36+m2*0.32+m3*0.22+m4*0.16)*microFade)*(0.95+0.35*uChop),0.0,1.0);
+  float microTex=clamp(0.5+(m1*0.36+m2*0.32+m3*0.22+m4*0.16)*(0.85+0.30*uChop),0.0,1.0);
 
-  vec3 troughCol=vec3(0.006,0.046,0.095);
-  vec3 midCol=vec3(0.014,0.100,0.165);
-  vec3 crestCol=vec3(0.034,0.160,0.230);
-  float facet=clamp(0.44+0.32*elev-0.30*camSlope+(microTex-0.5)*0.78,0.0,1.0);
-  vec3 body=mix(troughCol,midCol,smoothstep(0.08,0.56,facet));
-  body=mix(body,crestCol,smoothstep(0.55,0.96,facet)*0.70);
-  // 波の細かい凹凸エッジ(チョップの稜線)にごくわずかに明るい水面の粒立ちを加える
-  float chopRidge=smoothstep(0.55,0.95,length(gs+gMicro*0.65)*(0.68+0.22*uChop));
-  body=mix(body,vec3(0.070,0.200,0.270),chopRidge*0.24*microFade);
-  body*=0.80+0.26*sunLit;
+  vec3 troughCol=vec3(0.007,0.052,0.105);
+  vec3 midCol=vec3(0.016,0.112,0.182);
+  vec3 crestCol=vec3(0.042,0.185,0.262);
+  float facet=clamp(0.46+0.34*elev-0.26*camSlope+(microTex-0.5)*0.48,0.0,1.0);
+  vec3 body=mix(troughCol,midCol,smoothstep(0.10,0.58,facet));
+  body=mix(body,crestCol,smoothstep(0.52,0.95,facet)*0.78);
+  // 波の細かい凹凸エッジ(チョップの稜線)にほんのり明るい水面の粒立ちを加える
+  float chopRidge=smoothstep(0.52,0.92,length(gs+gMicro*0.65)*(0.68+0.22*uChop));
+  body=mix(body,vec3(0.095,0.245,0.325),chopRidge*0.34*microFade);
+  body*=0.78+0.30*sunLit;
 
   vec3 col=mix(body,refl,F);
   // 太陽のスペキュラはギラつかせず、ごく控えめなマットな光沢に留める
   float sd=max(dot(R,uSun),0.0);
-  float spec=pow(sd,42.0)*0.035+pow(sd,12.0)*0.010;
-  col+=vec3(0.90,0.92,0.93)*spec*(0.30+0.70*F);
+  float spec=pow(sd,42.0)*0.065+pow(sd,12.0)*0.018;
+  col+=vec3(0.92,0.94,0.95)*spec*(0.30+0.70*F);
 
   // ブロー(風の強い海面のさざ波): ブロー域はさらに細かくざらついて少し締まった濃い海面色になる
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
