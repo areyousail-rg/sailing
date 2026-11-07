@@ -581,7 +581,7 @@ export class Boat {
   }
   // kind: 'tack'(風上側へ回頭) / 'gybe'(風下側へ回頭) / 未指定=自動
   startManeuver(kind) {
-    if (this.maneuver || this.capsized || this.wildGybeTimer > 0) return false;
+    if (this.maneuver || this.wildGybeTimer > 0) return false;
     const k = kind || (this.twa < Math.PI / 2 ? 'tack' : 'gybe');
     if (k === 'tack' && this.pole) return false; // ランチャーを上げたまま風上へは回れない
     const restorePole = k === 'gybe' && (this.pole || this.gybePoleRestore > 0);
@@ -596,7 +596,7 @@ export class Boat {
     return true;
   }
   setPole(on) {
-    if (on && (this.twa < POLE_MIN || this.maneuver || this.penalty || this.capsized)) return false;
+    if (on && (this.twa < POLE_MIN || this.maneuver || this.penalty)) return false;
     if (!on) { this.gybePoleRestore = 0; if (this.maneuver) this.maneuver.restorePole = false; }
     this.pole = on; return true;
   }
@@ -632,54 +632,6 @@ export class Boat {
     w.f = clamp(w.f * (1 - 0.42 * Math.pow(this.cover, 1.15) + this.flowBoost), 0.40, 1.45);
     w.from = wrap(w.from + this.tack * this.windBend);
     this.windFrom = w.from; this.windF = w.f;
-
-    // メインセール引き込み速度(パンピングおよびジャイブ引き込み判定用)
-    const rawPullRate = (this.sheet - (this._prevSheet ?? this.sheet)) / Math.max(dt, 1e-4);
-    this.sheetPullRate = this.sheetPullRate * 0.55 + Math.max(0, rawPullRate) * 0.45;
-    this._prevSheet = this.sheet;
-
-    // 沈(カプサイズ)およびセンターボード乗り起こし処理中
-    if (this.capsized) {
-      this.maneuver = null;
-      this.pole = false;
-      this.poleK = Math.max(0, this.poleK - dt * 2.5);
-      this.wildGybeTimer = 0;
-      const rightBoost = (this.pullingSheet || this.easingSheet || Math.abs(this.steer) > 0.2) ? 1.32 : 1.0;
-      this.capsizePhase += (dt / 5.0) * rightBoost;
-      this.v *= Math.exp(-dt * 2.8);
-      if (Math.abs(this.v) < 0.03) this.v = 0;
-      this.luff = 1.0;
-      // 風下へのドリフトのみわずかに発生
-      const driftV = 0.22 * SPEED_SCALE * w.f;
-      this.x += -Math.sin(w.from) * driftV * dt;
-      this.z += Math.cos(w.from) * driftV * dt;
-      // Phase 0..0.22: オーバーヒール限界(約66°)から横転してマストが水面につく(±1.48rad ≒ 85°)
-      // Phase 0.22..0.84: センターボードに乗って体重をかけ、船体が徐々に起き上がる
-      // Phase 0.84..1.00: 船体が完全に起き上がりコックピットへ戻る
-      const ph = clamp(this.capsizePhase, 0, 1);
-      let targetCapHeel;
-      if (ph < 0.22) {
-        const u = smoothstep(0, 0.22, ph);
-        targetCapHeel = this.capsizeSide * (1.14 + 0.34 * u);
-      } else if (ph < 0.84) {
-        const u = smoothstep(0.22, 0.84, ph);
-        targetCapHeel = this.capsizeSide * (1.48 - 1.32 * u);
-      } else {
-        const u = smoothstep(0.84, 1.0, ph);
-        targetCapHeel = this.capsizeSide * 0.16 * (1 - u);
-      }
-      this.heel += (targetCapHeel - this.heel) * (1 - Math.exp(-dt * 7.5));
-      if (this.capsizePhase >= 1.0) {
-        this.capsized = false;
-        this.capsizePhase = 0;
-        this.capsizeRisk = 0;
-        this.sheet = Math.min(this.sheet, 0.50); // 起こした直後はセールを少し出した状態で復帰
-        this.justRighted = true;
-      }
-      this.contactCD = Math.max(0, this.contactCD - dt);
-      this.touchCD = Math.max(0, this.touchCD - dt);
-      return;
-    }
 
     let steer = this.steer;
     let rollCmd = 0; // +は風下へオーバーヒール(上す/タック導入)、-は風上へアンヒール(落とす/ジャイブ導入)
@@ -881,7 +833,7 @@ export class Boat {
         this.tack = rawSign;
         // 強風時(localWindKt >= 13.0kt)にメインセールを引かずにジャイブした場合、または波に乗っておらずスピードが出ていない状態でジャイブした場合:
         // ブームが勢いよく返り、オーバーヒールとなって舵が効かずに風上へのぼってしまう「ワイルドジャイブ」が発生する
-        const onWaveAndFast = (this.waveSlope < -0.008 || this.surfTimer > 0) && this.v >= 2.08 * SPEED_SCALE;
+        const onWaveAndFast = (this.waveSlope < -0.006 || this.isSurfing) && this.v >= 2.05 * SPEED_SCALE;
         const wildCond = this.isPlayer
           ? (localWindKt >= 13.0 && (!pulledForGybe || !onWaveAndFast))
           : (localWindKt >= 16.5 && this.skill < 0.96 && !onWaveAndFast && Math.random() < 0.25);
@@ -938,11 +890,9 @@ export class Boat {
     const pinch = twa < PINCH ? clamp((PINCH - twa) * 3.8, 0, 1) : 0;
     this.luff = clamp(Math.max(Math.max(0, -d - 0.05) * 3.2, pinch * 0.9), 0, 1);
     this.stall = clamp((d - 0.1) * 3.5, 0, 1);
-    // ランニング・リーチングでのパンピングやジャイブ時の瞬間的なメインセール引き込みでは失速ペナルティを緩和
-    const stallPenaltyMul = (twa > 1.55 && (this.pullingSheet || this.surfTimer > 0)) ? 0.25 : 0.9;
-    // メインセールを抜いた際もジブセールの推進力が残り、強風時はヒール・ラダー抵抗軽減で推力が保たれる
-    const easePenaltyMul = localWindKt >= 13.5 ? 0.48 : 0.72;
-    const eff = clamp(1 - Math.max(0, -d - 0.08) * easePenaltyMul - Math.max(0, d - 0.1) * stallPenaltyMul, 0.50, 1);
+    // ランニング・リーチングでのジャイブ時の瞬間的なメインセール引き込みでは失速ペナルティを緩和
+    const stallPenaltyMul = (twa > 1.55 && this.pullingSheet) ? 0.25 : 0.9;
+    const eff = clamp(1 - Math.max(0, -d - 0.05) * 1.1 - Math.max(0, d - 0.1) * stallPenaltyMul, 0.35, 1);
     // 見かけ風
     const Vw = localWindKt * KT * SPEED_SCALE;
     const ax = -Math.sin(w.from) * Vw - Math.sin(this.h) * this.v, az = Math.cos(w.from) * Vw + Math.cos(this.h) * this.v;
@@ -972,8 +922,7 @@ export class Boat {
     const poleF = 1 + this.poleK * (0.072 * smoothstep(1.80, 2.55, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
     const steerDrag = (twaDeg >= 58 && twaDeg <= 135 && steer * this.tack < 0) ? 0.06 : 0.18; // リーチングでのぼす舵は失速しにくい
     let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : steerDrag) * Math.abs(steer)) * this.throttle;
-    // 波: 順風以上のランニング・リーチングでは波に乗ったり(サーフィン加速)、波から下りたり(谷・裏斜面での減速)で艇速が明確に変化し、
-    // タイミングよくメインセールを引く(パンピング)ことで波に乗ることができる実艇の挙動を再現
+    // 波: 順風以上のランニング・リーチングでは波に乗ったり(サーフィン加速)、波から下りたり(谷・裏斜面での減速)で艇速が変化する挙動
     {
       const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));
       this.waveH = ws.h; this.waveSlope = ws.slope;
@@ -992,25 +941,11 @@ export class Boat {
 
       // 順風以上(9.0kt〜)のリーチング・ランニングでのサーフィン加速と波間の減速
       const windOk = clamp((localWindKt - 8.2) / 6.5, 0, 1.35);
-      this.pumpCD = Math.max(0, (this.pumpCD || 0) - dt);
-      // パンピング判定: リーチング〜ランニングで波の頂点〜前斜面(climb <= 0.12)に差しかかったタイミングでメインセールを素早く引く
-      const waveCatchWindow = climb <= 0.12 && (climb < -0.05 || prevClimb > climb);
-      const didPump = (this.sheetPullRate > 0.22 || (this.pullingSheet && this.sheet < so + 0.48)) && down > 0.25 && windOk > 0.08;
-      if (didPump && waveCatchWindow && this.pumpCD <= 0) {
-        this.surfTimer = 2.35;
-        this.surfBoost = clamp((0.18 + 0.14 * windOk + 0.08 * runDeep) * (0.75 + 0.25 * Math.min(1.4, Hn)), 0.16, 0.42);
-        this.pumpCD = 1.65;
-        this.justPumpedSurf = true;
-      }
-      if (this.surfTimer > 0) {
-        this.surfTimer = Math.max(0, this.surfTimer - dt * (climb < 0 ? 0.55 : 1.15)); // 波の前斜面に乗っている間はサーフィンが長く続く
-      }
-      const naturalSurf = down * (SEA.surf + 0.12 * runDeep) * Math.max(0, -climb) * (0.45 + 0.95 * windOk) * clamp(this.v / (1.9 * SPEED_SCALE), 0.35, 1.18);
-      const pumpSurf = this.surfTimer > 0 ? this.surfBoost * clamp(this.surfTimer / 1.4, 0.25, 1.0) * (0.65 + 0.35 * Math.max(0, -climb + 0.25)) : 0;
+      const naturalSurf = down * (SEA.surf + 0.16 * runDeep) * Math.max(0, -climb) * (0.50 + 1.05 * windOk) * clamp(this.v / (1.9 * SPEED_SCALE), 0.35, 1.18);
       // 波から下りた時・次の波の裏斜面(climb > 0)に入った時の減速(特にランニングで顕著)
-      const waveOffSlow = down * (0.08 + 0.14 * runDeep) * Math.max(0, climb) * (0.35 + 0.75 * windOk) * (this.surfTimer > 0.6 ? 0.35 : 1.0);
-      wf += naturalSurf + pumpSurf - waveOffSlow;
-      this.isSurfing = (naturalSurf + pumpSurf) > 0.11 && down > 0.25;
+      const waveOffSlow = down * (0.09 + 0.15 * runDeep) * Math.max(0, climb) * (0.40 + 0.80 * windOk);
+      wf += naturalSurf - waveOffSlow;
+      this.isSurfing = naturalSurf > 0.10 && down > 0.25;
 
       if (SEA.type === 'chop') wf -= down * 0.040 * Hn * (0.5 + 0.5 * Math.abs(climb)) * slowFactor;
       this.waveF = wf;
@@ -1075,12 +1010,10 @@ export class Boat {
       const irons = clamp(0.46 + ((10.5 - twaDeg) / 10.5) * 0.54, 0.46, 1.0); // ±10°以内は確実にバックし、0°で最大1.0
       target = -irons * 0.48 * SPEED_SCALE * w.f;
     }
-    // 波乗り(サーフィン・パンピング)や波間の加減速がランニング・リーチングでダイレクトに艇速に反映されるよう下レグでは時定数tauを短くし、
-    // 逆にメインセールを抜いた(出した)時は船体の慣性で急激にスピードが落ちないよう減速時定数を長く保つ
+    // タック回頭中や直後は運動エネルギー(慣性)で急激に減速せず、滑らかに速度が推移するよう減速時定数を大きくする
+    // ランニング・リーチングの波乗り・波間の加減速はダイレクトに艇速へ反映されるよう下レグでは時定数を短くする
     const surfResponsive = (twa > 1.50 && localWindKt >= 9.0) ? 0.72 : 1.0;
-    const isEasingMain = this.easingSheet || d < -0.05;
-    const decelTau = turning ? 8.5 : isEasingMain ? 5.6 : 2.35 * surfResponsive;
-    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.85 : 2.0 * surfResponsive)) : decelTau;
+    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.85 : 2.0 * surfResponsive)) : (turning ? 8.5 : 2.35 * surfResponsive);
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
     if (this.postFinishStop && Math.abs(this.v) < 0.04) this.v = 0;
 
@@ -1107,7 +1040,6 @@ export class Boat {
     this.z += (-Math.cos(this.h) * this.v + leeZ + tideZ) * dt;
 
     // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力
-    // ＋ 赤旗風域(八景島18kt超 / 江の島20kt超、または強風ブロー時)のクローズでメインセールを適宜出さないと徐々にオーバーヒールして最終的に沈する挙動(自艇・CP艇共通)
     const anglePress = Math.sin(clamp(twa, 0.2, Math.PI * 0.88)) * (0.35 + 0.65 * this.sheet) * (1 - 0.65 * smoothstep(1.85, 2.75, twa)) * (1 - 0.55 * this.luff);
     const windPress = Math.pow(clamp(localWindKt / 8.8, 0.25, 2.35), 1.32);
     const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
@@ -1117,39 +1049,11 @@ export class Boat {
     const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.28 + Math.abs(this.heel) * 1.45 + strongWindBoost, 0.05, 1.38);
     this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
 
-    // 赤旗基準風速(八景島:18kt, 江の島:20kt): クローズ〜クローズリーチでメインセールを抜かずに引き続けていると、
-    // 約5〜6秒かけて徐々にオーバーヒールが増していき、それでもメインを抜かなかった場合に最終的に沈(カプサイズ)する(自艇・CP艇フェアに適用)
-    const redFlagKt = SEA.venue === 'hakkeijima' ? 18.0 : 20.0;
-    const maxEstKt = BASE_WIND_KT * 1.22;
-    const inRedZone = maxEstKt > redFlagKt || localWindKt > redFlagKt - 0.8;
-    const isUpwindClose = twa > 0.46 && twa < 1.38 && !this.tacking && !this.maneuver && !this.postFinishStop && !this.penalty && t > -5;
-    if (inRedZone && isUpwindClose && localWindKt > redFlagKt - 1.8) {
-      // メインセールを適宜出す(sheet <= 0.66 または easingSheet押下)ことでオーバーヒールが徐々に解消されて沈を防げる
-      const overSheet = this.sheet - 0.66;
-      if (overSheet > 0 && !this.easingSheet) {
-        const gustExcess = clamp((localWindKt - (redFlagKt - 2.2)) / 3.8, 0.22, 1.25);
-        this.capsizeRisk = clamp((this.capsizeRisk || 0) + dt * (0.14 + 0.22 * overSheet) * gustExcess, 0, 1.05);
-      } else {
-        this.capsizeRisk = Math.max(0, (this.capsizeRisk || 0) - dt * 0.62);
-      }
-    } else {
-      this.capsizeRisk = Math.max(0, (this.capsizeRisk || 0) - dt * 0.52);
-    }
-
-    // capsizeRisk(0..1)に応じて通常のヒール角(約22°)から徐々に35°→50°→65°へと目に見えてオーバーヒールが深まっていく
-    const progressiveOverHeel = Math.pow(clamp(this.capsizeRisk || 0, 0, 1), 1.18) * 0.74;
-    const puffHeelAdd = puffBoost * 0.112 * anglePress + progressiveOverHeel;
+    const puffHeelAdd = puffBoost * 0.112 * anglePress;
     const netHeel = Math.max(0.016, rawHeelPress * 0.305 + strongWindBoost * 0.22 + puffHeelAdd - this.hike * 0.132);
-    const maxHeelLim = this.wildGybeTimer > 0 ? 0.62 : 0.44 + progressiveOverHeel;
+    const maxHeelLim = this.wildGybeTimer > 0 ? 0.62 : 0.44;
     const heelT = clamp(nt * clamp(netHeel, 0, maxHeelLim) + this.rollBias, -maxHeelLim, maxHeelLim);
     this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 4.6));
-
-    if (this.capsizeRisk >= 1.0 && !this.capsized) {
-      this.capsized = true;
-      this.capsizePhase = 0;
-      this.capsizeSide = nt || 1;
-      this.justCapsized = true;
-    }
 
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);
