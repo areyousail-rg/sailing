@@ -13,7 +13,7 @@ import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearby
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 16; // 自艇1 + CP艇15 (うち4艇はやや遅めのCP船)
+const N_BOATS = 24; // 自艇1 + CP艇23 (24艇フリート)
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -216,23 +216,24 @@ function buildCpFleetProfiles(effRate) {
     });
   }
 
-  // スキル順(降順: index 0 が最強 k=1、index 14 が最弱 k=15)にソート
+  // スキル順(降順: index 0 が最強 k=1、index nCp-1 が最弱)にソート
   profiles.sort((a, b) => b.skill - a.skill);
 
-  // マストトップ黒球(浮力体): 1500前後では弱いCP3艇(index 12,13,14 = k=13,14,15)と中くらい1艇(index 8 or 9)に装着
+  // マストトップ黒球(浮力体): 1500前後では弱いCP艇と中位艇に装着
+  const last = profiles.length - 1;
+  const midIdx = Math.floor(profiles.length * 0.6);
   if (effRate <= 1640) {
-    profiles[12].hasBlackBall = true;
-    profiles[13].hasBlackBall = true;
-    profiles[14].hasBlackBall = true;
-    const midIdx = 8 + ((rng() * 2) | 0); // 中位レベル1艇
-    profiles[midIdx].hasBlackBall = true;
+    if (profiles[last - 2]) profiles[last - 2].hasBlackBall = true;
+    if (profiles[last - 1]) profiles[last - 1].hasBlackBall = true;
+    if (profiles[last]) profiles[last].hasBlackBall = true;
+    if (profiles[midIdx]) profiles[midIdx].hasBlackBall = true;
   } else if (effRate <= 1780) {
-    profiles[13].hasBlackBall = true;
-    profiles[14].hasBlackBall = true;
-    profiles[9].hasBlackBall = true;
+    if (profiles[last - 1]) profiles[last - 1].hasBlackBall = true;
+    if (profiles[last]) profiles[last].hasBlackBall = true;
+    if (profiles[midIdx]) profiles[midIdx].hasBlackBall = true;
   } else {
-    profiles[13].hasBlackBall = true;
-    profiles[14].hasBlackBall = true;
+    if (profiles[last - 1]) profiles[last - 1].hasBlackBall = true;
+    if (profiles[last]) profiles[last].hasBlackBall = true;
   }
   return profiles;
 }
@@ -248,13 +249,12 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   clearFleet();
   hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
   if (world.setCourseVisible) world.setCourseVisible(state.phase !== 'menu');
-  // スタートライン半幅 LINE_HALF = 50 (全幅100m) に合わせ、全体としてはライン全域に散らばりつつ、
-  // 本部船側(c = +20〜+46.5)にもCP艇がしっかり残ってスタートするよう上側スロットと下流れ補償を強化
+  // スタートライン半幅 LINE_HALF = 50 (全幅100m) に合わせ、24艇がライン全域にバランスよく散らばるよう配置
   const endTargets = FAVORED === 'pin'
-    ? [-45.5, -40.5, 46.2, 41.8, 36.5, 30.5]
+    ? [-46.2, -42.5, -38.5, 46.5, 42.8, 38.5, 34.0, 29.5]
     : FAVORED === 'com'
-      ? [46.5, 43.0, 39.2, 35.0, 29.8, -44.0]
-      : [46.2, 42.0, 37.2, 31.5, -45.0, -39.5];
+      ? [46.8, 43.8, 40.5, 37.0, 33.2, 29.0, -45.0, -40.5]
+      : [46.5, 42.8, 38.8, 34.5, 30.0, -45.5, -41.0, -36.5];
   for (let i = endTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
     [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
@@ -268,9 +268,9 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
       : FAVORED === 'pin'
         ? 1 - Math.pow(1 - t, 0.72)
         : Math.pow(t, 0.85);
-    const minC = FAVORED === 'com' ? -26 : -31;
+    const minC = FAVORED === 'com' ? -28 : -33;
     const maxC = FAVORED === 'pin' ? 25 : 27;
-    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 2.2);
+    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 2.0);
   }
   for (let i = midTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
@@ -279,13 +279,11 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
-    // スタートに失敗して第二線からスタートするCP艇(secondRow: 2艇)、
-    // 本部船の上で待って結局スタートに失敗し第二線から出るCP艇(highComFail: 1艇)、
-    // そして後ろで待機しスタート前に船と船の間(ギャップ)に入ろうとするCP艇(gapShooter: 3艇)を設定
+    // 24艇フリート用スタート隊形: 第二線スタート(secondRow: 4艇)、本部船上待機(highComFail: 1艇)、ギャップ狙い(gapShooter: 4艇)
     const startRole =
-      (kIdx === 15) ? 'highComFail' :
-      (kIdx === 11 || kIdx === 13) ? 'secondRow' :
-      (kIdx === 5 || kIdx === 8 || kIdx === 10) ? 'gapShooter' :
+      (kIdx === 23) ? 'highComFail' :
+      (kIdx === 14 || kIdx === 17 || kIdx === 20 || kIdx === 22) ? 'secondRow' :
+      (kIdx === 5 || kIdx === 9 || kIdx === 12 || kIdx === 16) ? 'gapShooter' :
       'firstRow';
     if (startRole === 'highComFail') {
       const a0 = -10 - (i % 2) * 2.5;
@@ -1757,13 +1755,44 @@ function playerControl(dt) {
   if (!L && !R && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
   if (!b.maneuver) b.steer = clamp(err * 10, -1, 1);
   const up = keys.has('ArrowUp') || keys.has('KeyW'), dn = keys.has('ArrowDown') || keys.has('KeyS');
+  b.pullingSheet = up;
+  b.easingSheet = dn;
   if (autoTrim) {
     let tg = b.sOpt;
-    if (dn) tg = Math.max(0.05, b.sOpt - 0.6); else if (up) tg = Math.min(1, b.sOpt + 0.3);
-    b.sheet += (tg - b.sheet) * (1 - Math.exp(-dt * (dn ? 5 : 2.5)));
+    // 「引く」ボタンの効きを大幅に強化: ランニングやリーチングでもメインセールをしっかり素早く引き込めてパンピング・素早いジャイブがしやすいよう設定
+    if (dn) tg = Math.max(0.04, b.sOpt - 0.72);
+    else if (up) tg = Math.min(1, b.sOpt + 0.62);
+    const rate = dn ? 7.5 : up ? 6.8 : 3.2;
+    b.sheet += (tg - b.sheet) * (1 - Math.exp(-dt * rate));
   } else {
-    if (up) b.sheet = Math.min(1, b.sheet + dt * 0.6);
-    if (dn) b.sheet = Math.max(0.05, b.sheet - dt * 1.5);
+    if (up) b.sheet = Math.min(1, b.sheet + dt * 1.35);
+    if (dn) b.sheet = Math.max(0.04, b.sheet - dt * 1.85);
+  }
+}
+
+function handlePlayerSailingEvents(b) {
+  if (!b || state.ff) return;
+  if (b.justPumpedSurf) {
+    b.justPumpedSurf = false;
+    if (state.phase !== 'menu') toast('パンピング成功！ 波に乗ってサーフィン加速！', 'good', 2000);
+  }
+  if (b.justWildGybed) {
+    b.justWildGybed = false;
+    sailFlog(1.25);
+    thud(0.75, 0.88);
+    if (state.phase !== 'menu') {
+      toast('ワイルドジャイブ！ ブームが勢いよく返りオーバーヒールでのぼってしまった！', 'warn', 4200);
+    }
+  }
+  if (b.justCapsized) {
+    b.justCapsized = false;
+    sailFlog(1.2);
+    thud(0.95, 1.05);
+    toast('オーバーヒールで沈！ センターボードに乗って起こしています…', 'bad', 4600);
+  }
+  if (b.justRighted) {
+    b.justRighted = false;
+    toast('船体を起こして復帰！ 強風クローズでは適宜「出す」でメインセールを逃がそう', 'info', 3600);
   }
 }
 
@@ -1776,7 +1805,8 @@ function practiceStep(dt, time) {
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   player.update(dt, time, boats);
-  if (state.phase === 'menu' && player.twa < 0.68) {
+  handlePlayerSailingEvents(player);
+  if (state.phase === 'menu' && player.twa < 0.68 && !player.capsized) {
     player.v = Math.max(player.v, 2.1 * SPEED_SCALE);
     player.luff = 0;
   }
@@ -1803,6 +1833,7 @@ function simStep(dt) {
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished && !player.dsq) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   for (const b of boats) b.update(dt, t, boats);
+  handlePlayerSailingEvents(player);
   for (const e of resolveCollisions(boats, t)) { if (recorder) recorder.event(e, t); handleCollision(e); }
   checkRightOfWayHails(dt);
   for (const b of boats) {
@@ -2583,17 +2614,62 @@ async function fetchRealWeather(venueId) {
 // ---------- メニューUI ----------
 let currentWindDeg = 15;
 let currentSideBiasDesc = '';
+let selectedWindPreset = 'real'; // 'real' | '15' | 'yellow' | 'red'
+
+function resolveEffectiveWeather(venueId, baseW) {
+  const windDeg = baseW.windDeg;
+  if (selectedWindPreset === '15') {
+    return { windDeg, rawKt: 14.8, gustKt: 15.6, effKt: 14.8, fallback: false };
+  }
+  if (selectedWindPreset === 'yellow') {
+    const rawKt = venueId === 'hakkeijima' ? 14.5 : 16.2;
+    const gustKt = venueId === 'hakkeijima' ? 17.0 : 19.0;
+    return { windDeg, rawKt, gustKt, effKt: rawKt, fallback: false };
+  }
+  if (selectedWindPreset === 'red') {
+    const rawKt = venueId === 'hakkeijima' ? 17.2 : 19.0;
+    const gustKt = venueId === 'hakkeijima' ? 20.5 : 22.5;
+    return { windDeg, rawKt, gustKt, effKt: rawKt, fallback: false };
+  }
+  return baseW;
+}
 
 function updateWeatherInfoUI(windDeg, kt, gustKt, desc, fallback) {
   currentWindDeg = windDeg;
   currentSideBiasDesc = desc;
+  const dirStr = `${compassDir(windDeg)} ${windDeg}°`;
+  const maxKt = Math.max(kt, gustKt || kt);
+
+  // スタート画面上部に風向・風速・最大風速・赤旗/黄旗を大きく表示
+  const dirEl = $('mwhDir');
+  const spdEl = $('mwhSpd');
+  const maxEl = $('mwhMax');
+  const flagEl = $('mwhFlag');
+  if (dirEl) dirEl.textContent = dirStr;
+  if (spdEl) spdEl.innerHTML = `${kt}<small>kt</small>`;
+  if (maxEl) maxEl.textContent = `(最大 ${maxKt}kt)`;
+  if (flagEl) {
+    // 最大風速が八景島では18knot、江の島では20knotを超えると赤旗、それぞれ16knot、18knot以上で黄旗
+    const redThreshold = cfg.venue === 'hakkeijima' ? 18 : 20;
+    const yellowThreshold = cfg.venue === 'hakkeijima' ? 16 : 18;
+    if (maxKt > redThreshold) {
+      flagEl.className = 'mwhFlag red';
+      flagEl.textContent = '🚩 赤旗 (出艇禁止基準)';
+    } else if (maxKt >= yellowThreshold) {
+      flagEl.className = 'mwhFlag yellow';
+      flagEl.textContent = '🏳️ 黄旗 (強風注意)';
+    } else {
+      flagEl.className = 'mwhFlag hidden';
+      flagEl.textContent = '';
+    }
+  }
+
+  // 下部には風速や風向の文字は入れず、海面特性・波・潮汐のみを記載
   const infoEl = $('realWeatherInfo');
   if (!infoEl) return;
   infoEl.classList.remove('hidden');
-  const dirStr = `${compassDir(windDeg)} (${windDeg}°)`;
-  const note = fallback ? '(標準風速・ブロー移動あり)' : `(ガスト ${gustKt}kt・ブロー移動あり)`;
   const tideStr = TIDE && TIDE.phaseLabel ? `  ｜  潮汐: ${TIDE.tideType}・${TIDE.phaseLabel} (${TIDE.dirLabel}へ ${TIDE.kt.toFixed(2)}kt)` : '';
-  infoEl.textContent = `現地実況  風向 ${dirStr}  風速 ${kt}kt ${note}  ｜  ${desc}${SEA.label ? `  ｜  波: ${SEA.label}` : ''}${tideStr}`;
+  infoEl.textContent = `${desc}${SEA.label ? `  ｜  波: ${SEA.label}` : ''}${tideStr}`;
 }
 
 function applyVenue() {
@@ -2605,28 +2681,31 @@ function applyVenue() {
 
   const cached = weatherCache[cfg.venue];
   if (cached) {
-    const { bias, desc } = computeSideBias(cfg.venue, cached.windDeg);
-    setWindParams(cached.effKt, bias);
-    world.setVenue(cfg.venue, cached.windDeg, bias); applySea(cached.windDeg, cached.effKt);
+    const effW = resolveEffectiveWeather(cfg.venue, cached);
+    const { bias, desc } = computeSideBias(cfg.venue, effW.windDeg);
+    setWindParams(effW.effKt, bias);
+    world.setVenue(cfg.venue, effW.windDeg, bias); applySea(effW.windDeg, effW.effKt);
     rebuildObstacles();
-    updateWeatherInfoUI(cached.windDeg, cached.rawKt, cached.gustKt, desc, cached.fallback);
+    updateWeatherInfoUI(effW.windDeg, effW.rawKt, effW.gustKt, desc, effW.fallback);
   } else {
     // 初回取得: まずデフォルトで初期化し、非同期で1回だけ取得して反映
-    const { bias, desc } = computeSideBias(cfg.venue, v.defaultWindDeg);
-    setWindParams(v.defaultWindKt, bias);
-    world.setVenue(cfg.venue, v.defaultWindDeg, bias); applySea(v.defaultWindDeg, v.defaultWindKt);
+    const defW = resolveEffectiveWeather(cfg.venue, { windDeg: v.defaultWindDeg, rawKt: v.defaultWindKt, gustKt: v.defaultWindKt + 3, effKt: v.defaultWindKt, fallback: false });
+    const { bias, desc } = computeSideBias(cfg.venue, defW.windDeg);
+    setWindParams(defW.effKt, bias);
+    world.setVenue(cfg.venue, defW.windDeg, bias); applySea(defW.windDeg, defW.effKt);
     rebuildObstacles();
-    updateWeatherInfoUI(v.defaultWindDeg, v.defaultWindKt, v.defaultWindKt + 3, desc, false);
+    updateWeatherInfoUI(defW.windDeg, defW.rawKt, defW.gustKt, desc, false);
     fetchRealWeather(cfg.venue).then((w) => {
       if (state.phase !== 'menu') return;
-      const bInfo = computeSideBias(cfg.venue, w.windDeg);
-      setWindParams(w.effKt, bInfo.bias);
-      world.setVenue(cfg.venue, w.windDeg, bInfo.bias); applySea(w.windDeg, w.effKt);
+      const effW = resolveEffectiveWeather(cfg.venue, w);
+      const bInfo = computeSideBias(cfg.venue, effW.windDeg);
+      setWindParams(effW.effKt, bInfo.bias);
+      world.setVenue(cfg.venue, effW.windDeg, bInfo.bias); applySea(effW.windDeg, effW.effKt);
       rebuildObstacles();
       makeFleet();
       cam.inited = false;
       if (player) cam.update(0, performance.now() / 1000, player, boats);
-      updateWeatherInfoUI(w.windDeg, w.rawKt, w.gustKt, bInfo.desc, w.fallback);
+      updateWeatherInfoUI(effW.windDeg, effW.rawKt, effW.gustKt, bInfo.desc, effW.fallback);
     });
   }
 }
@@ -2759,6 +2838,19 @@ function initMenu() {
   buildRateChoices();
   buildPenaltyChoices();
   buildBgmChoices();
+  const presetBox = $('mwhPresets');
+  if (presetBox) {
+    presetBox.querySelectorAll('.mwhBtn').forEach((btn) => {
+      btn.onclick = () => {
+        selectedWindPreset = btn.getAttribute('data-wmode') || 'real';
+        presetBox.querySelectorAll('.mwhBtn').forEach((b) => b.classList.toggle('sel', b === btn));
+        applyVenue();
+        makeFleet();
+        cam.inited = false;
+        if (player) cam.update(0, performance.now() / 1000, player, boats);
+      };
+    });
+  }
   if (!isCrewUnlocked(cfg.helm)) cfg.helm = 'human_m';
   if (!isCrewUnlocked(cfg.crew)) cfg.crew = 'cat';
   buildChoices('helmChoices', 'helm'); buildChoices('crewChoices', 'crew');
