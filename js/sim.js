@@ -653,16 +653,16 @@ export class Boat {
       const driftV = 0.22 * SPEED_SCALE * w.f;
       this.x += -Math.sin(w.from) * driftV * dt;
       this.z += Math.cos(w.from) * driftV * dt;
-      // Phase 0..0.24: 横転してマストが水面につく(±1.48rad ≒ 85°)
-      // Phase 0.24..0.82: センターボードに乗って体重をかけ、船体が徐々に起き上がる
-      // Phase 0.82..1.00: 船体が完全に起き上がりコックピットへ戻る
+      // Phase 0..0.22: オーバーヒール限界(約66°)から横転してマストが水面につく(±1.48rad ≒ 85°)
+      // Phase 0.22..0.84: センターボードに乗って体重をかけ、船体が徐々に起き上がる
+      // Phase 0.84..1.00: 船体が完全に起き上がりコックピットへ戻る
       const ph = clamp(this.capsizePhase, 0, 1);
       let targetCapHeel;
-      if (ph < 0.24) {
-        const u = smoothstep(0, 0.24, ph);
-        targetCapHeel = this.capsizeSide * (0.52 + 0.96 * u);
+      if (ph < 0.22) {
+        const u = smoothstep(0, 0.22, ph);
+        targetCapHeel = this.capsizeSide * (1.14 + 0.34 * u);
       } else if (ph < 0.84) {
-        const u = smoothstep(0.24, 0.84, ph);
+        const u = smoothstep(0.22, 0.84, ph);
         targetCapHeel = this.capsizeSide * (1.48 - 1.32 * u);
       } else {
         const u = smoothstep(0.84, 1.0, ph);
@@ -792,15 +792,8 @@ export class Boat {
       if (twaP < POLE_MIN && steer * up > 0) steer = 0;
       if (twaP < POLE_MIN - 0.12) steer = -up * 0.6; // 風の振れで上り過ぎたら自動で落とす
     }
-    // 船が上りすぎで完全に止まっていたり、スピードが落ちすぎている時はラダーの水流が失われて舵があまり効かない実艇特性
-    const vAbs = Math.abs(this.v);
-    const curTwaDeg = (Math.abs(wrap(w.from - this.h)) * 180) / Math.PI;
-    const flowNorm = clamp(vAbs / (1.55 * SPEED_SCALE), 0, 1);
-    const pinchStallF = (curTwaDeg < 28 && vAbs < 0.62 * SPEED_SCALE) ? (0.35 + 0.65 * (vAbs / (0.62 * SPEED_SCALE))) : 1.0;
-    const rudderFlow = (this.v < -0.08 && curTwaDeg <= 14)
-      ? 0.18 // 完全失速後のバック中はわずかに逆舵水流が生じる
-      : (0.065 + 0.935 * Math.pow(flowNorm, 1.38)) * pinchStallF;
-    const rateMax = 0.88 * clamp(rudderFlow, 0.065, 1.0);
+    const vRatio = this.v / (1.8 * SPEED_SCALE);
+    const rateMax = 0.85 * clamp(0.18 + 0.82 * vRatio, 0.18, 1.15);
     // オーバーヒール時はウェザーヘルムで上りやすく、アンヒール時はリーヘルムで落ちやすくなる回頭モーメント補助
     const rollTurnBoost = this.rollBias * this.tack > 0.02 && steer * this.tack > 0 ? 1.12
       : this.rollBias * this.tack < -0.02 && steer * this.tack < 0 ? 1.12 : 1.0;
@@ -947,7 +940,9 @@ export class Boat {
     this.stall = clamp((d - 0.1) * 3.5, 0, 1);
     // ランニング・リーチングでのパンピングやジャイブ時の瞬間的なメインセール引き込みでは失速ペナルティを緩和
     const stallPenaltyMul = (twa > 1.55 && (this.pullingSheet || this.surfTimer > 0)) ? 0.25 : 0.9;
-    const eff = clamp(1 - Math.max(0, -d - 0.06) * 1.45 - Math.max(0, d - 0.1) * stallPenaltyMul, 0.12, 1);
+    // メインセールを抜いた際もジブセールの推進力が残り、強風時はヒール・ラダー抵抗軽減で推力が保たれる
+    const easePenaltyMul = localWindKt >= 13.5 ? 0.48 : 0.72;
+    const eff = clamp(1 - Math.max(0, -d - 0.08) * easePenaltyMul - Math.max(0, d - 0.1) * stallPenaltyMul, 0.50, 1);
     // 見かけ風
     const Vw = localWindKt * KT * SPEED_SCALE;
     const ax = -Math.sin(w.from) * Vw - Math.sin(this.h) * this.v, az = Math.cos(w.from) * Vw + Math.cos(this.h) * this.v;
@@ -1080,9 +1075,12 @@ export class Boat {
       const irons = clamp(0.46 + ((10.5 - twaDeg) / 10.5) * 0.54, 0.46, 1.0); // ±10°以内は確実にバックし、0°で最大1.0
       target = -irons * 0.48 * SPEED_SCALE * w.f;
     }
-    // 波乗り(サーフィン・パンピング)や波間の加減速がランニング・リーチングでダイレクトに艇速に反映されるよう下レグでは時定数tauを短くする
+    // 波乗り(サーフィン・パンピング)や波間の加減速がランニング・リーチングでダイレクトに艇速に反映されるよう下レグでは時定数tauを短くし、
+    // 逆にメインセールを抜いた(出した)時は船体の慣性で急激にスピードが落ちないよう減速時定数を長く保つ
     const surfResponsive = (twa > 1.50 && localWindKt >= 9.0) ? 0.72 : 1.0;
-    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.85 : 2.0 * surfResponsive)) : turning ? 8.5 : 1.35 * surfResponsive;
+    const isEasingMain = this.easingSheet || d < -0.05;
+    const decelTau = turning ? 8.5 : isEasingMain ? 5.6 : 2.35 * surfResponsive;
+    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.85 : 2.0 * surfResponsive)) : decelTau;
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
     if (this.postFinishStop && Math.abs(this.v) < 0.04) this.v = 0;
 
@@ -1109,7 +1107,7 @@ export class Boat {
     this.z += (-Math.cos(this.h) * this.v + leeZ + tideZ) * dt;
 
     // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力
-    // ＋ 赤旗風域(八景島18kt超 / 江の島20kt超、または強風ブロー時)のクローズでメインセールを適宜出さないとオーバーヒールで沈する挙動
+    // ＋ 赤旗風域(八景島18kt超 / 江の島20kt超、または強風ブロー時)のクローズでメインセールを適宜出さないと徐々にオーバーヒールして最終的に沈する挙動(自艇・CP艇共通)
     const anglePress = Math.sin(clamp(twa, 0.2, Math.PI * 0.88)) * (0.35 + 0.65 * this.sheet) * (1 - 0.65 * smoothstep(1.85, 2.75, twa)) * (1 - 0.55 * this.luff);
     const windPress = Math.pow(clamp(localWindKt / 8.8, 0.25, 2.35), 1.32);
     const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
@@ -1119,31 +1117,34 @@ export class Boat {
     const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.28 + Math.abs(this.heel) * 1.45 + strongWindBoost, 0.05, 1.38);
     this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
 
-    // 赤旗基準風速(八景島:18kt, 江の島:20kt): クローズ〜クローズリーチでメインセールを出していないとオーバーヒールが蓄積して沈する
+    // 赤旗基準風速(八景島:18kt, 江の島:20kt): クローズ〜クローズリーチでメインセールを抜かずに引き続けていると、
+    // 約5〜6秒かけて徐々にオーバーヒールが増していき、それでもメインを抜かなかった場合に最終的に沈(カプサイズ)する(自艇・CP艇フェアに適用)
     const redFlagKt = SEA.venue === 'hakkeijima' ? 18.0 : 20.0;
     const maxEstKt = BASE_WIND_KT * 1.22;
     const inRedZone = maxEstKt > redFlagKt || localWindKt > redFlagKt - 0.8;
-    const isUpwindClose = twa > 0.46 && twa < 1.38 && !this.tacking && !this.maneuver && !this.postFinishStop && t > -5;
-    if (this.isPlayer && inRedZone && isUpwindClose && localWindKt > redFlagKt - 1.8) {
-      // メインセールを適宜出す(sheet <= 0.64 または easingSheet押下)ことで風を逃がして沈を防げる
-      const overSheet = this.sheet - 0.64;
+    const isUpwindClose = twa > 0.46 && twa < 1.38 && !this.tacking && !this.maneuver && !this.postFinishStop && !this.penalty && t > -5;
+    if (inRedZone && isUpwindClose && localWindKt > redFlagKt - 1.8) {
+      // メインセールを適宜出す(sheet <= 0.66 または easingSheet押下)ことでオーバーヒールが徐々に解消されて沈を防げる
+      const overSheet = this.sheet - 0.66;
       if (overSheet > 0 && !this.easingSheet) {
-        const gustExcess = clamp((localWindKt - (redFlagKt - 2.2)) / 3.5, 0.25, 1.6);
-        this.capsizeRisk = clamp((this.capsizeRisk || 0) + dt * (0.48 + 0.95 * overSheet) * gustExcess, 0, 1.05);
+        const gustExcess = clamp((localWindKt - (redFlagKt - 2.2)) / 3.8, 0.22, 1.25);
+        this.capsizeRisk = clamp((this.capsizeRisk || 0) + dt * (0.14 + 0.22 * overSheet) * gustExcess, 0, 1.05);
       } else {
-        this.capsizeRisk = Math.max(0, (this.capsizeRisk || 0) - dt * 1.45);
+        this.capsizeRisk = Math.max(0, (this.capsizeRisk || 0) - dt * 0.62);
       }
     } else {
-      this.capsizeRisk = Math.max(0, (this.capsizeRisk || 0) - dt * 1.2);
+      this.capsizeRisk = Math.max(0, (this.capsizeRisk || 0) - dt * 0.52);
     }
 
-    const puffHeelAdd = puffBoost * 0.112 * anglePress + (this.capsizeRisk || 0) * 0.28;
+    // capsizeRisk(0..1)に応じて通常のヒール角(約22°)から徐々に35°→50°→65°へと目に見えてオーバーヒールが深まっていく
+    const progressiveOverHeel = Math.pow(clamp(this.capsizeRisk || 0, 0, 1), 1.18) * 0.74;
+    const puffHeelAdd = puffBoost * 0.112 * anglePress + progressiveOverHeel;
     const netHeel = Math.max(0.016, rawHeelPress * 0.305 + strongWindBoost * 0.22 + puffHeelAdd - this.hike * 0.132);
-    const maxHeelLim = this.wildGybeTimer > 0 || (this.capsizeRisk || 0) > 0.15 ? 0.62 : 0.44;
+    const maxHeelLim = this.wildGybeTimer > 0 ? 0.62 : 0.44 + progressiveOverHeel;
     const heelT = clamp(nt * clamp(netHeel, 0, maxHeelLim) + this.rollBias, -maxHeelLim, maxHeelLim);
-    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.8));
+    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 4.6));
 
-    if (this.isPlayer && this.capsizeRisk >= 1.0 && !this.capsized) {
+    if (this.capsizeRisk >= 1.0 && !this.capsized) {
       this.capsized = true;
       this.capsizePhase = 0;
       this.capsizeSide = nt || 1;
