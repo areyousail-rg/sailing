@@ -273,7 +273,7 @@
     </header>
 
     <aside class="panel top-right" id="boardPanel">
-      <h2>順位 <span id="rank">1 / 10</span></h2>
+      <h2>順位 <span id="rank">1 / 24</span></h2>
       <ol id="leaders"></ol>
     </aside>
 
@@ -350,6 +350,20 @@
     <div class="card menuCard">
       <div class="menuTitleRow">
         <h1>スナイプ級</h1>
+        <div id="menuWindHeader" class="menuWindHeader">
+          <div class="mwhMain">
+            <span class="mwhItem"><small class="mwhSub">風向</small><b id="mwhDir" class="mwhVal">SSW 200°</b></span>
+            <span class="mwhSep">/</span>
+            <span class="mwhItem"><small class="mwhSub">風速</small><b id="mwhSpd" class="mwhVal">9<small>kt</small></b><span id="mwhMax" class="mwhMax">最大 12kt</span></span>
+            <span id="mwhFlag" class="mwhFlag hidden"></span>
+          </div>
+          <div class="mwhPresets" id="mwhPresets" title="風速条件の切替">
+            <button type="button" class="mwhBtn sel" data-wmode="real">実況風</button>
+            <button type="button" class="mwhBtn" data-wmode="15">白波15kt</button>
+            <button type="button" class="mwhBtn" data-wmode="yellow">黄旗</button>
+            <button type="button" class="mwhBtn" data-wmode="red">赤旗</button>
+          </div>
+        </div>
       </div>
       <div class="menuTopRow">
         <div class="menuGroup">
