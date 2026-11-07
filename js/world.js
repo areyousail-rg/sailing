@@ -184,7 +184,10 @@ void main(){
   // 基底ベクトルは時間変化しない基準風向(uW0)に固定し、シフト変化時に遠方座標で波が横滑りする現象を完全に防止
   vec2 wdV=vec2(-sin(uW0),cos(uW0));
   vec2 wpV=vec2(-wdV.y,wdV.x);
-  float vRip=0.075*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.16)+0.052*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.20);
+  // 向きの異なる3つの短い風浪を交差させ、規則的な平行線状の起伏にならないようにする
+  vec2 d2=wdV*0.825+wpV*0.565;
+  vec2 d3=wdV*0.765-wpV*0.644;
+  float vRip=0.060*sin(dot(w.xz,wdV)*0.72-uWT*2.66+dot(w.xz,wpV)*0.16)+0.045*sin(dot(w.xz,d2)*1.18-uWT*3.40+1.1)+0.032*sin(dot(w.xz,d3)*1.63-uWT*4.00+2.3);
   h+=vRip;
   float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.70,1.0,r));
@@ -193,7 +196,7 @@ void main(){
   vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w;
 }`;
 const waterMat = new THREE.ShaderMaterial({
-  defines: { NWAVE: MOBILE ? 3 : 4 },
+  defines: { NWAVE: MOBILE ? 3 : 4, NSPEC: MOBILE ? 7 : 11 },
   stencilWrite: true,
   stencilWriteMask: 0,
   stencilFunc: THREE.NotEqualStencilFunc,
@@ -276,72 +279,67 @@ void main(){
     }
   }
   vec2 gBase=g;
-  // 3) 風下方向(wd)へ真っ直ぐ進む中〜近距離の風浪リップル(すべて wv - uWT*speed で風上から風下へ厳密に伝播)
-  if(dist<2200.0){
-    vec2 pRip1=vec2(wu*0.58,wv*1.55-uWT*2.8);
-    vec2 pRip2=vec2(wu*1.05+4.1,wv*2.85-uWT*3.9);
-    float r1=vn(pRip1)-0.5;
-    float r2=vn(pRip2)-0.5;
-    float ripFade=exp(-dist*0.0022)*(0.22+0.64*gust+0.30*whitecapIntensity);
-    g+=(wd*(r1*0.72+r2*0.48)+wp*(r1*0.14-r2*0.12))*ripFade;
-  }
-  // 4) ドローン・艇内カメラ近傍(dist<95m)の細かい水面ディテール: 船のすぐ下を風下方向(wd)へ流れる水面テクスチャ
-  if(dist<95.0){
-    float nearF=(1.0-smoothstep(18.0,95.0,dist));
-    float micro1=vn(vec2(wu*2.2,wv*5.0-uWT*5.2))-0.5;
-    float micro2=vn(vec2(wu*4.0+7.3,wv*8.8-uWT*6.8))-0.5;
-    g+=(wd*(micro1*0.26+micro2*0.18)+wp*(micro1*0.06-micro2*0.05))*nearF;
+  // 3) 実海面の風浪スペクトル: 風向±55°に広がる波長7.5m〜0.2mの短い風浪を多数重ね、
+  //    ノイズの塊感や規則的な縞模様が出ない自然な水面の凹凸(実測の海面傾斜分布 Cox-Munk 相当)を作る。
+  //    ブロー(gust)の中ほど短い波が立って海面がざらつき、明るい空の映り込みが減って自然に暗く見える
+  float windAmp=clamp(uWindKt/11.0,0.45,1.55)*(0.62+0.62*gust);
+  // 波群(ウェーブグループ): 場所ごとに波の立ち方が変化し、均一なタイル感をなくす
+  float grp=0.70+0.60*vn(vec2(wu*0.018+3.1,wv*0.014-uWT*0.06));
+  vec2 gs=vec2(0.0);
+  float subRough=0.0;
+  for(int i=0;i<NSPEC;i++){
+    float fi=float(i);
+    float lam=7.5*pow(0.71,fi);
+    float k=6.2831853/lam;
+    float ang=sin(fi*2.39996+0.6)*0.95;
+    vec2 d=normalize(wd*cos(ang)+wp*sin(ang));
+    float stp=0.085*(0.80+0.40*fract(fi*0.618+0.3))*windAmp*grp;
+    // 画素より細かくなった波は法線から外し、代わりに「見えない粗さ」として反射のぼけに回す(遠景のちらつき防止)
+    float fk=exp(-dist*k*0.0016);
+    float om=sqrt(9.81*k);
+    float ph=mod(dot(d,p)*k-om*uWT+fi*4.13,6.2831853);
+    gs+=d*(stp*cos(ph))*fk;
+    subRough+=stp*stp*(1.0-fk)*0.5;
   }
 
-  vec3 n=normalize(vec3(-g.x*1.12,1.0,-g.y*1.12));
+  vec2 gn=g+gs;
+  vec3 n=normalize(vec3(-gn.x,1.0,-gn.y));
   float ndv=max(dot(n,V),0.0);
-  // カメラ近傍や遠方で視線角が浅くなった際にフレネル反射で海面が白っぽく飛ぶのを防ぎ、しっかりとした海の青色を保つ
-  float effNdv=max(ndv,0.30+0.12*smoothstep(600.0,1650.0,dist));
-  float F=0.03+0.54*pow(max(1.0-effNdv,0.0001),3.8);
+  float sig=sqrt(subRough);
+  // フレネル反射(水の屈折率1.33: 真上から見ると約2%、浅い角度ほど空を強く映す)。細かい粗さがあるほど反射は弱く・青くなる
+  float ndvR=clamp(ndv+sig*0.55,0.0,1.0);
+  float F=min(0.02+0.98*pow(1.0-ndvR,5.0),0.82);
   vec3 R=reflect(-V,n); R.y=abs(R.y);
-  vec3 refl=skyBase(R);
+  vec3 refl=skyBase(normalize(vec3(R.x,R.y+sig*0.35,R.z)))*0.92;
 
-  // 波の立体陰影: カメラ近傍でも白っぽくならず鮮やかなマリンブルー〜コバルトブルーに見える水色設定
+  // 水中から散乱して戻る光(海の地の色): 真上から見るほど深い紺、斜めに見るほどわずかに青緑寄り
   float sunLit=clamp(dot(n,uSun)*0.5+0.5,0.0,1.0);
   float elev=clamp(wH*1.45+vH*0.62,-1.0,1.0);
-  vec3 troughCol=vec3(0.004,0.068,0.195);
-  vec3 midCol=vec3(0.009,0.148,0.315);
-  vec3 crestCol=vec3(0.025,0.285,0.445);
-  float crest=clamp(length(g)*1.85+max(0.0,elev)*0.45,0.0,1.0);
-  vec3 body=mix(troughCol,midCol,smoothstep(-0.55,0.20,elev));
-  body=mix(body,crestCol,crest*0.66);
-  // 波頭の太陽光透け(SSS)と波斜面の明暗コントラスト
-  float sss=max(0.0,elev)*pow(clamp(dot(V,-uSun+vec3(0.0,0.45,0.0)),0.0,1.0),2.2)*0.40+crest*0.15;
-  body+=vec3(0.02,0.32,0.46)*sss;
-  body*=0.76+0.36*sunLit;
+  vec3 deepCol=vec3(0.010,0.050,0.098);
+  vec3 scatCol=vec3(0.020,0.118,0.165);
+  vec3 body=mix(deepCol,scatCol,0.30+0.40*(1.0-ndv));
+  // 波の峰の薄い水が逆光で透ける(サブサーフェス散乱): 太陽側を向いて見た波頭だけがほんのり青緑に透ける
+  float trans=pow(clamp(dot(V,normalize(-uSun+vec3(0.0,0.60,0.0))),0.0,1.0),3.0);
+  float sssAmt=smoothstep(0.0,0.9,elev)*(0.12+0.85*trans);
+  body+=vec3(0.020,0.150,0.140)*sssAmt;
+  body*=0.82+0.28*sunLit;
 
-  float nearBlue=smoothstep(18.0,210.0,dist);
-  vec3 reflTint=mix(refl*vec3(0.55,0.75,0.96),refl,nearBlue);
-  vec3 col=mix(body,reflTint,F*(0.42+0.26*nearBlue-0.22*smoothstep(650.0,1700.0,dist)));
-  // 波面の太陽スペキュラハイライト(波の立体的な斜面がキラッと光る)
-  float spec=pow(max(dot(R,uSun),0.0001),95.0)*0.48+pow(max(dot(R,uSun),0.0001),22.0)*0.05;
-  col+=vec3(1.0,0.95,0.84)*spec*(0.32+0.68*F);
+  vec3 col=mix(body,refl,F);
+  // 太陽のきらめき(サングリッター): 近くは鋭い粒状のきらめき、遠くは粗さで広がった光の道になる
+  float shin=mix(900.0,60.0,clamp(sig*5.0,0.0,1.0));
+  float sd=max(dot(R,uSun),0.0);
+  float spec=pow(sd,shin)*(shin*0.012)+pow(sd,shin*0.12)*0.035;
+  col+=vec3(1.0,0.94,0.82)*spec*clamp(F*6.0,0.15,1.0);
 
-  if(dist<3200.0){
-    // 通常時の波頭のごく控えめなハイライト(一昨日までの海面表現)
-    float foamN1=vn(vec2(wu*0.45,wv*0.90-uWT*2.1));
-    float foamN2=vn(vec2(wu*1.55+3.7,wv*2.35-uWT*3.0));
-    float foamN3=vn(vec2(wu*3.80-6.2,wv*4.20-uWT*3.8));
-    float foamDetail=0.50*foamN1+0.32*foamN2+0.18*foamN3;
-    float crestSlope=length(g)*2.45+max(0.0,elev)*0.58;
-    float waveMetric=crestSlope+foamDetail*0.42;
-    float baseFoam=smoothstep(0.96,1.20,waveMetric)*0.07*(0.55+0.45*nearBlue);
-    vec3 baseFoamCol=mix(vec3(0.88,0.94,0.99),vec3(0.98,0.995,1.0),clamp(0.35*foamN3,0.0,1.0));
-    col=mix(col,baseFoamCol,clamp(baseFoam,0.0,0.94)*exp(-dist*0.0012));
-  }
   // ブロー(風の強い海面のさざ波): 物理のブロー移動速度(adv = ca + uWT*4.8)と完全に同期して風上から風下へ流れる
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
-  col*=mix(1.03,0.88,smoothstep(0.76,1.22,wf));
-  col=mix(col,col*vec3(0.80,0.85,0.92),blow*(0.22+0.20*catpaw)*exp(-dist*0.0006));
+  col*=mix(1.02,0.91,smoothstep(0.76,1.22,wf));
+  col=mix(col,col*vec3(0.82,0.87,0.93),blow*(0.16+0.16*catpaw)*exp(-dist*0.0006));
   if(dist<4000.0){
     float streak=smoothstep(0.75,0.94,vn(vec2(wu*0.28,adv*0.10)));
-    col+=vec3(0.30,0.52,0.68)*streak*0.055*(0.4+gust)*exp(-dist*0.0012);
+    col+=vec3(0.22,0.38,0.50)*streak*0.035*(0.4+gust)*exp(-dist*0.0012);
   }
+  col=min(col,vec3(1.6));
   // 14knot超の強風白波(現在の白波表現をそのまま採用)
   if(dist<3200.0 && whitecapIntensity>0.001){
     float wci=clamp(whitecapIntensity,0.0,1.95);
