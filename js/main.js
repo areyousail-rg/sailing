@@ -249,12 +249,12 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   clearFleet();
   hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
   if (world.setCourseVisible) world.setCourseVisible(state.phase !== 'menu');
-  // スタートライン半幅 LINE_HALF = 50 (全幅100m) に合わせ、24艇がライン全域にバランスよく散らばるよう配置
+  // スタートライン半幅 LINE_HALF = 75 (従来の1.5倍 = 全幅150m) に合わせ、24艇がライン全域にバランスよく散らばるよう配置
   const endTargets = FAVORED === 'pin'
-    ? [-46.2, -42.5, -38.5, 46.5, 42.8, 38.5, 34.0, 29.5]
+    ? [-69.0, -63.5, -57.5, 69.5, 64.0, 57.5, 51.0, 44.0]
     : FAVORED === 'com'
-      ? [46.8, 43.8, 40.5, 37.0, 33.2, 29.0, -45.0, -40.5]
-      : [46.5, 42.8, 38.8, 34.5, 30.0, -45.5, -41.0, -36.5];
+      ? [70.0, 65.5, 60.5, 55.5, 49.5, 43.5, -67.5, -60.5]
+      : [69.5, 64.0, 58.0, 51.5, 45.0, -68.0, -61.5, -54.5];
   for (let i = endTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
     [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
@@ -268,9 +268,9 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
       : FAVORED === 'pin'
         ? 1 - Math.pow(1 - t, 0.72)
         : Math.pow(t, 0.85);
-    const minC = FAVORED === 'com' ? -28 : -33;
-    const maxC = FAVORED === 'pin' ? 25 : 27;
-    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 2.0);
+    const minC = FAVORED === 'com' ? -42 : -49;
+    const maxC = FAVORED === 'pin' ? 37 : 40;
+    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 3.0);
   }
   for (let i = midTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
@@ -286,25 +286,26 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
       (kIdx === 5 || kIdx === 9 || kIdx === 12 || kIdx === 16) ? 'gapShooter' :
       'firstRow';
     if (startRole === 'highComFail') {
-      const a0 = -10 - (i % 2) * 2.5;
-      const c0 = LINE_HALF + 20 + (i % 2) * 5.5;
+      const a0 = -24 - (i % 2) * 2.5;
+      const c0 = LINE_HALF + 22 + (i % 2) * 5.5;
       return { a: a0, c: c0, targetC: LINE_HALF - 5.5, startRole };
     }
-    const isUpperEnd = targetC >= 22;
-    const baseA0 = isUpperEnd ? -18 - (i % 2) * 2.0 : -20 - (i % 3) * 2.2;
+    const isUpperEnd = targetC >= 30;
+    const baseA0 = isUpperEnd ? -32 - (i % 2) * 2.5 : -35 - (i % 3) * 2.8;
     const a0 = startRole === 'secondRow'
-      ? baseA0 - 8.0
+      ? baseA0 - 10.0
       : startRole === 'gapShooter'
-        ? baseA0 - 9.5
+        ? baseA0 - 11.5
         : baseA0;
     // 1分間のスターボードタック前進と低速下流れによる左(-c)への移動量を見越し、
-    // 本部船側狙い(targetC>=22)のCP艇は最初から十分な右(+c)余裕を持たせて配置する
+    // 待機ライン(a ≈ -14〜-22m)までの前進分＋下流れ余裕を持たせて配置する
+    const climbA = Math.max(8, Math.abs(a0) - 14);
     const driftMargin = isUpperEnd ? 22 : 16;
-    const c0 = targetC + Math.abs(a0) * 0.90 + driftMargin;
+    const c0 = targetC + climbA * 0.88 + driftMargin;
     return { a: a0, c: c0, targetC, startRole };
   });
-  // 自艇はゲーム開始直後、スタートラインからもうすこし後ろ(a=-44)かつ本部船(c=LINE_HALF)の右側(c=LINE_HALF+36)に配置
-  const pslot = { a: -44, c: LINE_HALF + 36, targetC: LINE_HALF - 5, startRole: 'firstRow' };
+  // 自艇は1分前の状況を見て上(本部船側)・下(アウター側)どちらからでもスタートできるよう、CP艇団のさらに後ろ(a=-64)かつ中央やや上寄り(c=28)に配置
+  const pslot = { a: -64, c: 28, targetC: 0, startRole: 'firstRow' };
   const used = new Set([cfg.sailNo]);
   const count = onlyPlayer ? 1 : N_BOATS;
   const effRate = cfg.rateMode !== 'off' ? (state.raceStartRate || rateData.rate || DEFAULT_RATE) : DEFAULT_RATE;
@@ -829,15 +830,23 @@ function updateHUD(sorted) {
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
   }
-  // ブランケット/バックウインド表示: 風上艇の風影=ブランケット、風下艇のリーチからの吹き返し(風上側で失速)=バックウインド
+  // ブランケット/バックウインド表示: 風上艇の風影=ブランケット、風下艇のリーチからの吹き返し=バックウインド (両方同時もあり得る)
   const blkPct = Math.round(b.cover * 100);
-  if (blkPct >= 5) {
+  const backPct = Math.round(b.back * 100);
+  const hasBlk = blkPct >= 5;
+  const hasBack = backPct >= 5;
+  if (hasBlk || hasBack) {
     hud.blk.style.display = 'flex';
-    const isBack = b.back > 0.03 && b.back >= (b.cover - b.back);
-    if (hud.blkTxt) hud.blkTxt.textContent = `${isBack ? 'バックウインド' : 'ブランケット'} ${blkPct}%`;
-    if (hud.blkFill) hud.blkFill.style.width = `${blkPct}%`;
-    hud.blk.classList.toggle('mid', blkPct >= 35 && blkPct < 65);
-    hud.blk.classList.toggle('high', blkPct >= 65);
+    const totalPct = hasBlk && hasBack ? Math.min(100, blkPct + backPct) : (hasBlk ? blkPct : backPct);
+    const label = hasBlk && hasBack
+      ? `ブランケット・バックウインド ${totalPct}%`
+      : hasBlk
+        ? `ブランケット ${blkPct}%`
+        : `バックウインド ${backPct}%`;
+    if (hud.blkTxt) hud.blkTxt.textContent = label;
+    if (hud.blkFill) hud.blkFill.style.width = `${totalPct}%`;
+    hud.blk.classList.toggle('mid', totalPct >= 35 && totalPct < 65);
+    hud.blk.classList.toggle('high', totalPct >= 65);
   } else {
     hud.blk.style.display = 'none';
   }
@@ -1704,18 +1713,21 @@ function signals(prevT, t) {
 }
 function atGun() {
   let anyOcs = false;
-  for (const b of boats) if (b.a > lineA(b.c)) {
-    b.ocs = true;
-    anyOcs = true;
-    if (b.isPlayer) toast('OCS(リコール)! 本部船にX旗掲揚・ラインの下へ戻って再スタートしてください', 'bad', 7000);
+  for (let i = 0; i < boats.length; i++) {
+    const b = boats[i];
+    const ai = !b.isPlayer ? ais.find((a) => a.b === b) : null;
+    if (b.a > lineA(b.c) || (ai && ai.willOcs && b.a > lineA(b.c) - 2.5)) {
+      if (b.a <= lineA(b.c)) b.a = lineA(b.c) + 0.5;
+      b.ocs = true;
+      anyOcs = true;
+      if (b.isPlayer) toast('OCS(リコール)! 本部船にX旗掲揚・ラインの下へ戻って再スタートしてください', 'bad', 7000);
+    }
   }
   if (anyOcs) {
-    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗を掲揚し、追加のホーン1回(スタート号砲と合わせて計2回)を鳴らす
-    setTimeout(() => {
-      if ((state.phase === 'race' || state.phase === 'orientation') && !state.paused && !state.ff) {
-        signalHorn('short');
-      }
-    }, 480);
+    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗を掲揚し、追加のホーン1回(スタート号砲と合わせて明確に計2回)を鳴らす
+    if ((state.phase === 'race' || state.phase === 'orientation') && !state.paused && !state.ff) {
+      signalHorn('recall');
+    }
     if (!player || !player.ocs) {
       toast('個別リコール: 本部船にX旗掲揚 (ホーン2回)', 'warn', 4500);
     }
@@ -1775,9 +1787,6 @@ function handlePlayerSailingEvents(b) {
     b.justWildGybed = false;
     sailFlog(1.25);
     thud(0.75, 0.88);
-    if (state.phase !== 'menu') {
-      toast('ワイルドジャイブ！ ブームが勢いよく返りオーバーヒールでのぼってしまった！', 'warn', 4200);
-    }
   }
 }
 
