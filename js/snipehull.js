@@ -705,6 +705,7 @@ export function buildHull(accent = 0x2a77ff) {
   if (!_cachedCbGeos) {
     _cachedCbGeos = {
       plate: new THREE.BoxGeometry(0.016, 0.34, 0.41),
+      underBlade: new THREE.BoxGeometry(0.022, 0.86, 0.40),
       pillar: new THREE.BoxGeometry(0.016, 0.068, 0.064),
       topBar: new THREE.BoxGeometry(0.018, 0.032, 0.41),
       stopF: new THREE.BoxGeometry(0.050, 0.030, 0.054),
@@ -713,6 +714,10 @@ export function buildHull(accent = 0x2a77ff) {
   }
   const cbBoard = new THREE.Group();
   cbBoard.add(mesh(_cachedCbGeos.plate, M.alu, 0, cbTopBaseY - 0.155, tzMid));
+  const underBlade = mesh(_cachedCbGeos.underBlade, M.alu, 0, -0.45, tzMid);
+  underBlade.visible = false;
+  cbBoard.add(underBlade);
+  cbBoard.userData.underBlade = underBlade;
   cbBoard.add(mesh(_cachedCbGeos.pillar, M.alu, 0, cbTopBaseY + 0.048, tzMid - 0.172));
   cbBoard.add(mesh(_cachedCbGeos.pillar, M.alu, 0, cbTopBaseY + 0.048, tzMid + 0.172));
   cbBoard.add(mesh(_cachedCbGeos.topBar, M.alu, 0, cbTopBaseY + 0.092, tzMid));
