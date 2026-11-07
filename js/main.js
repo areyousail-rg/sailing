@@ -1802,7 +1802,7 @@ function practiceStep(dt, time) {
   if (!player) return;
   playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
-  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && state.phase !== 'menu') sailFlog(0.85, player.twa < 0.28 && !player.maneuver); state.lastTack = player.tack; }
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && state.phase !== 'menu') sailFlog(0.85); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   player.update(dt, time, boats);
@@ -1830,7 +1830,7 @@ function simStep(dt) {
   else if (window.__ap) window.__ap.update(dt, t, boats); else playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
   // タック/ジャイブ(風をまたいだ瞬間)にセールの「バサッ」、ランチャー上下で「シャキン」
-  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished && !player.dsq) sailFlog(0.85, player.twa < 0.28 && !player.maneuver); state.lastTack = player.tack; }
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished && !player.dsq) sailFlog(0.85); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished && !player.dsq) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   for (const b of boats) b.update(dt, t, boats);
