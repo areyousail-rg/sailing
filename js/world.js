@@ -315,7 +315,8 @@ void main(){
   float ndvR=clamp(ndv+sig*0.55,0.0,1.0);
   float F=min(0.02+0.98*pow(1.0-ndvR,5.0),0.82);
   vec3 R=reflect(-V,n); R.y=abs(R.y);
-  vec3 refl=skyBase(normalize(vec3(R.x,R.y+sig*0.35,R.z)))*0.92;
+  // 空の映り込み(ほんのわずかに抑えめ)
+  vec3 refl=skyBase(normalize(vec3(R.x,R.y+sig*0.35,R.z)))*0.86;
 
   // 水中から散乱して戻る光(海の地の色): 真上から見るほど深い紺、斜めに見るほどわずかに青緑寄り
   float sunLit=clamp(dot(n,uSun)*0.5+0.5,0.0,1.0);
