@@ -169,7 +169,7 @@ vec3 skyBase(vec3 d){
 }`;
 export const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
 const SEA_VS = `
-uniform float uWT; uniform float uW0; uniform float uShift; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY; uniform vec4 uBoatPos; uniform vec4 uNearBoats[8];
+uniform float uWT; uniform float uW0; uniform float uShift; uniform float uChop; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY; uniform vec4 uBoatPos; uniform vec4 uNearBoats[8];
 varying vec3 vW; varying float vH;
 void main(){
   vec4 w=modelMatrix*vec4(position,1.0);
@@ -187,7 +187,7 @@ void main(){
   // 向きの異なる3つの短い風浪を交差させ、規則的な平行線状の起伏にならないようにする
   vec2 d2=wdV*0.825+wpV*0.565;
   vec2 d3=wdV*0.765-wpV*0.644;
-  float vRip=0.060*sin(dot(w.xz,wdV)*0.72-uWT*2.66+dot(w.xz,wpV)*0.16)+0.045*sin(dot(w.xz,d2)*1.18-uWT*3.40+1.1)+0.032*sin(dot(w.xz,d3)*1.63-uWT*4.00+2.3);
+  float vRip=(0.060*sin(dot(w.xz,wdV)*0.72-uWT*2.66+dot(w.xz,wpV)*0.16)+0.045*sin(dot(w.xz,d2)*1.18-uWT*3.40+1.1)+0.032*sin(dot(w.xz,d3)*1.63-uWT*4.00+2.3))*(1.0+0.35*uChop);
   h+=vRip;
   float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.70,1.0,r));
@@ -205,7 +205,7 @@ const waterMat = new THREE.ShaderMaterial({
   stencilZFail: THREE.KeepStencilOp,
   stencilZPass: THREE.KeepStencilOp,
   uniforms: {
-    uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uWindKt: { value: 9.0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR }, uShift: { value: 0 }, uGen: { value: 0.55 },
+    uTime: { value: 0 }, uWT: { value: 0 }, uW0: { value: W0 }, uWindKt: { value: 9.0 }, uSideBias: { value: -0.6 }, uSun: { value: SUN_DIR }, uShift: { value: 0 }, uGen: { value: 0.55 }, uChop: { value: 0.6 },
     uSeaA: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uSeaB: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uPatchC: { value: new THREE.Vector3() }, uPatchR: { value: 192 }, uBaseY: { value: 0 },
@@ -215,7 +215,7 @@ const waterMat = new THREE.ShaderMaterial({
   vertexShader: SEA_VS,
   fragmentShader: `
 precision highp float;
-varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uWindKt; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
+varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uWindKt; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform float uChop; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
 ${SKY_FN}
 float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
@@ -279,26 +279,31 @@ void main(){
     }
   }
   vec2 gBase=g;
-  // 3) 実海面の風浪スペクトル: 風向±55°に広がる波長7.5m〜0.2mの短い風浪を多数重ね、
-  //    ノイズの塊感や規則的な縞模様が出ない自然な水面の凹凸(実測の海面傾斜分布 Cox-Munk 相当)を作る。
+  // 3) 実海面の風浪スペクトル: 風向まわりに広がる短い風浪を多数重ね、ざらざらとした自然な水面の凹凸を作る。
+  //    uChop: 八景島(東京湾の短い吹送距離＋護岸反射)=1.0 で波長の短い切り立った三角波が密に立ち、
+  //           江の島(相模湾のうねり)=0.5前後 で周期の長いうねりの上にやや大きめの風浪が乗る
   //    ブロー(gust)の中ほど短い波が立って海面がざらつき、明るい空の映り込みが減って自然に暗く見える
-  float windAmp=clamp(uWindKt/11.0,0.45,1.55)*(0.62+0.62*gust);
+  float windAmp=clamp(uWindKt/11.0,0.50,1.25)*(0.66+0.55*gust);
   // 波群(ウェーブグループ): 場所ごとに波の立ち方が変化し、均一なタイル感をなくす
-  float grp=0.70+0.60*vn(vec2(wu*0.018+3.1,wv*0.014-uWT*0.06));
+  float grp=0.72+0.56*vn(vec2(wu*0.018+3.1,wv*0.014-uWT*0.06));
+  float lam0=mix(7.5,3.4,uChop);
+  float spreadA=mix(0.95,1.30,uChop);
+  float stpBase=mix(0.105,0.165,uChop);
   vec2 gs=vec2(0.0);
   float subRough=0.0;
   for(int i=0;i<NSPEC;i++){
     float fi=float(i);
-    float lam=7.5*pow(0.71,fi);
+    float lam=lam0*pow(0.72,fi);
     float k=6.2831853/lam;
-    float ang=sin(fi*2.39996+0.6)*0.95;
+    float ang=sin(fi*2.39996+0.6)*spreadA;
     vec2 d=normalize(wd*cos(ang)+wp*sin(ang));
-    float stp=0.085*(0.80+0.40*fract(fi*0.618+0.3))*windAmp*grp;
+    float stp=stpBase*(0.80+0.40*fract(fi*0.618+0.3))*windAmp*grp;
     // 画素より細かくなった波は法線から外し、代わりに「見えない粗さ」として反射のぼけに回す(遠景のちらつき防止)
-    float fk=exp(-dist*k*0.0016);
+    float fk=exp(-dist*k*0.0010);
     float om=sqrt(9.81*k);
     float ph=mod(dot(d,p)*k-om*uWT+fi*4.13,6.2831853);
-    gs+=d*(stp*cos(ph))*fk;
+    // 波頭が尖り谷が広い実際の風浪の形(チョップほど波頭が鋭い)
+    gs+=d*(stp*cos(ph)*(1.0+(0.25+0.35*uChop)*sin(ph)))*fk;
     subRough+=stp*stp*(1.0-fk)*0.5;
   }
 
@@ -1756,6 +1761,11 @@ export function createWorld(scene) {
         else { U4.uSeaA.value[i].set(1, 0, 0.1, 0); U4.uSeaB.value[i].set(0, 0, 0, 0); }
       }
       U4.uGen.value = clampN(0.82 - sea.H * 0.5, 0.35, 0.72);
+      // 海面のざらつき(短い風浪の密度・鋭さ): 八景島の三角波=1.0 / 江の島北風の短い風浪=0.72 / 江の島のうねり=0.5
+      U4.uChop.value = sea.type === 'chop' ? 1.0
+        : sea.type === 'short' ? 0.72
+          : sea.type === 'swell' ? 0.5
+            : (sea.venue === 'hakkeijima' ? 0.9 : 0.58);
       seaBaseY = -(Math.max(sea.longAmp, sea.H * 0.65) + 0.22);
       U4.uBaseY.value = seaBaseY;
       seaPatch.visible = true;
