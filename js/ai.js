@@ -1152,12 +1152,6 @@ export class AI {
     this.now = t;
     const curOptDeg = b.bestCloseDeg || bestCloseDeg(BASE_WIND_KT * (b.windF || 1));
     this.closeAngle = (curOptDeg * Math.PI) / 180 + this.closeAngleOffset;
-    if (b.capsized) {
-      b.steer = 0;
-      b.pullingSheet = false;
-      b.easingSheet = true;
-      return;
-    }
     if (b.maneuver) {
       // スタボ(s0 === 1)からポート(relNew < 0)へタックする最中にスタボ艇が近くにいる場合は、タック完了角(relNew)を風下へ深く落としてタック後すぐにスタボ艇のスターン後方へ逃げる
       if (b.maneuver.kind === 'tack' && b.maneuver.s0 === 1 && b.maneuver.relNew < 0 && this.hasStbdTackConflict()) {
@@ -1173,23 +1167,7 @@ export class AI {
       // マークや運営艇のすぐ近く(5.2m以内)にいる間はその場で回転せず、まず障害物から離れたクリアな海面へ出てからペナルティターンを行う
       if (this.nearObstacle(5.2)) {
         b.throttle = 1;
-        // 強風域(赤旗風域)のクローズでオーバーヒールしてきた際、CP艇もフェアにメインセールを抜いて(出して)ヒールを逃がし、
-    // 反応が遅れたCP艇や強風ブローに掴まったCP艇はメインを抜ききれず徐々にオーバーヒールして沈する
-    const optS = sheetOpt(b.twa);
-    const skillEaseThresh = 0.44 + clamp(1.05 - (b.skill || 1), 0, 0.25) * 1.85 + Math.sin(t * 0.65 + b.id * 2.3) * 0.16;
-    if ((b.capsizeRisk || 0) > skillEaseThresh) {
-      this._easingForGust = true;
-    } else if ((b.capsizeRisk || 0) < 0.18) {
-      this._easingForGust = false;
-    }
-    if (this._easingForGust && t >= 0 && !b.finished) {
-      b.easingSheet = true;
-      const targetEaseSheet = 0.42;
-      b.sheet += (targetEaseSheet - b.sheet) * (1 - Math.exp(-dt * 4.2));
-    } else {
-      b.easingSheet = false;
-      b.sheet += (optS - b.sheet) * (1 - Math.exp(-dt * 4.5));
-    }
+        b.sheet += (sheetOpt(b.twa) - b.sheet) * (1 - Math.exp(-dt * 4.5));
         const escH = this.avoidMarks(b.h, t < 0);
         b.steer = clamp(wrap(escH - b.h) * 3.8, -1, 1);
         return;
@@ -1198,23 +1176,7 @@ export class AI {
       b.throttle = 1;
       return;
     }
-    // 強風域(赤旗風域)のクローズでオーバーヒールしてきた際、CP艇もフェアにメインセールを抜いて(出して)ヒールを逃がし、
-    // 反応が遅れたCP艇や強風ブローに掴まったCP艇はメインを抜ききれず徐々にオーバーヒールして沈する
-    const optS = sheetOpt(b.twa);
-    const skillEaseThresh = 0.44 + clamp(1.05 - (b.skill || 1), 0, 0.25) * 1.85 + Math.sin(t * 0.65 + b.id * 2.3) * 0.16;
-    if ((b.capsizeRisk || 0) > skillEaseThresh) {
-      this._easingForGust = true;
-    } else if ((b.capsizeRisk || 0) < 0.18) {
-      this._easingForGust = false;
-    }
-    if (this._easingForGust && t >= 0 && !b.finished) {
-      b.easingSheet = true;
-      const targetEaseSheet = 0.42;
-      b.sheet += (targetEaseSheet - b.sheet) * (1 - Math.exp(-dt * 4.2));
-    } else {
-      b.easingSheet = false;
-      b.sheet += (optS - b.sheet) * (1 - Math.exp(-dt * 4.5));
-    }
+    b.sheet += (sheetOpt(b.twa) - b.sheet) * (1 - Math.exp(-dt * 4.5));
 
     // ブランケット / バックウインド脱出判定 (タック先やジャイブ先もブランケットでない場合は脱出する)
     const dirtyStrength = Math.max(b.cover, b.back * 1.15);
