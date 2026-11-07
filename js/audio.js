@@ -301,19 +301,24 @@ function hullWaveSlam(slam) {
   o.start(t); o.stop(t + 0.23);
 }
 
+let _lastAudioTack = null;
+let _sinceWindCross = 99;
+let _luffHoldTime = 0;
+let _lastSailFlogAt = -99;
+
 // シバー時の「バサバサッ」というセールクロスの連続はためきパルス (0度風位でもうるさくならないよう控えめな布音のみにする)
 function shiverFlap(lv) {
   if (!ctx || !noiseBuf || !boatBus) return;
   const t = ctx.currentTime;
-  const dur = 0.075 + Math.random() * 0.05;
+  const dur = 0.065 + Math.random() * 0.04;
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
   s.playbackRate.value = 0.78 + Math.random() * 0.35;
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-  bp.frequency.setValueAtTime(540 + Math.random() * 320, t);
-  bp.frequency.exponentialRampToValueAtTime(260 + Math.random() * 120, t + dur);
-  bp.Q.value = 0.85;
+  bp.frequency.setValueAtTime(520 + Math.random() * 280, t);
+  bp.frequency.exponentialRampToValueAtTime(250 + Math.random() * 110, t + dur);
+  bp.Q.value = 0.95;
   const g = ctx.createGain();
-  const peak = (0.08 + 0.14 * lv) * (0.85 + Math.random() * 0.3);
+  const peak = (0.032 + 0.065 * lv) * (0.85 + Math.random() * 0.3);
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(peak, t + 0.014);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -366,16 +371,30 @@ export function updateSailingAudio(dt, b, active = true) {
     chineFilter.frequency.setTargetAtTime(580 + sp * 620 + waveMod3 * 240, now, 0.10);
   }
 
-  // シバー (0度風位でもうるさくならないよう控えめな音量で再生)
+  // シバー: 真風角0度付近で「ザーっ」と鳴らないよう連続ノイズ(shiverGain)を大幅に抑え、
+  // わずかな時間の間に風軸を超えたり0度付近を通過する場合はさらに音量を絞る
+  if (b) {
+    if (_lastAudioTack !== null && b.tack !== _lastAudioTack) {
+      _sinceWindCross = 0;
+    } else {
+      _sinceWindCross = Math.min(99, _sinceWindCross + dt);
+    }
+    _lastAudioTack = b.tack;
+  }
   const luff = active && b ? clamp01(b.luff) : 0;
-  const lv = luff > 0.08 ? luff : 0;
-  shiverGain.gain.setTargetAtTime(lv * 0.20, now, 0.04);
-  shiverGain._amp.gain.setTargetAtTime(lv * 0.16, now, 0.04);
+  _luffHoldTime = luff > 0.08 ? Math.min(5.0, _luffHoldTime + dt) : Math.max(0, _luffHoldTime - dt * 2.5);
+  // 0度付近(twa < 18°)や風軸通過直後(2.2秒以内)・短時間のシバーでは音をごく控えめにする
+  const nearZeroAtten = twa < 0.32 ? 0.22 + 0.48 * clamp01(twa / 0.32) : 1.0;
+  const crossAtten = _sinceWindCross < 2.2 ? 0.20 + 0.80 * (_sinceWindCross / 2.2) : 1.0;
+  const briefAtten = clamp01(_luffHoldTime / 0.85);
+  const lv = luff > 0.08 ? luff * nearZeroAtten * crossAtten * (0.25 + 0.75 * briefAtten) : 0;
+  shiverGain.gain.setTargetAtTime(lv * 0.042, now, 0.06);
+  shiverGain._amp.gain.setTargetAtTime(lv * 0.035, now, 0.06);
   tShiver -= dt;
   if (tShiver <= 0) {
-    tShiver = 0.095 + Math.random() * 0.065;
-    shiverLfo.frequency.setValueAtTime(8 + Math.random() * 6, now);
-    if (active && lv > 0.08) shiverFlap(lv);
+    tShiver = 0.13 + Math.random() * 0.08;
+    shiverLfo.frequency.setValueAtTime(8 + Math.random() * 5, now);
+    if (active && lv > 0.10) shiverFlap(lv);
   }
   if (!active) return;
 
@@ -537,10 +556,17 @@ export function flap(vol = 0.6) {
   if (!ctx || vol <= 0.02) return;
   noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.42 * vol);
 }
-// タック/ジャイブでセールが返る自然な「バサッ」: 低音の「ブウ」というオシレーター音を廃し、純粋なセールクロスの布音だけで表現
-export function sailFlog(vol = 0.8) {
+// タック/ジャイブでセールが返る自然な「バサッ」: わずかな時間の間に風軸を何度も超える場合(0度付近での揺れ等)は音を抑え目にする
+export function sailFlog(vol = 0.8, isNearZeroOrRapid = false) {
   if (!ctx || vol <= 0.02) return;
   const t0 = ctx.currentTime;
+  const dtFlog = t0 - _lastSailFlogAt;
+  if (dtFlog < 0.45) return; // 極短時間の連続発音を防止
+  const rapidScale = dtFlog < 2.6 ? 0.22 + 0.78 * ((dtFlog - 0.45) / 2.15) : 1.0;
+  const zeroScale = isNearZeroOrRapid ? 0.28 : 1.0;
+  const effVol = vol * Math.min(rapidScale, zeroScale);
+  _lastSailFlogAt = t0;
+  if (effVol <= 0.02) return;
   // 1) 「シュッ…バサッ」: セール布が大きくしなって空気を切る中低域〜中域の布音
   const s1 = ctx.createBufferSource(); s1.buffer = noiseBuf; s1.playbackRate.value = 0.78;
   const bp1 = ctx.createBiquadFilter(); bp1.type = 'bandpass'; bp1.Q.value = 0.72;
@@ -549,8 +575,8 @@ export function sailFlog(vol = 0.8) {
   bp1.frequency.exponentialRampToValueAtTime(310, t0 + 0.34);
   const g1 = ctx.createGain();
   g1.gain.setValueAtTime(0.0001, t0);
-  g1.gain.linearRampToValueAtTime(0.38 * vol, t0 + 0.035); // 風をまたぐ瞬間の「バ」
-  g1.gain.linearRampToValueAtTime(0.55 * vol, t0 + 0.095); // 裏返って張る「サッ」
+  g1.gain.linearRampToValueAtTime(0.38 * effVol, t0 + 0.035); // 風をまたぐ瞬間の「バ」
+  g1.gain.linearRampToValueAtTime(0.55 * effVol, t0 + 0.095); // 裏返って張る「サッ」
   g1.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.36);
   s1.connect(bp1); bp1.connect(g1); g1.connect(master);
   s1.start(t0, Math.random() * 1.0); s1.stop(t0 + 0.40);
@@ -562,7 +588,7 @@ export function sailFlog(vol = 0.8) {
   lp2.frequency.exponentialRampToValueAtTime(360, t0 + 0.42);
   const g2 = ctx.createGain();
   g2.gain.setValueAtTime(0.0001, t0 + 0.11);
-  g2.gain.linearRampToValueAtTime(0.30 * vol, t0 + 0.16);
+  g2.gain.linearRampToValueAtTime(0.30 * effVol, t0 + 0.16);
   g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.43);
   s2.connect(lp2); lp2.connect(g2); g2.connect(master);
   s2.start(t0 + 0.11, Math.random() * 1.0); s2.stop(t0 + 0.46);
