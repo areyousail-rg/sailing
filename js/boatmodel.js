@@ -1506,6 +1506,9 @@ export class BoatModel {
         const reachLift = clamp((twa - 1.28) / 1.05, 0, 1);
         this.cbBoard.position.y = Math.max(reachLift * 0.16, pk * 0.23);
       }
+      if (this.cbBoard.userData.underBlade) {
+        this.cbBoard.userData.underBlade.visible = !!(b.capsized || Math.abs(b.heel) > 0.36);
+      }
     }
     if (this.mast) {
       this.mast.rotation.x = -0.018 * pk;
@@ -1774,34 +1777,64 @@ export class BoatModel {
     }
 
     // 沈(カプサイズ)時のセンターボード乗り起こし演出:
-    // 傾いた船体の風上側船底から突き出たセンターボードにスキッパー・クルーが乗り、体重をかけて船体を起こすアニメーション
+    // 傾いた船体の船底から水平に突き出たアルミ製センターボード(x=0, y=-0.05..-0.88, z=-0.46..-0.06)の上に
+    // スキッパー(z=-0.11)とクルー(z=-0.39)が実際に足を乗せて立ち、ガンネルを掴んで後ろへ体重をかけて船体を起こすアニメーション
     if (b.capsized) {
       const capS = b.capsizeSide || sgn || 1;
       const cph = clamp(b.capsizePhase || 0, 0, 1);
-      // 0..0.24: ガンネルを越えてセンターボードへ移動, 0.24..0.82: センターボード上で後ろへ体重をかけて起こす, 0.82..1.0: コックピットへ戻る
-      const onBoard = cph < 0.24 ? sStep(0.04, 0.24, cph) : cph < 0.82 ? 1.0 : 1.0 - sStep(0.82, 0.98, cph);
-      const leverPull = cph >= 0.20 && cph <= 0.86 ? Math.sin(((cph - 0.20) / 0.66) * Math.PI) : 0;
-      const hX = capS * (0.50 * (1 - onBoard) + (0.38 + 0.08 * leverPull) * onBoard);
-      const hY = 0.28 * (1 - onBoard) + (-0.42 - 0.10 * leverPull) * onBoard;
-      const hZ = 0.65 * (1 - onBoard) + 0.14 * onBoard;
+      // 0..0.22: ガンネルを越えてセンターボード上へ移動, 0.22..0.84: センターボードの上に立って後ろへ体重をかけて起こす, 0.84..1.0: コックピットへ戻る
+      const onBoard = cph < 0.22 ? sStep(0.03, 0.22, cph) : cph < 0.84 ? 1.0 : 1.0 - sStep(0.84, 0.98, cph);
+      const leverPull = cph >= 0.18 && cph <= 0.86 ? Math.sin(((cph - 0.18) / 0.68) * Math.PI) : 0;
+
+      // rotation.order = 'ZXY' により、外側の Z回転(-b.heel)で船体ヒール角を打ち消して海面に対し真っ直ぐセンターボード上に立たせる
+      this.helmRig.rotation.order = 'ZXY';
+      this.crewRig.rotation.order = 'ZXY';
+
+      // スキッパー: センターボード後部(z=-0.11, y=-0.48, x=capS*0.03)に足を乗せて立つ
+      const hX = capS * (0.48 * (1 - onBoard) + 0.03 * onBoard);
+      const hY = 0.28 * (1 - onBoard) + (-0.46 - 0.12 * leverPull) * onBoard;
+      const hZ = 0.55 * (1 - onBoard) + (-0.11) * onBoard;
       this.helmRig.position.set(hX, hY, hZ);
-      this.helmRig.rotation.y = capS * 1.48;
-      this.helmRig.rotation.z = (-b.heel * 0.78 + capS * (0.32 + 0.22 * leverPull)) * onBoard;
+      this.helmRig.rotation.x = 0;
+      this.helmRig.rotation.y = capS * (1.35 * (1 - onBoard) + (Math.PI * 0.5) * onBoard);
+      this.helmRig.rotation.z = (-b.heel - capS * (0.18 + 0.26 * leverPull)) * onBoard;
       if (this.helm.userData.upper) {
-        this.helm.userData.upper.rotation.x = 0.35 + 0.45 * leverPull;
-        this.helm.userData.upper.rotation.z = -capS * 0.12 * onBoard;
+        const hu = this.helm.userData.upper;
+        hu.rotation.x = -0.22 * onBoard - 0.34 * leverPull;
+        hu.rotation.z = 0;
+        if (hu.userData.armL && hu.userData.armR) {
+          hu.userData.armL.rotation.set(-1.18 * onBoard, 0, -0.12);
+          hu.userData.armR.rotation.set(-1.18 * onBoard, 0, 0.12);
+        }
       }
-      const cX = capS * (0.48 * (1 - onBoard) + (0.36 + 0.08 * leverPull) * onBoard);
-      const cY = 0.28 * (1 - onBoard) + (-0.40 - 0.10 * leverPull) * onBoard;
-      const cZ = -0.10 * (1 - onBoard) - 0.20 * onBoard;
+      if (this.helm.userData.head) {
+        this.helm.userData.head.rotation.set(0.22 * onBoard, 0, 0);
+      }
+
+      // クルー: センターボード前部(z=-0.39, y=-0.50, x=capS*0.03)に足を乗せて立つ
+      const cX = capS * (0.46 * (1 - onBoard) + 0.03 * onBoard);
+      const cY = 0.28 * (1 - onBoard) + (-0.50 - 0.12 * leverPull) * onBoard;
+      const cZ = -0.12 * (1 - onBoard) + (-0.39) * onBoard;
       this._crewX = cX; this._crewY = cY; this._crewZ = cZ;
       this.crewRig.position.set(cX, cY, cZ);
-      this.crewRig.rotation.y = capS * 1.48;
-      this.crewRig.rotation.z = (-b.heel * 0.78 + capS * (0.30 + 0.24 * leverPull)) * onBoard;
+      this.crewRig.rotation.x = 0;
+      this.crewRig.rotation.y = capS * (1.35 * (1 - onBoard) + (Math.PI * 0.5) * onBoard);
+      this.crewRig.rotation.z = (-b.heel - capS * (0.20 + 0.28 * leverPull)) * onBoard;
       if (this.crew.userData.upper) {
-        this.crew.userData.upper.rotation.x = 0.38 + 0.48 * leverPull;
-        this.crew.userData.upper.rotation.z = -capS * 0.12 * onBoard;
+        const cu = this.crew.userData.upper;
+        cu.rotation.x = -0.24 * onBoard - 0.36 * leverPull;
+        cu.rotation.z = 0;
+        if (cu.userData.armL && cu.userData.armR) {
+          cu.userData.armL.rotation.set(-1.20 * onBoard, 0, -0.12);
+          cu.userData.armR.rotation.set(-1.20 * onBoard, 0, 0.12);
+        }
       }
+      if (this.crew.userData.head) {
+        this.crew.userData.head.rotation.set(0.24 * onBoard, 0, 0);
+      }
+    } else {
+      this.helmRig.rotation.order = 'XYZ';
+      this.crewRig.rotation.order = 'XYZ';
     }
 
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
@@ -1837,8 +1870,36 @@ export class BoatModel {
     const vAbs = Math.abs(b.v);
     const spdF = clamp((vAbs - 0.72) / 1.75, 0, 1.30);
 
-    // 1) 通常走行時は常時上へ噴き上げる3Dパーティクル(0..15)は出さず非表示にする(船と海面の接地点が白くなるのも防ぐ)
-    if (!this._sprayZeroed) {
+    // 1) 14kt超の強風白波域では、添付画像2枚目のように船体バウ〜サイドに沿って白い泡塊・飛沫クラウド(0..15)が激しく舞い上がる演出を再現
+    //    14kt未満の通常時は(0..15)を非表示に保つ
+    const galeWhitecapF = clamp((BASE_WIND_KT * (b.windF || 1) - 13.8) / 4.2, 0, 1.35);
+    const activeGaleSpray = galeWhitecapF > 0.02 && spdF > 0.05 && !b.capsized;
+    if (activeGaleSpray) {
+      this._sprayZeroed = false;
+      const waveBoost = clamp(0.65 + Math.max(0, ws.h) * 2.2 + Math.max(0, ws.slope) * 2.8, 0.55, 1.65);
+      const sprayAmp = clamp(galeWhitecapF * (0.55 + 0.55 * spdF) * waveBoost, 0, 1.35);
+      for (let i = 0; i < 16; i++) {
+        const isWindward = i < 11;
+        const side = isWindward ? (sgn || 1) : -(sgn || 1);
+        const cyc = (t * (2.6 + (i % 4) * 0.35) + i * 0.41 + this.phase) % 1.0;
+        const arc = Math.sin(cyc * Math.PI);
+        const along = (i % 8) / 7; // 0(バウ) .. 1(コクピット横)
+        const z = -2.18 + along * 2.65 + cyc * 0.68;
+        const hx = hullWaterHalfWidth(clamp(z, -2.30, 2.20));
+        const x = side * (hx + 0.04 + cyc * (0.28 + 0.24 * along) * sprayAmp);
+        const y = 0.08 + arc * (0.34 + 0.36 * (1 - along * 0.45)) * sprayAmp - cyc * cyc * 0.10;
+        const sz = (0.16 + 0.22 * Math.sin(cyc * Math.PI) + 0.08 * along) * clamp(0.65 + 0.55 * sprayAmp, 0.5, 1.35);
+        _spPos.set(x, y, z);
+        _spEul.set(cyc * 2.4 + i, side * 0.55, cyc * 1.8);
+        _spQuat.setFromEuler(_spEul);
+        _spScale.set(sz * 1.18, sz * 0.88, sz * 1.38);
+        _spM4.compose(_spPos, _spQuat, _spScale);
+        this.bowSprayMesh.setMatrixAt(i, _spM4);
+        const fade = Math.pow(1 - cyc, 1.15) * Math.min(1, cyc * 5.5) * clamp(0.26 + 0.24 * sprayAmp, 0.14, 0.48);
+        _spCol.setRGB(0.95 * fade, 0.98 * fade, 1.0 * fade);
+        this.bowSprayMesh.setColorAt(i, _spCol);
+      }
+    } else if (!this._sprayZeroed) {
       _spM4.makeScale(0, 0, 0);
       _spCol.setScalar(0);
       for (let i = 0; i < 16; i++) {
@@ -1849,7 +1910,6 @@ export class BoatModel {
     }
 
     // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)、または14kt超の強風白波時・サーフィン時に上がるしぶき演出 (16..27)
-    const galeWhitecapF = clamp((BASE_WIND_KT * (b.windF || 1) - 13.8) / 4.5, 0, 1.35);
     this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
     if (b.visualSlam > 0.17) {
       this.slamBurstT = 0.001;
@@ -1862,14 +1922,14 @@ export class BoatModel {
     )) {
       this.slamBurstT = 0.001;
       this.slamBurstPow = clamp(0.48 + (ws.h * 1.45 + Math.abs(ws.slope) * 2.4 + galeWhitecapF * 0.28), 0.48, 1.18);
-      this.slamAutoCD = (galeWhitecapF > 0.15 ? 1.15 : 2.2) + Math.random() * (galeWhitecapF > 0.15 ? 0.85 : 1.4);
+      this.slamAutoCD = (galeWhitecapF > 0.15 ? 0.95 : 2.2) + Math.random() * (galeWhitecapF > 0.15 ? 0.75 : 1.4);
     }
 
     const SLAM_DUR = 0.56;
     if (this.slamBurstT > 0) {
       this.slamBurstT += dt;
       if (this.slamBurstT >= SLAM_DUR) this.slamBurstT = 0;
-    } else if (this._sprayIdleCleared) {
+    } else if (this._sprayIdleCleared && !activeGaleSpray) {
       return;
     }
     this._sprayIdleCleared = this.slamBurstT <= 0;
