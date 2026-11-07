@@ -1759,14 +1759,14 @@ function playerControl(dt) {
   b.easingSheet = dn;
   if (autoTrim) {
     let tg = b.sOpt;
-    // 「引く」ボタンの効きを大幅に強化: ランニングやリーチングでもメインセールをしっかり素早く引き込めてパンピング・素早いジャイブがしやすいよう設定
-    if (dn) tg = Math.max(0.04, b.sOpt - 0.72);
+    // 「引く」ボタンはしっかり素早く引き込め、「出す」ボタンはセールを適度に逃がして滑らかに減衰させる
+    if (dn) tg = Math.max(0.18, b.sOpt - 0.52);
     else if (up) tg = Math.min(1, b.sOpt + 0.62);
-    const rate = dn ? 7.5 : up ? 6.8 : 3.2;
+    const rate = dn ? 4.2 : up ? 6.8 : 3.2;
     b.sheet += (tg - b.sheet) * (1 - Math.exp(-dt * rate));
   } else {
     if (up) b.sheet = Math.min(1, b.sheet + dt * 1.35);
-    if (dn) b.sheet = Math.max(0.04, b.sheet - dt * 1.85);
+    if (dn) b.sheet = Math.max(0.12, b.sheet - dt * 1.15);
   }
 }
 
@@ -1788,11 +1788,9 @@ function handlePlayerSailingEvents(b) {
     b.justCapsized = false;
     sailFlog(1.2);
     thud(0.95, 1.05);
-    toast('オーバーヒールで沈！ センターボードに乗って起こしています…', 'bad', 4600);
   }
   if (b.justRighted) {
     b.justRighted = false;
-    toast('船体を起こして復帰！ 強風クローズでは適宜「出す」でメインセールを逃がそう', 'info', 3600);
   }
 }
 
