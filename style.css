@@ -184,9 +184,27 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 /* スタート画面 = エントリーシート */
 .menuCard{pointer-events:auto;width:min(680px,94vw);padding:0 0 11px;background:rgba(12,18,24,.95);max-height:calc(100vh - 104px);overflow-y:auto;margin:0 auto;display:flex;flex-direction:column;gap:8px;border-top:2px solid var(--accent)}
 .menuCard > *:not(.menuTitleRow){margin-left:15px;margin-right:15px}
-.menuTitleRow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:9px 15px;border-bottom:1px solid var(--line);background:rgba(19,27,36,.65)}
-.menuTitleRow h1{display:flex;align-items:center;gap:8px;font-size:1.16rem;letter-spacing:.05em}
+.menuTitleRow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 15px;border-bottom:1px solid var(--line);background:rgba(19,27,36,.78)}
+.menuTitleRow h1{display:flex;align-items:center;gap:8px;font-size:1.16rem;letter-spacing:.05em;flex-shrink:0}
 .menuTitleRow h1::before{content:"";width:4px;height:16px;background:var(--accent);flex-shrink:0}
+.menuWindHeader{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;flex:1}
+.mwhMain{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:rgba(9,14,20,.72);padding:5px 11px;border-radius:var(--r);border:1px solid var(--line-2)}
+.mwhItem{display:inline-flex;align-items:baseline;gap:5px}
+.mwhSub{font-size:.66rem;font-weight:700;color:var(--mute);letter-spacing:.05em}
+.mwhVal{font-family:var(--f-num);font-size:1.22rem;font-weight:800;color:#fff;letter-spacing:.03em;font-variant-numeric:tabular-nums;line-height:1.1}
+.mwhVal small{font-size:.76rem;font-weight:700;color:var(--accent);margin-left:2px}
+.mwhSep{color:var(--line-2);font-weight:700;font-size:.95rem}
+.mwhMax{font-family:var(--f-num);font-size:.82rem;font-weight:700;color:#c2d0de;margin-left:3px;font-variant-numeric:tabular-nums}
+.mwhFlag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:3px;font-size:.76rem;font-weight:800;letter-spacing:.04em;line-height:1.1;align-self:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.mwhFlag.hidden{display:none!important}
+.mwhFlag.yellow{background:#f5c400;color:#11161c;border:1px solid #ffe066}
+.mwhFlag.red{background:#e02424;color:#fff;border:1px solid #ff7b7b;animation:pulseRedFlag 1.4s ease-in-out infinite}
+@keyframes pulseRedFlag{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+.mwhPresets{display:inline-flex;gap:0;border-radius:var(--r);overflow:hidden;border:1px solid var(--line-2)}
+.mwhBtn{padding:4px 7px;font-size:.64rem;font-weight:700;background:var(--bg-2);color:var(--mute);border:none;border-right:1px solid var(--line-2);cursor:pointer;line-height:1.2}
+.mwhBtn:last-child{border-right:none}
+.mwhBtn:hover{color:var(--txt);background:var(--bg-3)}
+.mwhBtn.sel{background:var(--bg-3);color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
 .menuTopRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .menuTopRow3{grid-template-columns:1.15fr 1.05fr .9fr;gap:10px}
 .menuGroup{display:flex;flex-direction:column;gap:0;min-width:0}
