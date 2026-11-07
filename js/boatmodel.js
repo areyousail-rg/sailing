@@ -1804,6 +1804,7 @@ export class BoatModel {
     const b = this.boat;
     const vAbs = Math.abs(b.v);
     const spdF = clamp((vAbs - 0.72) / 1.75, 0, 1.30);
+    const galeWhitecapF = clamp((BASE_WIND_KT * (b.windF || 1) - 13.8) / 4.2, 0, 1.35);
 
     // 1) 通常航行時の常時バウしぶき(0..15)は非表示に保つ(カメラ近くの海面が白くなりすぎるのを防ぐ)
     if (!this._sprayZeroed) {
@@ -1816,27 +1817,26 @@ export class BoatModel {
       this._sprayZeroed = true;
     }
 
-    // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)、または14kt超の強風白波時・サーフィン時に上がるしぶき演出 (16..27)
+    // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)に上がるしぶき演出 (16..27)
     this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
     if (b.visualSlam > 0.17) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75 + galeWhitecapF * 0.22, 0.48, 1.25);
+      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75 + galeWhitecapF * 0.15, 0.48, 1.20);
       b.visualSlam = 0;
     } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.72 && (
       (ws.h > 0.048 && ws.slope > 0.055) ||
-      (galeWhitecapF > 0.12 && ws.h > 0.025 && Math.abs(ws.slope) > 0.032) ||
       (b.isSurfing && vAbs > 1.8)
     )) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.48 + (ws.h * 1.45 + Math.abs(ws.slope) * 2.4 + galeWhitecapF * 0.28), 0.48, 1.18);
-      this.slamAutoCD = (galeWhitecapF > 0.15 ? 0.95 : 2.2) + Math.random() * (galeWhitecapF > 0.15 ? 0.75 : 1.4);
+      this.slamBurstPow = clamp(0.48 + (ws.h * 1.45 + Math.abs(ws.slope) * 2.4), 0.48, 1.15);
+      this.slamAutoCD = 2.2 + Math.random() * 1.4;
     }
 
     const SLAM_DUR = 0.56;
     if (this.slamBurstT > 0) {
       this.slamBurstT += dt;
       if (this.slamBurstT >= SLAM_DUR) this.slamBurstT = 0;
-    } else if (this._sprayIdleCleared && !activeGaleSpray) {
+    } else if (this._sprayIdleCleared) {
       return;
     }
     this._sprayIdleCleared = this.slamBurstT <= 0;
