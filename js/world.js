@@ -169,22 +169,31 @@ vec3 skyBase(vec3 d){
 }`;
 export const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
 const SEA_VS = `
-uniform float uWT; uniform float uW0; uniform float uShift; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY; uniform vec4 uBoatPos; uniform vec4 uNearBoats[8];
+uniform float uWT; uniform float uW0; uniform float uWindKt; uniform float uShift; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec3 uPatchC; uniform float uPatchR; uniform float uBaseY; uniform vec4 uBoatPos; uniform vec4 uNearBoats[8];
 varying vec3 vW; varying float vH;
 void main(){
   vec4 w=modelMatrix*vec4(position,1.0);
   float h=0.0;
 #ifdef PATCH
+  // 強風時(14kt超)は風で波が高くなり波頭が切り立つ物理特性を頂点変位にも反映
+  float galeAmp=1.0+clamp((uWindKt-13.5)*0.065,0.0,0.65);
   // カメラ周辺の局所パッチでは waveSample と同じ波浪成分で頂点を上下させ、船体外側で波に沈んだり出たりする自然な海面高さを維持する
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float wgt=B.z>0.5?1.24:0.86;
-    if(A.w>0.001) h+=A.w*wgt*sin(A.z*dot(A.xy,w.xz)-B.x*uWT+B.y);
+    float wgt=(B.z>0.5?1.24:0.92)*galeAmp;
+    if(A.w>0.001){
+      float ph=A.z*dot(A.xy,w.xz)-B.x*uWT+B.y;
+      float s=sin(ph);
+      // 波頭が鋭く盛り上がり谷が広くなるトロコイド波形(強風ほど波頭が尖って崩れやすくなる)
+      float peak=s+0.24*max(0.0,s)*s*clamp((uWindKt-11.0)*0.12,0.2,1.0);
+      h+=A.w*wgt*peak;
+    }
   }
   // 基底ベクトルは時間変化しない基準風向(uW0)に固定し、シフト変化時に遠方座標で波が横滑りする現象を完全に防止
   vec2 wdV=vec2(-sin(uW0),cos(uW0));
   vec2 wpV=vec2(-wdV.y,wdV.x);
-  float vRip=0.075*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.16)+0.052*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.20);
+  float ripScale=1.0+clamp((uWindKt-13.5)*0.09,0.0,0.85);
+  float vRip=(0.075*sin(dot(w.xz,wdV)*0.72-uWT*3.1+dot(w.xz,wpV)*0.16)+0.052*sin(dot(w.xz,wdV)*1.18-uWT*4.0-dot(w.xz,wpV)*0.20))*ripScale;
   h+=vRip;
   float r=length(w.xz-uPatchC.xz)/max(uPatchR,1.0);
   w.y=mix(h,uBaseY,smoothstep(0.70,1.0,r));
@@ -237,39 +246,44 @@ void main(){
   float wu=dot(p,wp), wv=dot(p,wd);
   float gust=smoothstep(0.84,1.18,wf);
   float blow=smoothstep(0.98,1.16,wf);
-  // 局所風速[kt]: 15knotを超えた海面部分(ブロー域または全体が15kt超の海面)にはリアルな白波(ホワイトキャップ＆風下への泡筋)が立ち、風が強くなるほど白波の度合いが強くなる
+  // 局所風速[kt]: 14knotを超えたあたりから強風で波が高くなり波頭が崩れて白波(ホワイトキャップ)が発生し始め、風が強くなるほど密度・規模が増大する
   float localKt=uWindKt*(0.88+0.36*puff+uSideBias*sideNorm*0.065);
-  float over15=max(localKt-15.0,(uWindKt-15.0)*0.85);
-  float whitecapIntensity=clamp(over15/4.8,0.0,1.45);
+  float over14=max(localKt-13.8,(uWindKt-13.8)*0.92);
+  float whitecapIntensity=clamp(over14/3.6,0.0,1.95);
+  float galeWaveBoost=1.0+clamp((uWindKt-13.5)*0.075,0.0,0.75);
 
   vec2 g=vec2(0.0);
   float wH=0.0;
+  float farCrestField=0.0;
   // 1) 風下方向(wd)へ伝播する立体的なベース波浪(風向きと完全に一致して風上から風下へ進行)
   for(int i=0;i<NWAVE;i++){
     float fi=float(i);
     float spread=(fi-1.5)*0.12;
     vec2 d=normalize(wd*cos(spread)+wp*sin(spread));
-    float k=0.14*pow(1.72,fi); float A=0.62*pow(0.54,fi);
+    float k=0.14*pow(1.72,fi); float A=0.62*pow(0.54,fi)*galeWaveBoost;
     float w=sqrt(9.81*k)*0.95;
-    float fade=exp(-dist*k*0.0032);
-    if(fade<0.02) break;
+    float fade=exp(-dist*k*0.0028);
+    if(fade<0.015) break;
     float ph=mod(dot(d,p)*k-uWT*w+fi*1.7,628.3185);
     float s=sin(ph), co=cos(ph);
     // 波頭が尖り谷がなだらかになるトロコイド風の勾配強調で立体感を高める
-    float sharp=1.0+0.28*s;
+    float sharp=1.0+(0.28+0.14*clamp(whitecapIntensity,0.0,1.2))*s;
     g+=d*(A*k*co*sharp)*fade*uGen*1.45;
     wH+=A*s*fade*uGen;
+    // 遠景〜中景でも波の峰(s>0)と前斜面(co>0)の位置が消えないよう保持
+    farCrestField+=max(0.0,s+0.35*co)*pow(0.68,fi);
   }
   // 2) 海況(三角波・うねり・短周期の風浪): sim.js waveSample と完全に同じ成分・同じ進行方向で法線と高さを算出
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float fd=exp(-dist*A.z*0.0040);
-    if(fd>0.02){
+    float fd=exp(-dist*A.z*0.0034);
+    if(fd>0.015){
       float ph=mod(A.z*dot(A.xy,p)-B.x*uWT+B.y,6.2831853);
       float s=sin(ph), co=cos(ph);
-      float sharp=1.0+0.30*s;
-      g+=A.xy*(A.w*A.z*co*sharp)*fd*1.90;
-      wH+=A.w*s*fd;
+      float sharp=1.0+(0.30+0.15*clamp(whitecapIntensity,0.0,1.2))*s;
+      g+=A.xy*(A.w*A.z*co*sharp)*fd*1.90*galeWaveBoost;
+      wH+=A.w*s*fd*galeWaveBoost;
+      farCrestField+=max(0.0,s+0.40*co)*clamp(A.w*A.z*3.2,0.15,0.95);
     }
   }
   // 3) 風下方向(wd)へ真っ直ぐ進む中〜近距離の風浪リップル(すべて wv - uWT*speed で風上から風下へ厳密に伝播)
@@ -278,7 +292,7 @@ void main(){
     vec2 pRip2=vec2(wu*1.05+4.1,wv*2.85-uWT*3.9);
     float r1=vn(pRip1)-0.5;
     float r2=vn(pRip2)-0.5;
-    float ripFade=exp(-dist*0.0022)*(0.22+0.64*gust+0.30*whitecapIntensity);
+    float ripFade=exp(-dist*0.0022)*(0.22+0.64*gust+0.34*whitecapIntensity);
     g+=(wd*(r1*0.72+r2*0.48)+wp*(r1*0.14-r2*0.12))*ripFade;
   }
   // 4) ドローン・艇内カメラ近傍(dist<95m)の細かい水面ディテール: 船のすぐ下を風下方向(wd)へ流れる水面テクスチャ
@@ -289,7 +303,7 @@ void main(){
     g+=(wd*(micro1*0.26+micro2*0.18)+wp*(micro1*0.06-micro2*0.05))*nearF;
   }
 
-  vec3 n=normalize(vec3(-g.x*1.12,1.0,-g.y*1.12));
+  vec3 n=normalize(vec3(-g.x*1.14,1.0,-g.y*1.14));
   float ndv=max(dot(n,V),0.0);
   // カメラ近傍や遠方で視線角が浅くなった際にフレネル反射で海面が白っぽく飛ぶのを防ぎ、しっかりとした海の青色を保つ
   float effNdv=max(ndv,0.30+0.12*smoothstep(600.0,1650.0,dist));
@@ -299,11 +313,11 @@ void main(){
 
   // 波の立体陰影: カメラ近傍でも白っぽくならず鮮やかなマリンブルー〜コバルトブルーに見える水色設定
   float sunLit=clamp(dot(n,uSun)*0.5+0.5,0.0,1.0);
-  float elev=clamp(wH*1.45+vH*0.62,-1.0,1.0);
+  float elev=clamp(wH*1.48+vH*0.68,-1.0,1.15);
   vec3 troughCol=vec3(0.004,0.068,0.195);
   vec3 midCol=vec3(0.009,0.148,0.315);
   vec3 crestCol=vec3(0.025,0.285,0.445);
-  float crest=clamp(length(g)*1.85+max(0.0,elev)*0.45,0.0,1.0);
+  float crest=clamp(length(g)*1.85+max(0.0,elev)*0.48,0.0,1.0);
   vec3 body=mix(troughCol,midCol,smoothstep(-0.55,0.20,elev));
   body=mix(body,crestCol,crest*0.66);
   // 波頭の太陽光透け(SSS)と波斜面の明暗コントラスト
@@ -319,25 +333,51 @@ void main(){
   col+=vec3(1.0,0.95,0.84)*spec*(0.32+0.68*F);
 
   if(dist<3200.0){
-    // 15knot以下の通常時は波頭のごく控えめなハイライトのみとし、
-    // 15knotを超える強風時(whitecapIntensity>0)は海面にリアルな白波(波頭が崩れる白い泡と風下へ引く泡筋)が発生する
-    float foamN1=vn(vec2(wu*0.45,wv*0.90-uWT*2.1));
-    float foamN2=vn(vec2(wu*1.55+3.7,wv*2.35-uWT*3.0));
-    float foamN3=vn(vec2(wu*3.80-6.2,wv*4.20-uWT*3.8));
+    // 原理: 14knotを超えると強風で波が高くなり、波の峰(elev>0)の風下側前斜面(fwdSlope>0)が限界を超えて崩れることで白波が発生する
+    float wci=clamp(whitecapIntensity,0.0,1.95);
+    float fwdSlope=max(0.0,dot(g,wd));
+    float crestSlope=length(g)*2.35+fwdSlope*1.65+max(0.0,elev)*0.78+farCrestField*0.26;
+    float foamN1=vn(vec2(wu*0.38,wv*0.86-uWT*2.15));
+    float foamN2=vn(vec2(wu*1.45+3.7,wv*2.25-uWT*3.05));
+    float foamN3=vn(vec2(wu*3.90-6.2,wv*4.40-uWT*3.90));
     float foamDetail=0.50*foamN1+0.32*foamN2+0.18*foamN3;
-    float crestSlope=length(g)*2.45+max(0.0,elev)*0.58;
-    float waveMetric=crestSlope+foamDetail*0.42;
-    float baseFoam=smoothstep(0.96,1.20,waveMetric)*0.07*(0.55+0.45*nearBlue);
-    // 15kt超の白波: 波の峰に沿って不規則に砕ける白波パッチ＋気泡の粒立ち＋風下へ尾を引くスピンドリフト筋
-    float wci=clamp(whitecapIntensity,0.0,1.5);
-    float patchMask=smoothstep(0.36-0.12*min(wci,1.0),0.74,vn(vec2(wu*0.18+1.9,wv*0.22-uWT*0.85))*0.65+foamN1*0.35);
-    float wcThresh=mix(0.84,0.46,clamp(wci*0.85,0.0,1.0));
-    float wcCrest=smoothstep(wcThresh,wcThresh+0.18,waveMetric+wci*0.20)*patchMask;
-    float wcBubble=0.62+0.38*smoothstep(0.28,0.78,foamN2*0.60+foamN3*0.40);
-    float wcStreak=smoothstep(0.62-0.14*min(wci,1.0),0.88,vn(vec2(wu*0.82,wv*0.20-uWT*1.45))*0.65+foamN2*0.35)*smoothstep(0.25,0.65,crestSlope);
-    float galeFoam=clamp((wcCrest*wcBubble*0.92+wcStreak*patchMask*0.42)*smoothstep(0.0,0.28,wci)*(0.55+0.45*min(wci,1.2)),0.0,0.92);
-    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.94)*exp(-dist*0.0012);
-    vec3 foamCol=mix(vec3(0.88,0.94,0.99),vec3(0.98,0.995,1.0),clamp(wcCrest+0.35*foamN3,0.0,1.0));
+    float waveMetric=crestSlope+foamDetail*0.40;
+    float baseFoam=smoothstep(0.98,1.22,waveMetric)*0.05*(0.55+0.45*nearBlue);
+
+    float galeFoam=0.0;
+    float subSurfTurq=0.0;
+    if(wci>0.001){
+      // 1) 遠景〜中景の白波(添付画像1枚目): 風に直交する波峰ラインに沿って点在するくっきり白い崩れ波と風下への短い泡筋
+      // 波峰の間隔(wv方向約9〜14m周期)と横方向の波頭切れ目(wu方向)で自然な白波群を形成
+      float waveRow1=sin(wv*0.58-uWT*2.55+foamN1*2.4);
+      float waveRow2=sin(wv*0.92-uWT*3.25+foamN2*2.2+1.9);
+      float crestBand=max(smoothstep(0.52-0.16*min(wci,1.2),0.92,waveRow1),smoothstep(0.58-0.15*min(wci,1.2),0.95,waveRow2)*0.85);
+      float spanBreak=smoothstep(0.46-0.14*min(wci,1.3),0.76,vn(vec2(wu*0.14+1.7,wv*0.24-uWT*0.95))*0.65+foamN1*0.35);
+      float wcThresh=mix(0.88,0.38,clamp(wci*0.72,0.0,1.0));
+      float wcMidFar=smoothstep(wcThresh,wcThresh+0.16,waveMetric*0.68+crestBand*0.56+wci*0.18)*spanBreak*crestBand;
+      // 波が崩れた跡に風下(wv方向)へ残る白い泡筋・スピンドリフト
+      float trailBand=smoothstep(0.15,0.85,sin(wv*0.58-uWT*2.55+0.65+foamN1*2.0))*spanBreak;
+      float wcStreak=smoothstep(0.60-0.15*min(wci,1.2),0.88,vn(vec2(wu*0.88,wv*0.22-uWT*1.55))*0.62+foamN2*0.38)*trailBand;
+
+      // 2) 近景の白波(添付画像2枚目): 艇の近く(dist<95m)で高く盛り上がった波頭が風下斜面へザバッと崩れ落ちる立体的な泡塊・気泡・飛沫
+      float nearBreakMask=1.0-smoothstep(15.0,95.0,dist);
+      float foamN4=vn(vec2(wu*8.5+2.1,wv*11.0-uWT*5.4));
+      float laceCell=smoothstep(0.26,0.74,foamN3*0.55+foamN4*0.45);
+      float steepCrest=smoothstep(0.46-0.12*min(wci,1.2),0.86,max(0.0,elev)*1.15+fwdSlope*1.85+foamN2*0.32);
+      float closeTumble=steepCrest*nearBreakMask*(0.68+0.32*laceCell)*smoothstep(0.28,0.65,foamN1+wci*0.28);
+      // 崩れる波頭直下のエメラルド〜ターコイズ色の気泡混じり海水(画像2枚目の波頭下の色味)
+      subSurfTurq=clamp((steepCrest*0.75+wcMidFar*0.35)*(0.45+0.55*nearBreakMask)*smoothstep(0.0,0.35,wci),0.0,0.65);
+
+      float wcBubble=0.65+0.35*smoothstep(0.24,0.76,foamN2*0.55+foamN3*0.45);
+      float onset=smoothstep(0.0,0.22,wci)*(0.52+0.48*min(wci,1.35));
+      galeFoam=clamp((max(wcMidFar*wcBubble*0.96,closeTumble*1.05)+wcStreak*0.46)*onset,0.0,0.96);
+    }
+    // 崩れる波頭のすぐ下に気泡を含んだ明るいマリンターコイズ色をブレンド
+    col=mix(col,vec3(0.12,0.52,0.68),subSurfTurq*exp(-dist*0.0025));
+    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.96)*exp(-dist*0.00085);
+    vec3 foamShadow=vec3(0.78,0.88,0.96);
+    vec3 foamBright=vec3(0.98,0.995,1.0);
+    vec3 foamCol=mix(foamShadow,foamBright,clamp(0.45+0.40*sunLit+0.25*foamN3,0.0,1.0));
     col=mix(col,foamCol,totalFoam);
   }
   // ブロー(風の強い海面のさざ波): 物理のブロー移動速度(adv = ca + uWT*4.8)と完全に同期して風上から風下へ流れる
