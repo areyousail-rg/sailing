@@ -1486,9 +1486,12 @@ export class BoatModel {
     const windSpd = BASE_WIND_KT * (b.windF || 1) * 0.5144 * 2.0;
     const boatSpd = Math.max(0.45, Math.abs(b.v));
     const windToBoat = clamp(windSpd / boatSpd, 0.55, 3.2);
-    const flipRate = this._inGybeFlip
-      ? clamp(1.8 + Math.pow(windToBoat, 1.35) * 3.1, 2.4, 15.0)
-      : clamp(5.5 + windToBoat * 2.2, 6.5, 13.5);
+    // ワイルドジャイブ時はブームが勢いよく一気に返り、メインセールを引き込んでジャイブした時も素早く返る
+    const flipRate = (b.wildGybeTimer || 0) > 0
+      ? 26.0
+      : this._inGybeFlip
+        ? clamp(2.2 + Math.pow(windToBoat, 1.35) * 3.4 + (b.pullingSheet ? 4.5 : 0), 2.8, 18.0)
+        : clamp(5.5 + windToBoat * 2.2, 6.5, 13.5);
     const targetBoomRotY = -sgn * this.boomA;
     if (this.boomRotY === undefined) this.boomRotY = targetBoomRotY;
     this.boomRotY += (targetBoomRotY - this.boomRotY) * (1 - Math.exp(-dt * flipRate));
@@ -1497,8 +1500,12 @@ export class BoatModel {
 
     const pk = b.poleK || 0;
     if (this.cbBoard) {
-      const reachLift = clamp((twa - 1.28) / 1.05, 0, 1);
-      this.cbBoard.position.y = Math.max(reachLift * 0.16, pk * 0.23);
+      if (b.capsized) {
+        this.cbBoard.position.y = 0; // 沈時はセンターボードを全開に出して乗り起こせるようにする
+      } else {
+        const reachLift = clamp((twa - 1.28) / 1.05, 0, 1);
+        this.cbBoard.position.y = Math.max(reachLift * 0.16, pk * 0.23);
+      }
     }
     if (this.mast) {
       this.mast.rotation.x = -0.018 * pk;
@@ -1766,11 +1773,42 @@ export class BoatModel {
       this.crew.userData.head.rotation.z = crewHeadTilt * (1 - crewPoleAct);
     }
 
+    // 沈(カプサイズ)時のセンターボード乗り起こし演出:
+    // 傾いた船体の風上側船底から突き出たセンターボードにスキッパー・クルーが乗り、体重をかけて船体を起こすアニメーション
+    if (b.capsized) {
+      const capS = b.capsizeSide || sgn || 1;
+      const cph = clamp(b.capsizePhase || 0, 0, 1);
+      // 0..0.24: ガンネルを越えてセンターボードへ移動, 0.24..0.82: センターボード上で後ろへ体重をかけて起こす, 0.82..1.0: コックピットへ戻る
+      const onBoard = cph < 0.24 ? sStep(0.04, 0.24, cph) : cph < 0.82 ? 1.0 : 1.0 - sStep(0.82, 0.98, cph);
+      const leverPull = cph >= 0.20 && cph <= 0.86 ? Math.sin(((cph - 0.20) / 0.66) * Math.PI) : 0;
+      const hX = capS * (0.50 * (1 - onBoard) + (0.38 + 0.08 * leverPull) * onBoard);
+      const hY = 0.28 * (1 - onBoard) + (-0.42 - 0.10 * leverPull) * onBoard;
+      const hZ = 0.65 * (1 - onBoard) + 0.14 * onBoard;
+      this.helmRig.position.set(hX, hY, hZ);
+      this.helmRig.rotation.y = capS * 1.48;
+      this.helmRig.rotation.z = (-b.heel * 0.78 + capS * (0.32 + 0.22 * leverPull)) * onBoard;
+      if (this.helm.userData.upper) {
+        this.helm.userData.upper.rotation.x = 0.35 + 0.45 * leverPull;
+        this.helm.userData.upper.rotation.z = -capS * 0.12 * onBoard;
+      }
+      const cX = capS * (0.48 * (1 - onBoard) + (0.36 + 0.08 * leverPull) * onBoard);
+      const cY = 0.28 * (1 - onBoard) + (-0.40 - 0.10 * leverPull) * onBoard;
+      const cZ = -0.10 * (1 - onBoard) - 0.20 * onBoard;
+      this._crewX = cX; this._crewY = cY; this._crewZ = cZ;
+      this.crewRig.position.set(cX, cY, cZ);
+      this.crewRig.rotation.y = capS * 1.48;
+      this.crewRig.rotation.z = (-b.heel * 0.78 + capS * (0.30 + 0.24 * leverPull)) * onBoard;
+      if (this.crew.userData.upper) {
+        this.crew.userData.upper.rotation.x = 0.38 + 0.48 * leverPull;
+        this.crew.userData.upper.rotation.z = -capS * 0.12 * onBoard;
+      }
+    }
+
     // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
     this.mount.position.set(this.side * (0.50 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
 
-    // パフォーマンス最適化: CP艇の細かいロープ・リーチリボン更新は2フレームに1回間引いてCPU負荷を軽減
-    this._ropeTick = ((this._ropeTick || 0) + 1) & 1;
+    // パフォーマンス最適化(24艇対応): CP艇の細かいロープ・リーチリボン更新は3フレームに1回間引いてCPU負荷を軽減
+    this._ropeTick = ((this._ropeTick || 0) + 1) % 3;
     const doDetailSync = b.isPlayer || this._ropeTick === 0 || this._firstSyncDone !== true;
     this._firstSyncDone = true;
     if (doDetailSync) {
@@ -1792,7 +1830,7 @@ export class BoatModel {
     this.syncBowSpray(dt, t, ws, sgn);
   }
 
-  // バウしぶき: 通常走行時は上に噴き上げず海面側(wake)でほんのわずかに白くなる表現にとどめ、波にはたかれた時だけ白く上に噴き上げる
+  // バウしぶき: 通常走行時は上に噴き上げず海面側(wake)でほんのわずかに白くなる表現にとどめ、波にはたかれた時や14kt超の白波砕波時に白く上がる
   syncBowSpray(dt, t, ws, sgn) {
     if (!this.bowSprayMesh) return;
     const b = this.boat;
@@ -1810,16 +1848,21 @@ export class BoatModel {
       this._sprayZeroed = true;
     }
 
-    // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)のみ、適度な濃さ・高さで白く上へ上がるしぶき演出 (16..27)
+    // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)、または14kt超の強風白波時・サーフィン時に上がるしぶき演出 (16..27)
+    const galeWhitecapF = clamp((BASE_WIND_KT * (b.windF || 1) - 13.8) / 4.5, 0, 1.35);
     this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
     if (b.visualSlam > 0.17) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75, 0.48, 1.08);
+      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75 + galeWhitecapF * 0.22, 0.48, 1.25);
       b.visualSlam = 0;
-    } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.78 && ws.h > 0.048 && ws.slope > 0.055) {
+    } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.72 && (
+      (ws.h > 0.048 && ws.slope > 0.055) ||
+      (galeWhitecapF > 0.12 && ws.h > 0.025 && Math.abs(ws.slope) > 0.032) ||
+      (b.isSurfing && vAbs > 1.8)
+    )) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.45 + (ws.h * 1.4 + ws.slope * 2.4), 0.45, 0.96);
-      this.slamAutoCD = 2.3 + Math.random() * 1.5;
+      this.slamBurstPow = clamp(0.48 + (ws.h * 1.45 + Math.abs(ws.slope) * 2.4 + galeWhitecapF * 0.28), 0.48, 1.18);
+      this.slamAutoCD = (galeWhitecapF > 0.15 ? 1.15 : 2.2) + Math.random() * (galeWhitecapF > 0.15 ? 0.85 : 1.4);
     }
 
     const SLAM_DUR = 0.56;
