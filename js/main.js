@@ -1266,7 +1266,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
       // 実際の結果画面(#result)と「振り返り」ボタン(#reviewBtn)を表示して指し示す (毎フレームDOMを再生成して点滅するのを防ぐため初回のみ設定)
       if (!orientState.resultPopulated) {
         orientState.resultPopulated = true;
-        $('resultTitle').textContent = '1位 / 16艇';
+        $('resultTitle').textContent = '1位 / 24艇';
         $('resultBody').innerHTML =
           '<tr class="me"><td>1</td><td>あなた</td><td>4:12.4</td></tr>' +
           '<tr><td>2</td><td>JPN 29410</td><td>4:15.8</td></tr>' +
@@ -2004,7 +2004,7 @@ function renderRecordsModal() {
     return;
   }
   bodyEl.innerHTML = list.map((r, idx) => {
-    const rankStr = r.status === 'DSQ' ? 'DSQ' : r.status === 'DNF' ? 'DNF' : `${r.rank}位 / ${r.fleet || 16}艇`;
+    const rankStr = r.status === 'DSQ' ? 'DSQ' : r.status === 'DNF' ? 'DNF' : `${r.rank}位 / ${r.fleet || 24}艇`;
     const isWin = r.rank === 1;
     let rateCellHtml = '<span class="rateDeltaZero">OFF</span>';
     if (typeof r.rateAfter === 'number' && typeof r.rateBefore === 'number') {
