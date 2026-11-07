@@ -1517,15 +1517,27 @@ export class BoatModel {
       this.mast.position.z = -0.90 - 0.028 * pk;
     }
 
-    const ease = Math.max(0, 0.97 - b.sheet);
+    // 10°〜30°付近で角度を落とそうとしている(ベアしている)場合は、リーヘルムでバウを落とすためジブセールはシバーさせず引き込む
+    const twaDegForJib = (twa * 180) / Math.PI;
+    const leeHelmTwaWin = clamp((twaDegForJib - 6.5) / 3.5, 0, 1) * clamp((35.0 - twaDegForJib) / 4.5, 0, 1);
+    const isBearingAway = (b.steer * sgn < -0.015) || !!(b.maneuver && b.maneuver.kind === 'tack' && b.rel * b.maneuver.s0 < 0);
+    const targetJibLeeHelm = Math.max(b.jibLeeHelm || 0, isBearingAway ? leeHelmTwaWin : 0);
+    if (this.jibLeeHelmK === undefined) this.jibLeeHelmK = 0;
+    this.jibLeeHelmK += (targetJibLeeHelm - this.jibLeeHelmK) * (1 - Math.exp(-dt * (targetJibLeeHelm > this.jibLeeHelmK ? 14.0 : 5.0)));
+    const jibLeeHelmK = this.jibLeeHelmK;
+    const jibLuff = luff * (1 - jibLeeHelmK) * (1 - pk);
+
+    const ease = Math.max(0, 0.97 - b.sheet) * (1 - jibLeeHelmK);
     const bearOut = Math.max(0, twa - 0.78) * 0.28;
-    const luffOut = luff * (0.28 + 0.09 * Math.sin(t * 21 + this.phase));
-    const baseJibIn = 0.088 * closeFactor + 0.19 * (1 - closeFactor);
-    const easeWeight = 0.24 * closeFactor + 0.76 * (1 - closeFactor);
+    const luffOut = jibLuff * (0.28 + 0.09 * Math.sin(t * 21 + this.phase));
+    const effCloseJib = Math.max(closeFactor, jibLeeHelmK);
+    const baseJibIn = 0.088 * effCloseJib + 0.19 * (1 - effCloseJib);
+    const easeWeight = 0.24 * effCloseJib + 0.76 * (1 - effCloseJib);
     const jibDesired = baseJibIn + ease * easeWeight + bearOut * 0.44 + luffOut;
-    const jibMaxAwa = Math.max(0.092 + 0.258 * (1 - closeFactor), Math.abs(b.awa) * 0.92 + luff * 0.28 + ease * 0.35);
-    const minJibLee = 0.088 * closeFactor + 0.18 * (1 - closeFactor);
-    const jibLee = clamp(Math.min(Math.max(this.boomA * (0.65 * closeFactor + 0.72 * (1 - closeFactor)), jibDesired), jibMaxAwa), minJibLee, 0.88);
+    const jibMaxAwa = Math.max(0.092 + 0.258 * (1 - effCloseJib), Math.abs(b.awa) * 0.92 + jibLuff * 0.28 + ease * 0.35);
+    const minJibLee = 0.088 * effCloseJib + 0.18 * (1 - effCloseJib);
+    const rawJibLee = clamp(Math.min(Math.max(this.boomA * (0.65 * effCloseJib + 0.72 * (1 - effCloseJib)), jibDesired), jibMaxAwa), minJibLee, 0.88);
+    const jibLee = rawJibLee * (1 - jibLeeHelmK) + 0.088 * jibLeeHelmK;
     // ランニングのランチャー展開時: 風とほぼ直角〜やや出し気味の角度(約88°〜96° = 1.54〜1.68 rad)にする
     const wingAngle = clamp(Math.PI - twa + 0.38, 1.54, 1.68);
     const targetJibRot = -sgn * jibLee * (1 - pk) + sgn * wingAngle * pk;
@@ -1540,15 +1552,14 @@ export class BoatModel {
     const bulgeSign = Math.abs(this.sailSide) < 0.08 ? targetBulgeSign * 0.08 : this.sailSide;
     const jibBulge = pk > 0.5 ? -bulgeSign : bulgeSign;
     const flap = 1 - luff * (0.55 + 0.45 * Math.sin(t * 21 + this.phase));
-    const jibLuff = luff * (1 - pk);
     const closeDepthScale = 1 + 0.075 * closeFactor;
     this.mainSail.scale.x = bulgeSign * flap * closeDepthScale;
     // サイドステー貫通防止とランニング時のサイドステーへの押し付け形状を更新
     const shroudPress = clamp((this.boomA - 0.72) / 0.42, 0, 1);
     this.updateMainShroudPress(shroudPress, Math.abs(this.boomRotY), Math.abs(this.mainSail.scale.x));
 
-    // クローズ時は深めで丸みのあるジブキャンバー(0.168)、ランチャーアップ時はふっくら風をはらんだ深いポケット(0.31)を表現
-    const jibCamberScale = 0.168 * closeFactor + (0.23 + 0.085 * pk) * (1 - closeFactor);
+    // クローズ時(およびリーヘルム引き込み時)は深めで丸みのあるジブキャンバー(0.168)、ランチャーアップ時はふっくら風をはらんだ深いポケット(0.31)を表現
+    const jibCamberScale = 0.168 * effCloseJib + (0.23 + 0.085 * pk) * (1 - effCloseJib);
     const transitDip = 1 - 0.55 * Math.sin(Math.PI * pk) * (1 - pk * 0.85);
     const jibCamber = jibBulge * jibCamberScale * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * transitDip;
     this.jibSail.scale.x = 1;
@@ -1576,7 +1587,7 @@ export class BoatModel {
       this.pole.visible = true;
     } else this.pole.visible = false;
 
-    if (this.tells) this.syncTells(t, jibCamber, luff, b.stall, pk, jibRot);
+    if (this.tells) this.syncTells(t, jibCamber, jibLuff, b.stall, pk, jibRot);
     if (this.vanes) {
       const aw = b.awa;
       for (const v of this.vanes) {
