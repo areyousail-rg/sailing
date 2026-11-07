@@ -104,7 +104,9 @@ export function setCourseMode(mode = 'trapezoid') {
     MARKS.fcom.a = -95; MARKS.fcom.c = -70;
     MARKS.fm.a = -135; MARKS.fm.c = -110;
     const FINISHC = { a: (-95 + -135) / 2, c: (-70 + -110) / 2 };
-    const FINISH_AIM = { a: FINISHC.a - 8, c: FINISHC.c + 8 };
+    // フィニッシュリーチングでは上側(本部船 fcom: a=-95, c=-70 寄り)でフィニッシュする方が距離が短く角度も良いため、上側を標準目標とする
+    const FINISH_UPPER = { a: -103.5, c: -78.5 };
+    const FINISH_AIM = { a: FINISH_UPPER.a - 8, c: FINISH_UPPER.c + 8 };
     const { m1, m1a, m2, m3 } = MARKS;
     LEGS.push(
       { id: 0, name: '1', markKey: 'm1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: START, next: m1a },
@@ -112,7 +114,7 @@ export function setCourseMode(mode = 'trapezoid') {
       { id: 2, name: '4', label: '4ゲート(4S/4P)を通過', type: 'gate', from: m1a, center: GATEC, aim: { a: 10, c: 0 } },
       { id: 3, name: '1', markKey: 'm1', label: '1マーク(風上)を左舷に見て回航', type: 'mark', mark: m1, side: -1, from: GATEC, next: m2 },
       { id: 4, name: '2', markKey: 'm2', label: '2マーク(ウィング)を左舷に見て回航', type: 'mark', mark: m2, side: -1, from: m1, next: m3 },
-      { id: 5, name: '3', markKey: 'm3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISHC },
+      { id: 5, name: '3', markKey: 'm3', label: '3マークを左舷に見て回航', type: 'mark', mark: m3, side: -1, from: m2, next: FINISH_UPPER },
       { id: 6, name: 'F', label: 'フィニッシュラインへ', type: 'finish', from: m3, center: FINISHC, aim: FINISH_AIM }
     );
   }
