@@ -1439,8 +1439,22 @@ export class AI {
               tgt = { a: 590, c: clamp(b.c * 0.25, -10, 12) };
               directDownwind = true;
             }
-          } else if (COURSE_MODE === 'trapezoid' && L.type === 'finish' && distMark < 75) {
-            // トラペゾイド最終レグ(leg 6: 3マーク→フィニッシュ)でフィニッシュライン手前75m以内に入ったら、無駄なジャイブをせずフィニッシュライン中央へ直進
+          } else if (COURSE_MODE === 'trapezoid' && L.type === 'finish') {
+            // フィニッシュリーチング(leg 6: 3マーク→フィニッシュ)では基本的に上側(本部船 fcom: a=-95, c=-70 側)でフィニッシュする方が早く実戦でも上側を狙うため、
+            // 本部船のすぐ下側(u=0.16..0.30: a≈-101..-107, c≈-76..-82)を狙ってフィニッシュラインを切る
+            const uUpper = 0.16 + ((b.id % 5) * 0.032);
+            const lineA = MARKS.fcom.a + (MARKS.fm.a - MARKS.fcom.a) * uUpper;
+            const lineC = MARKS.fcom.c + (MARKS.fm.c - MARKS.fcom.c) * uUpper;
+            const F = MARKS.fcom, G = MARKS.fm;
+            const sNow = (G.a - F.a) * (b.c - F.c) - (G.c - F.c) * (b.a - F.a);
+            const sRef = (G.a - F.a) * (MARKS.m3.c - F.c) - (G.c - F.c) * (MARKS.m3.a - F.a);
+            if (sNow * sRef <= 0) {
+              // 万一フィニッシュライン外側から裏へ流れた場合は一度ライン正面の上側(a≈-96, c≈-86)へ戻してから切る
+              tgt = { a: lineA + 6, c: lineC - 10 };
+            } else {
+              tgt = { a: lineA - 8, c: lineC + 8 };
+            }
+            distMark = Math.hypot(b.c - lineC, b.a - lineA);
             directDownwind = true;
           }
         }
