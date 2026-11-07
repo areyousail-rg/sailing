@@ -221,12 +221,16 @@ export class Recorder {
         }
         if (b.penalty && !s.hadPen) s.penalties++;
         s.hadPen = !!b.penalty;
-        // 風速低下による推定損失距離(艇速は風速比の0.8乗に比例)
-        const f = 1 - 0.42 * Math.pow(Math.max(0, b.cover), 1.15);
-        const lossV = v * (Math.pow(1 / Math.max(0.4, f), 0.8) - 1);
-        const backFrac = b.cover > 0.01 ? Math.min(1, b.back / b.cover) : 0;
+        // 風速低下による推定損失距離(艇速は風速比の0.8乗に比例: ブランケットcoverとバックウインドbackの双方を反映)
+        const blkLoss = 0.42 * Math.pow(Math.max(0, b.cover), 1.15);
+        const backLoss = 0.38 * Math.pow(Math.max(0, b.back), 1.15);
+        const totLoss = Math.min(0.68, blkLoss + backLoss);
+        const f = 1 - totLoss;
+        const lossV = v * (Math.pow(1 / Math.max(0.34, f), 0.8) - 1);
+        const backFrac = totLoss > 0.005 ? Math.min(1, backLoss / totLoss) : 0;
         s.lossBack += lossV * backFrac * dt; s.lossBlk += lossV * (1 - backFrac) * dt;
-        if (b.back > 0.2) s.backT += dt; else if (b.cover > 0.2) s.blkT += dt;
+        if (b.back > 0.2) s.backT += dt;
+        if (b.cover > 0.2) s.blkT += dt;
         if (b.waveF < 1) s.lossWave += v * (1 / Math.max(0.5, b.waveF) - 1) * dt;
         // 減速イベント検出: 直近の巡航速度(ref)から15%以上落ちた区間を1回と数え、損失距離を積算
         if (!s.ev) {
