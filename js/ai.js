@@ -14,9 +14,9 @@ export class AI {
   initParams() {
     const b = this.b, rng = this.rng;
     // スキル差に応じたクローズ角度・スタート精度・レイライン余白のばらつき(1マークでの密集を防ぐ)
-    const skillGap = clamp(1.08 - (b.skill || 1), 0, 0.22);
+    const skillGap = clamp(1.10 - (b.skill || 1), 0, 0.28);
     // クローズホールド角度: 上位艇はベスト角度に近く、中〜下位艇は少し角度が甘くなる個性差
-    this.closeAngleOffset = (((rng() - 0.25) * 1.8 + skillGap * (4.5 + rng() * 4.0)) * Math.PI) / 180;
+    this.closeAngleOffset = (((rng() - 0.25) * 2.1 + skillGap * (5.2 + rng() * 4.5)) * Math.PI) / 180;
     this.closeAngle = (bestCloseDeg(BASE_WIND_KT) * Math.PI) / 180 + this.closeAngleOffset;
     // ランニング角度(下レグで180°の真後ろではなく164°〜170°付近を走行してVMGを稼ぐ)
     this.runAngle = ((164.0 + rng() * 6.0) * Math.PI) / 180;
@@ -31,33 +31,31 @@ export class AI {
     this.tackCool = 18 + rng() * 13; // 中盤の戦術タック間隔(レイライン到達時は別途即座にタック可能)
     this.lastTack = -99;
     // ラインを切る目標時刻(号砲=0秒の後):
-    // 1列目スタート艇はラインから余裕を持った手前(14.5〜18.5m)で待機して加速スペースを確保し、
-    // 隙間狙い艇(gapShooter)はさらに後ろで待機してスタート前に船と船の間へ滑り込み、
-    // スタート失敗役(secondRow / highComFail)は第二線から遅れて出る
-    const isStrong = (b.skill || 1) >= 1.04;
+    // 1分前は後ろの待機位置からアプローチし、0秒時点で大体の艇が「スタートラインぎりぎり(リコールしない直前)」から0秒で飛び出せるように設定
+    const isStrong = (b.skill || 1) >= 1.03;
     const role = b.startRole || 'firstRow';
-    // CP艇がスタートラインをフライング(OCS)する確率は約1割(10%)に制御し、残りのCP艇は0:00時点で確実にライン手前に収める
-    this.willOcs = (b.id === 2 && rng() < 0.12); // レース全体の約1割強の確率で1艇がフライング(OCS)する
+    // CP艇がスタートラインをフライング(OCS)する確率は約1割(10%)に制御し、残りのCP艇は0:00時点でラインぎりぎり手前に収める
+    this.willOcs = (b.id === 2 && rng() < 0.12);
     if (role === 'gapShooter') {
-      this.tc = 1.05 + rng() * 0.95;
-      this.goDist = 21.0 + rng() * 4.0;
+      this.tc = 0.35 + rng() * 0.55;
+      this.goDist = 9.2 + rng() * 2.2;
       this.baseStartC = this.targetStartC;
       this.nextGapScanT = -26 + rng() * 2.0;
     } else if (role === 'secondRow') {
-      this.tc = 3.0 + rng() * 2.4;
-      this.goDist = 23.0 + rng() * 5.0;
+      this.tc = 1.65 + rng() * 1.35;
+      this.goDist = 10.5 + rng() * 2.8;
     } else if (role === 'highComFail') {
-      this.tc = 4.0 + rng() * 2.2;
-      this.goDist = 18.0 + rng() * 4.0;
+      this.tc = 3.2 + rng() * 1.8;
+      this.goDist = 11.0 + rng() * 2.5;
     } else if (this.willOcs) {
       this.tc = -2.2 - rng() * 0.8;
       this.goDist = 4.5 + rng() * 1.2;
     } else {
       this.tc = isStrong
-        ? 0.75 + rng() * 0.65
-        : 0.95 + rng() * 1.15 + skillGap * 1.8;
-      // スタート前: ラインに近すぎないよう手前 goDist[m] (14.5〜18.5m) で待ってから加速を開始
-      this.goDist = 14.5 + rng() * 4.0;
+        ? 0.12 + rng() * 0.38
+        : 0.25 + rng() * 0.55 + skillGap * 0.8;
+      // 加速開始距離: ライン手前 6.0〜8.2m からフル加速し、0秒でラインぎりぎり手前に到達する
+      this.goDist = 6.0 + rng() * 2.2;
     }
     this.go = false;
     this.pinBailout = false;
@@ -1306,27 +1304,28 @@ export class AI {
         const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 12.5, LINE_HALF - 3.8);
         const lineAtTgt = lineA(tgtC);
         const lineHere = Math.min(lineA(b.c), lineA(clamp(b.c, -LINE_HALF, LINE_HALF)));
-        const ocsSafetyMargin = this.willOcs ? -2.4 : 3.0;
-        const targetLineA = (b.c > LINE_HALF - 7 ? Math.min(lineHere, lineAtTgt) : Math.min(lineHere, lineAtTgt + 1.5)) - ocsSafetyMargin;
+        // 0秒時点でスタートラインぎりぎり(リコールしない直前: 手前約0.8〜1.2m)まで寄せて0秒で飛び出せるように設定
+        const ocsSafetyMargin = this.willOcs ? -2.8 : 0.85;
+        const targetLineA = (b.c > LINE_HALF - 7 ? Math.min(lineHere, lineAtTgt) : Math.min(lineHere, lineAtTgt + 0.8)) - ocsSafetyMargin;
         const gap = targetLineA - b.a;
         const posGap = Math.max(0, gap);
         const tw = Math.min(b.twa, 1.1);
         const upf = Math.max(0.48, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
         if (this.gap0 === null) this.gap0 = Math.max(24, posGap);
-        const holdDist = role === 'gapShooter' ? 20.5 : (role === 'secondRow' ? 21.5 : (this.willOcs ? 2.5 : 13.5));
-        const holdEndT = role === 'gapShooter' ? -6.8 : (role === 'secondRow' ? -0.4 : (this.willOcs ? -4.5 : -2.6));
-        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -9.8 || posGap > holdDist + 3.0)) this.go = true;
-        if (gap < holdDist + 0.4 && t < holdEndT) this.go = false; // 加速スペースを残して早すぎるライン接近を防止
-        // willOcsでない通常CP艇は0:00より前にラインを超えず、また加速開始前は待機ライン(holdDist)より高く上がらないよう制御
+        const holdDist = role === 'gapShooter' ? 7.2 : (role === 'secondRow' ? 8.2 : (this.willOcs ? 2.0 : 4.2));
+        const holdEndT = role === 'gapShooter' ? -5.8 : (role === 'secondRow' ? -1.8 : (this.willOcs ? -5.0 : -4.2));
+        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -10.5 || posGap > holdDist + 1.5)) this.go = true;
+        if (gap < holdDist + 0.3 && t < holdEndT) this.go = false; // 加速開始時刻(holdEndT)より前にラインへ寄りすぎるのを防ぐ
+        // willOcsでない通常CP艇は0:00より前にラインを超えないよう、直前でラインを超えそうな場合のみ減速・シバーさせる
         const projZeroA = b.a + Math.max(0, -t) * Math.max(0, b.v) * upf;
-        const earlyHoldLimitA = t < -10.0 ? lineHere - holdDist + 1.2 : lineHere - 2.6;
-        const tooEarlyForLine = !this.willOcs && (b.a > earlyHoldLimitA || (t > -9.5 && projZeroA > lineHere - 2.0));
+        const earlyHoldLimitA = t < -14.0 ? lineHere - holdDist - 3.0 : lineHere - 0.95;
+        const tooEarlyForLine = !this.willOcs && (b.a > earlyHoldLimitA || (t > -5.5 && projZeroA > lineHere - 0.55));
         if (tooEarlyForLine) this.go = false;
         if (tooEarlyForLine) {
           b.throttle = 0;
           b.sheet = 0.05;
-          if (b.a > earlyHoldLimitA + 0.4) {
-            b.v = Math.min(b.v, Math.max(0.05, (earlyHoldLimitA + 1.0 - b.a) * 0.40));
+          if (b.a > earlyHoldLimitA + 0.25) {
+            b.v = Math.min(b.v, Math.max(0.05, (earlyHoldLimitA + 0.65 - b.a) * 0.45));
           }
         } else if (this.go) {
           b.throttle = 1;
@@ -1348,26 +1347,28 @@ export class AI {
       b.sheet += (optS - b.sheet) * (1 - Math.exp(-dt * 4.5));
     }
         } else if (gap < holdDist && t < holdEndT) {
-          // ラインから少し離れた待機ラインで待機する際も、本部船側(tgtC>=12)の艇が左(-c)へ流されて本部船側が空かないよう微速を維持して横流れを抑える
+          // 待機ラインで待つ際も、下流れで後ろへ落ちすぎないよう微速を維持
           const isComSide = tgtC >= 12;
-          b.throttle = isComSide ? 0.14 : 0.05;
-          b.sheet = isComSide ? 0.22 : 0.12;
+          b.throttle = isComSide ? 0.18 : 0.10;
+          b.sheet = isComSide ? 0.26 : 0.16;
         } else {
           const vT = polar((this.closeAngle * 180) / Math.PI) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
           const goL = Math.min(this.goDist, this.gap0);
           const tGo = this.tc - this.runUpTime(goL / upf);
           const span = Math.max(5, tGo - START_T);
-          const f = clamp((t - START_T) / span, 0, 1), p = this.creepExp;
-          const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(f, p));
-          const dDdt = (Math.max(0, this.gap0 - goL) * p * Math.pow(Math.max(f, 1e-3), p - 1)) / span;
-          // 低速時の下流れ(2倍リーウェイ＋風圧ドリフト)で後ろ(-a)に流されないようドリフト補償速度を加算
-          const driftComp = posGap > D - 1.2 ? 0.86 * SPEED_SCALE * (b.windF || 1) : 0;
-          const vDes = Math.max(0, dDdt + 0.45 * (posGap - D) + driftComp) / upf;
-          b.throttle = posGap < D - 1.0
-            ? clamp(vDes / Math.max(0.1, vT), 0.06, 0.32)
-            : clamp(vDes / Math.max(0.1, vT), 0.38, 0.92);
+          // 1分前〜前半は後ろの待機位置付近にとどまり、後半にかけて加速開始位置(goL)へしっかり上がるカーブ
+          const fRaw = clamp((t - START_T) / span, 0, 1);
+          const p = this.creepExp * 1.35;
+          const D = goL + Math.max(0, this.gap0 - goL) * (1 - Math.pow(fRaw, p));
+          const dDdt = (Math.max(0, this.gap0 - goL) * p * Math.pow(Math.max(fRaw, 1e-3), p - 1)) / span;
+          // 低速時の下流れ(リーウェイ＋風圧ドリフト)に負けず確実にライン手前(goL)まで上がれるようドリフト補償と最低スロットルを引き上げ
+          const driftComp = posGap > D - 0.8 ? 1.12 * SPEED_SCALE * (b.windF || 1) : 0;
+          const vDes = Math.max(0, dDdt + 0.62 * (posGap - D) + driftComp) / upf;
+          b.throttle = posGap < D - 0.8
+            ? clamp(vDes / Math.max(0.1, vT), 0.08, 0.35)
+            : clamp(vDes / Math.max(0.1, vT), 0.65, 1.0);
           // セールは待機距離(D)よりラインに近いときだけ緩めて減速し、通常アプローチ中は最適トリムで下流れを抑える
-          b.sheet = posGap < D - 1.0
+          b.sheet = posGap < D - 0.8
             ? Math.max(0.14, sheetOpt(b.twa) - 0.36)
             : sheetOpt(b.twa);
         }
