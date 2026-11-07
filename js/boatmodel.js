@@ -1103,13 +1103,17 @@ export class BoatModel {
       this.forestaySegs.push(fs);
     }
     this.syncForestay(0, boat.tack);
-    // ランチャーポール(全艇): 使わない時はブーム脇に沿って格納した金属バーとして見え、先端にはランチャーチップ金具(poleTipRing)を備える
+    // ランチャーポール(全艇): 使わない時はブーム脇に沿って格納し、先端がマストよりほんのわずかに前(z=-0.105)へ突き出る実艇の配置を再現
     this.pole = new THREE.Mesh(poleGeo, spar); this.pole.position.copy(POLE_ROOT); this.pole.visible = false; this.body.add(this.pole);
     this.poleTipRing = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.0045, 8, 14), M.steel);
     this.body.add(this.poleTipRing);
-    const stowGeo = new THREE.CylinderGeometry(0.013, 0.013, 2.2, 8); stowGeo.rotateX(Math.PI / 2);
-    this.poleStow = new THREE.Mesh(stowGeo, spar); this.poleStow.position.set(0.075, 0.96, 1.35); this.mainPivot.add(this.poleStow);
-    for (const zz of [0.45, 2.15]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.035), M.alu); clip.position.set(0.05, 0.98, zz); this.mainPivot.add(clip); }
+    const stowGeo = new THREE.CylinderGeometry(0.013, 0.013, 2.26, 8); stowGeo.rotateX(Math.PI / 2);
+    this.poleStow = new THREE.Mesh(stowGeo, spar); this.poleStow.position.set(0.044, 0.965, 1.025); this.mainPivot.add(this.poleStow);
+    const stowCap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.032, 8), M.dark);
+    stowCap.rotation.x = Math.PI / 2;
+    stowCap.position.set(0, 0, -1.13);
+    this.poleStow.add(stowCap);
+    for (const zz of [-0.01, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.035), M.alu); clip.position.set(0.038, 0.985, zz); this.mainPivot.add(clip); }
     this.jibRot = 0;
 
     // 船内カメラ用マウント(スキッパーの目線／少し高めのデッキ後方視点)
@@ -1437,13 +1441,15 @@ export class BoatModel {
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
     const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
     const heave = ws.hLong * 0.84 + (ws.h - ws.hLong) * 0.30 * chopRespond + 0.042 * Math.sin(ph * 1.35);
-    const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * chopRespond), -0.025, 0.115);
+    const minPitchW = -0.025 - 0.068 * downFactor;
+    const slopeRespond = chopRespond + 0.48 * downFactor;
+    const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * slopeRespond), minPitchW, 0.115);
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
     const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
     this.body.position.y = 0.132 + Math.abs(b.heel) * 0.078 + heave;
     this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = 0.008 + pitchW + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.032;
+    this.body.rotation.x = 0.008 * (1 - 0.75 * downFactor) + pitchW + (b.runWavePitch || 0) + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.032 * (1 - 0.85 * downFactor);
     if (this.blackBall) this.blackBall.visible = !!b.hasBlackBall;
 
     if (this.rudderGroup) {
@@ -1950,11 +1956,11 @@ export class BoatModel {
     _p2.set(handX, handY, handZ); // クルー手元
     _p3.set(xCamOpp, yCam, zCam); // 反対舷のジブカム
 
-    // ランチャーポールの先端座標(_p5): 格納時(pk≈0)はブーム前端のランチャー先端、展開時(pk>0)はポールの先端(ジブクリューへ進出)
+    // ランチャーポールの先端座標(_p5): 格納時(pk≈0)はマストよりわずかに前へ突き出たランチャー先端(z=-0.11)、展開時(pk>0)はポールの先端(ジブクリューへ進出)
     const pm = this.boomRotY !== undefined ? this.boomRotY : -sgn * this.boomA;
-    const stowTipX = 0.075 * Math.cos(pm) + 0.25 * Math.sin(pm);
-    const stowTipY = 1.36;
-    const stowTipZ = -0.90 + 0.25 * Math.cos(pm) - 0.075 * Math.sin(pm);
+    const stowTipX = 0.044 * Math.cos(pm) - 0.11 * Math.sin(pm);
+    const stowTipY = 1.365;
+    const stowTipZ = -0.90 - 0.11 * Math.cos(pm) - 0.044 * Math.sin(pm);
     _p5.set(
       stowTipX + (clewX - stowTipX) * pk,
       stowTipY + (clewY - stowTipY) * pk,
