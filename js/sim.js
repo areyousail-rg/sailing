@@ -944,18 +944,18 @@ export class Boat {
       let wf = 1 - upw * 0.15 * Hn * SEA.steep * (0.58 + 0.98 * Math.max(0, climb)) * poundScale;
       if (turning) wf -= 0.11 * Hn * SEA.steep * (0.58 + 0.58 * slowFactor);
 
-      // ランニング・リーチングでのサーフィン加速(バウが下がり気味になる)と波から下りた時の減速(バウが上がり気味になる)
-      const windOk = clamp((localWindKt - 5.0) / 6.0, 0.35, 1.45);
-      const surfWaveK = Math.pow(Math.max(0, -climb), 0.82);
-      const climbWaveK = Math.pow(Math.max(0, climb), 0.85);
-      const naturalSurf = down * (SEA.surf * 1.35 + 0.34 * runDeep) * surfWaveK * (0.65 + 1.05 * windOk) * clamp(this.v / (1.75 * SPEED_SCALE), 0.45, 1.28);
-      // 波から下りた時・次の波の裏斜面(climb > 0)に入った時の減速(特にランニングで顕著)
-      const waveOffSlow = down * (0.16 + 0.28 * runDeep) * climbWaveK * (0.60 + 0.85 * windOk);
+      // ランニング・リーチングでのサーフィン加速と波間の減速: スピード変化はほぼ元通りとし、ほんのわずかだけ反映
+      const windOk = clamp((localWindKt - 7.8) / 6.5, 0.08, 1.35);
+      const naturalSurf = down * (SEA.surf + 0.18 * runDeep) * Math.max(0, -climb) * (0.50 + 1.05 * windOk) * clamp(this.v / (1.9 * SPEED_SCALE), 0.35, 1.18);
+      // 波から下りた時・次の波の裏斜面(climb > 0)に入った時の減速(ほぼ元通り＋ほんのわずか)
+      const waveOffSlow = down * (0.10 + 0.17 * runDeep) * Math.max(0, climb) * (0.42 + 0.80 * windOk);
       wf += naturalSurf - waveOffSlow;
-      this.isSurfing = naturalSurf > 0.08 && down > 0.25;
-      // ランニングで波に乗って加速する時はバウが下がり気味(負のピッチ)、波から下りて減速する時はバウが上がり気味(正のピッチ)になる挙動
-      const runPitchTarget = (0.35 * down + 0.65 * runDeep) * clamp((-surfWaveK * 0.082 + climbWaveK * 0.072) * (0.65 + 0.45 * windOk), -0.095, 0.085);
-      this.runWavePitch = (this.runWavePitch || 0) + (runPitchTarget - (this.runWavePitch || 0)) * (1 - Math.exp(-dt * 6.5));
+      this.isSurfing = naturalSurf > 0.10 && down > 0.25;
+      // ランニングで波に乗る時はバウが下がり気味(負のピッチ)、波から下りる時はバウが上がり気味(正のピッチ)になる挙動
+      const surfWaveK = Math.pow(Math.max(0, -climb), 0.85);
+      const climbWaveK = Math.pow(Math.max(0, climb), 0.85);
+      const runPitchTarget = (0.35 * down + 0.65 * runDeep) * clamp((-surfWaveK * 0.068 + climbWaveK * 0.058) * (0.65 + 0.45 * windOk), -0.080, 0.070);
+      this.runWavePitch = (this.runWavePitch || 0) + (runPitchTarget - (this.runWavePitch || 0)) * (1 - Math.exp(-dt * 6.0));
 
       if (SEA.type === 'chop') wf -= down * 0.040 * Hn * (0.5 + 0.5 * Math.abs(climb)) * slowFactor;
       this.waveF = wf;
@@ -1021,9 +1021,9 @@ export class Boat {
       target = -irons * 0.48 * SPEED_SCALE * w.f;
     }
     // タック回頭中や直後は運動エネルギー(慣性)で急激に減速せず、滑らかに速度が推移するよう減速時定数を大きくする
-    // ランニング・リーチングの波乗り・波間の加減速はダイレクトに艇速へ反映されるよう下レグでは時定数を短くする
-    const surfResponsive = twa > 1.75 ? 0.44 : (twa > 1.40 ? 0.68 : 1.0);
-    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.52 : 1.85 * surfResponsive)) : (turning ? 8.5 : 1.95 * surfResponsive);
+    // ランニング・リーチングの波乗り・波間の加減速はほぼ元の時定数に戻し、ほんのわずかに反応させる
+    const surfResponsive = (twa > 1.50 && localWindKt >= 8.0) ? 0.68 : 1.0;
+    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.82 : 2.0 * surfResponsive)) : (turning ? 8.5 : 2.30 * surfResponsive);
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
     if (this.postFinishStop && Math.abs(this.v) < 0.04) this.v = 0;
 
