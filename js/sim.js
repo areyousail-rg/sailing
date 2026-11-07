@@ -745,10 +745,18 @@ export class Boat {
       if (twaP < POLE_MIN - 0.12) steer = -up * 0.6; // 風の振れで上り過ぎたら自動で落とす
     }
     const vRatio = this.v / (1.8 * SPEED_SCALE);
-    const rateMax = 0.85 * clamp(0.18 + 0.82 * vRatio, 0.18, 1.15);
-    // オーバーヒール時はウェザーヘルムで上りやすく、アンヒール時はリーヘルムで落ちやすくなる回頭モーメント補助
-    const rollTurnBoost = this.rollBias * this.tack > 0.02 && steer * this.tack > 0 ? 1.12
-      : this.rollBias * this.tack < -0.02 && steer * this.tack < 0 ? 1.12 : 1.0;
+    const curTwaDeg = (Math.abs(wrap(w.from - this.h)) * 180) / Math.PI;
+    // 真風角10°〜30°付近で角度を落とそうとしている(ベアしている)場合:
+    // 実艇同様にジブセールをシバーさせず引き込んでリーヘルム(風下へバウを落とすモーメント)を発生させる
+    const leeHelmWin = smoothstep(6.5, 10.0, curTwaDeg) * (1 - smoothstep(30.5, 35.0, curTwaDeg));
+    const isBearingInPinch = (steer * this.tack < -0.015) || !!(this.maneuver && this.maneuver.kind === 'tack' && wrap(w.from - this.h) * this.maneuver.s0 < 0);
+    const bearStrength = (this.maneuver && this.maneuver.kind === 'tack') ? 1.0 : clamp((-steer * this.tack - 0.015) / 0.18, 0, 1);
+    this.jibLeeHelm = isBearingInPinch ? leeHelmWin * bearStrength : 0;
+    const baseRateMax = 0.85 * clamp(0.18 + 0.82 * vRatio, 0.18, 1.15);
+    const rateMax = Math.max(baseRateMax, 0.85 * 0.42 * this.jibLeeHelm);
+    // オーバーヒール時はウェザーヘルムで上りやすく、アンヒール時やジブ引き込みリーヘルム時は落ちやすくなる回頭モーメント補助
+    const rollTurnBoost = (this.rollBias * this.tack > 0.02 && steer * this.tack > 0 ? 1.12
+      : this.rollBias * this.tack < -0.02 && steer * this.tack < 0 ? 1.12 : 1.0) + 0.22 * this.jibLeeHelm;
     const dh = steer * rateMax * rollTurnBoost * dt + wildBroachTurn;
     // リーバウや別タック艇スターン通過のリフト(windBend > 0)を受けた際、クローズ走行中なら船首が自然に少し風上へのぼせる(効果1/3)
     this.aeroClimb = 0;
