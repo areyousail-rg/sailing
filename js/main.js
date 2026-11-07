@@ -13,7 +13,7 @@ import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearby
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 24; // 自艇1 + CP艇23 (24艇フリート)
+const N_BOATS = 21; // 自艇1 + CP艇20 (21艇フリート)
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -205,7 +205,7 @@ function buildCpFleetProfiles(effRate) {
   for (let i = 0; i < rem; i++) {
     const u = rem > 1 ? i / (rem - 1) : 0.5; // 0(上位) .. 1(下位)
     const spread = (0.5 - u) * 2.0; // +1.0 .. -1.0
-    const humanRate = effRate + spread * 155 + (rng() - 0.5) * 30;
+    const humanRate = effRate + spread * 185 + (rng() - 0.5) * 32;
     const pair = makeCpPairForType(rng() < 0.5 ? 'human_m' : 'human_f', effRate);
     profiles.push({
       rate: humanRate,
@@ -214,6 +214,14 @@ function buildCpFleetProfiles(effRate) {
       crew: pair.crew,
       hasBlackBall: false,
     });
+  }
+
+  // CP全体の平均レベル(meanSkill)は一切変えず、1マークでの密集を防ぐため平均周りのばらつきのみをわずかに拡大(1.24倍)
+  if (profiles.length > 1) {
+    const meanSkill = profiles.reduce((acc, p) => acc + p.skill, 0) / profiles.length;
+    for (const p of profiles) {
+      p.skill = clamp(meanSkill + (p.skill - meanSkill) * 1.24, 0.74, 1.20);
+    }
   }
 
   // スキル順(降順: index 0 が最強 k=1、index nCp-1 が最弱)にソート
@@ -279,29 +287,28 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
-    // 24艇フリート用スタート隊形: 第二線スタート(secondRow: 4艇)、本部船上待機(highComFail: 1艇)、ギャップ狙い(gapShooter: 4艇)
+    // CP20艇用スタート隊形: 第二線スタート(secondRow: 2艇)、本部船上待機(highComFail: 1艇)、ギャップ狙い(gapShooter: 3艇)、残り14艇は第一線(firstRow)
     const startRole =
-      (kIdx === 23) ? 'highComFail' :
-      (kIdx === 14 || kIdx === 17 || kIdx === 20 || kIdx === 22) ? 'secondRow' :
-      (kIdx === 5 || kIdx === 9 || kIdx === 12 || kIdx === 16) ? 'gapShooter' :
+      (kIdx === 20) ? 'highComFail' :
+      (kIdx === 15 || kIdx === 18) ? 'secondRow' :
+      (kIdx === 5 || kIdx === 10 || kIdx === 14) ? 'gapShooter' :
       'firstRow';
     if (startRole === 'highComFail') {
-      const a0 = -24 - (i % 2) * 2.5;
-      const c0 = LINE_HALF + 22 + (i % 2) * 5.5;
+      const a0 = -22 - (i % 2) * 2.5;
+      const c0 = LINE_HALF + 20 + (i % 2) * 5.0;
       return { a: a0, c: c0, targetC: LINE_HALF - 5.5, startRole };
     }
     const isUpperEnd = targetC >= 30;
-    const baseA0 = isUpperEnd ? -32 - (i % 2) * 2.5 : -35 - (i % 3) * 2.8;
+    const baseA0 = isUpperEnd ? -30 - (i % 2) * 2.2 : -33 - (i % 3) * 2.4;
     const a0 = startRole === 'secondRow'
-      ? baseA0 - 10.0
+      ? baseA0 - 8.5
       : startRole === 'gapShooter'
-        ? baseA0 - 11.5
+        ? baseA0 - 9.5
         : baseA0;
     // 1分間のスターボードタック前進と低速下流れによる左(-c)への移動量を見越し、
-    // 待機ライン(a ≈ -14〜-22m)までの前進分＋下流れ余裕を持たせて配置する
-    const climbA = Math.max(8, Math.abs(a0) - 14);
-    const driftMargin = isUpperEnd ? 22 : 16;
-    const c0 = targetC + climbA * 0.88 + driftMargin;
+    // 0秒時点で狙ったtargetC付近のスタートライン直下へ到達できるよう右(+c)余裕を持たせて配置する
+    const driftMargin = isUpperEnd ? 21 : 15;
+    const c0 = targetC + Math.abs(a0) * 0.88 + driftMargin;
     return { a: a0, c: c0, targetC, startRole };
   });
   // 自艇は1分前の状況を見て上(本部船側)・下(アウター側)どちらからでもスタートできるよう、CP艇団のさらに後ろ(a=-64)かつ中央やや上寄り(c=28)に配置
@@ -1795,7 +1802,7 @@ function practiceStep(dt, time) {
   if (!player) return;
   playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
-  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && state.phase !== 'menu') sailFlog(0.85); state.lastTack = player.tack; }
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && state.phase !== 'menu') sailFlog(0.85, player.twa < 0.28 && !player.maneuver); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   player.update(dt, time, boats);
@@ -1823,7 +1830,7 @@ function simStep(dt) {
   else if (window.__ap) window.__ap.update(dt, t, boats); else playerControl(dt);
   if (player.maneuverStarted) player.maneuverStarted = null;
   // タック/ジャイブ(風をまたいだ瞬間)にセールの「バサッ」、ランチャー上下で「シャキン」
-  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished && !player.dsq) sailFlog(0.85); state.lastTack = player.tack; }
+  if (player.tack !== state.lastTack) { if (state.lastTack !== undefined && !state.ff && !player.finished && !player.dsq) sailFlog(0.85, player.twa < 0.28 && !player.maneuver); state.lastTack = player.tack; }
   if (player.pole !== state.lastPole) { if (state.lastPole !== undefined && !state.ff && !player.finished && !player.dsq) poleClank(player.pole); state.lastPole = player.pole; }
   computeBlanket(boats);
   for (const b of boats) b.update(dt, t, boats);
