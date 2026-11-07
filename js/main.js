@@ -1759,23 +1759,18 @@ function playerControl(dt) {
   b.easingSheet = dn;
   if (autoTrim) {
     let tg = b.sOpt;
-    // 「引く」ボタンはしっかり素早く引き込め、「出す」ボタンはセールを適度に逃がして滑らかに減衰させる
-    if (dn) tg = Math.max(0.18, b.sOpt - 0.52);
+    if (dn) tg = Math.max(0.05, b.sOpt - 0.55);
     else if (up) tg = Math.min(1, b.sOpt + 0.62);
-    const rate = dn ? 4.2 : up ? 6.8 : 3.2;
+    const rate = up ? 6.8 : 3.0;
     b.sheet += (tg - b.sheet) * (1 - Math.exp(-dt * rate));
   } else {
     if (up) b.sheet = Math.min(1, b.sheet + dt * 1.35);
-    if (dn) b.sheet = Math.max(0.12, b.sheet - dt * 1.15);
+    if (dn) b.sheet = Math.max(0.05, b.sheet - dt * 0.7);
   }
 }
 
 function handlePlayerSailingEvents(b) {
   if (!b || state.ff) return;
-  if (b.justPumpedSurf) {
-    b.justPumpedSurf = false;
-    if (state.phase !== 'menu') toast('パンピング成功！ 波に乗ってサーフィン加速！', 'good', 2000);
-  }
   if (b.justWildGybed) {
     b.justWildGybed = false;
     sailFlog(1.25);
@@ -1783,14 +1778,6 @@ function handlePlayerSailingEvents(b) {
     if (state.phase !== 'menu') {
       toast('ワイルドジャイブ！ ブームが勢いよく返りオーバーヒールでのぼってしまった！', 'warn', 4200);
     }
-  }
-  if (b.justCapsized) {
-    b.justCapsized = false;
-    sailFlog(1.2);
-    thud(0.95, 1.05);
-  }
-  if (b.justRighted) {
-    b.justRighted = false;
   }
 }
 
