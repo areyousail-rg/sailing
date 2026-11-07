@@ -431,7 +431,7 @@ export function computeBlanket(boats) {
             const normB = clamp((behind - 1.3) / 20.7, 0, 1);
             const distWake = Math.pow(1 - Math.pow(normB, 1.25), 1.35);
             if (leeDist <= 0.55) {
-              // 真後ろ〜やや風上: バックウインド扱い
+              // 真後ろ〜やや風上: バックウインド扱い (coverTには混ぜずbackTとして独立計上)
               const windwardCore = -(1.15 + behind * 0.12);
               let latBack = 1.0;
               if (leeDist < windwardCore) {
@@ -440,8 +440,7 @@ export function computeBlanket(boats) {
               }
               const backS = clamp(upwindWakeK * distWake * latBack * 0.88, 0, 0.92);
               if (backS > 0.02) {
-                B.coverT = clamp(Math.max(B.coverT, backS), 0, 1.0);
-                B.backT = clamp(Math.max(B.backT, backS * 0.90), 0, 1.0);
+                B.backT = clamp(Math.max(B.backT, backS), 0, 1.0);
                 if (B.twa < 1.55) {
                   B.windBendT = Math.min(B.windBendT, -backS * 0.052);
                 }
@@ -483,14 +482,13 @@ export function computeBlanket(boats) {
               if (kLee > 0.22) B.aeroTag = 'leebow';
             }
           }
-          // 風上後方のA艇(被リーバウ艇): バックウィンドの影響範囲は風上側へ短く(leeDist < 5.4m)限定
-          if (leeDist < 5.4 && ahead > -0.1 && ahead < 7.5) {
-            const kBack = Math.exp(-Math.pow((leeDist - 2.35) / 1.70, 2)) * Math.exp(-Math.pow((ahead - 2.2) / 2.8, 2));
-            if (kBack > 0.08) {
-              const backK = kBack * smoothstep(-0.1, 1.6, ahead);
+          // 風上後方のA艇(被リーバウ艇): バックウィンドの影響範囲は風上側へ短く(leeDist < 6.0m)限定 (coverTには混ぜずbackTとして独立計上)
+          if (leeDist < 6.0 && ahead > -0.3 && ahead < 8.0) {
+            const kBack = Math.exp(-Math.pow((leeDist - 2.45) / 1.85, 2)) * Math.exp(-Math.pow((ahead - 2.3) / 3.0, 2));
+            if (kBack > 0.06) {
+              const backK = kBack * smoothstep(-0.3, 1.5, ahead);
               A.windBendT -= 0.055 * backK;
-              A.coverT = clamp(A.coverT + 0.65 * backK, 0, 1.0);
-              A.backT = clamp(A.backT + 0.65 * backK, 0, 1.0);
+              A.backT = clamp(A.backT + 0.68 * backK, 0, 1.0);
               if (backK > 0.20 && !A.aeroTag) A.aeroTag = 'backwind';
             }
           }
@@ -628,8 +626,10 @@ export class Boat {
     this.back += (this.backT - this.back) * (1 - Math.exp(-dt / 0.45));
     this.windBend += (this.windBendT - this.windBend) * (1 - Math.exp(-dt / 0.35));
     this.flowBoost += (this.flowBoostT - this.flowBoost) * (1 - Math.exp(-dt / 0.40));
-    // 風影(ブランケット)に入った際に素早く明確に風速低下＆ヘダーが効くよう調整
-    w.f = clamp(w.f * (1 - 0.42 * Math.pow(this.cover, 1.15) + this.flowBoost), 0.40, 1.45);
+    // 風影(ブランケット: cover)と吹き返し(バックウインド: back)の双方を風速低下に反映 (両方同時の場合は合算してスピードに反映)
+    const blkLoss = 0.42 * Math.pow(this.cover, 1.15);
+    const backLoss = 0.38 * Math.pow(this.back, 1.15);
+    w.f = clamp(w.f * (1 - clamp(blkLoss + backLoss, 0, 0.68) + this.flowBoost), 0.34, 1.45);
     w.from = wrap(w.from + this.tack * this.windBend);
     this.windFrom = w.from; this.windF = w.f;
 
@@ -714,16 +714,16 @@ export class Boat {
       }
     }
 
-    // ワイルドジャイブ発生中: 勢いよく返ったブームの衝撃でオーバーヒールとなり、舵が効かずに風上へのぼってしまう(ブローチング)
+    // ワイルドジャイブ発生中: ヒールはしっかり出るが、角度が上ったり舵が効かなくなる挙動はごく控えめに抑える
     let wildBroachTurn = 0;
     if (this.wildGybeTimer > 0) {
       this.wildGybeTimer = Math.max(0, this.wildGybeTimer - dt);
       const wgF = clamp(this.wildGybeTimer / 1.8, 0.25, 1.0);
       rollCmd = this.wildGybeSide * (0.46 * wgF);
-      steer *= 0.10; // オーバーヒールとラダーのエアレーションで舵がほとんど効かない
+      steer *= 0.90; // 舵の効き低下はほとんど感じない程度に抑える
       const curTwa = Math.abs(wrap(w.from - this.h));
       if (curTwa > (74 * Math.PI) / 180) {
-        wildBroachTurn = this.wildGybeSide * (0.72 * wgF) * dt; // 風上方向へ強制的にのぼってしまう
+        wildBroachTurn = this.wildGybeSide * (0.04 * wgF) * dt; // 切り上がりはごくわずかに抑える
       }
     }
 
@@ -738,7 +738,7 @@ export class Boat {
     }
     // ランチャー展開/収納(数秒かかる)。上げている間は POLE_MIN より風上へは切れ上がらない
     this.poleK = clamp(this.poleK + (this.pole ? dt / 1.6 : -dt / 0.9), 0, 1);
-    if (this.pole && !this.maneuver && !this.penalty && this.wildGybeTimer <= 0) {
+    if (this.pole && !this.maneuver && !this.penalty) {
       const relP = wrap(w.from - this.h), up = Math.sign(relP) || 1; // steer*up>0 ならラフアップ
       const twaP = Math.abs(relP);
       if (twaP < POLE_MIN && steer * up > 0) steer = 0;
@@ -838,13 +838,18 @@ export class Boat {
           ? (localWindKt >= 13.0 && (!pulledForGybe || !onWaveAndFast))
           : (localWindKt >= 16.5 && this.skill < 0.96 && !onWaveAndFast && Math.random() < 0.25);
         if (wildCond && !this.penalty && t > -5) {
+          const hadPoleBeforeWild = !!(this.pole || this.gybePoleRestore > 0 || (this.maneuver && this.maneuver.restorePole));
           this.wildGybeTimer = clamp(1.75 + (localWindKt - 13.0) * 0.12, 1.75, 2.70);
           this.wildGybeSide = this.tack;
           this.justWildGybed = true;
           this.maneuver = null;
-          this.pole = false;
-          this.gybePoleRestore = 0;
-          this.v *= 0.80;
+          if (hadPoleBeforeWild) {
+            // ワイルドジャイブ時もランチャーを下ろしっぱなしにせず、通常ジャイブと同様に反対舷へ張り直す
+            this.pole = false;
+            this.poleK = Math.min(this.poleK, 0.22);
+            this.gybePoleRestore = 0.38;
+          }
+          this.v *= 0.88;
         } else {
           this.v *= pulledForGybe ? 0.97 : 0.92;
           if (!this.maneuver && pulledForGybe) {
@@ -939,13 +944,18 @@ export class Boat {
       let wf = 1 - upw * 0.15 * Hn * SEA.steep * (0.58 + 0.98 * Math.max(0, climb)) * poundScale;
       if (turning) wf -= 0.11 * Hn * SEA.steep * (0.58 + 0.58 * slowFactor);
 
-      // 順風以上(9.0kt〜)のリーチング・ランニングでのサーフィン加速と波間の減速
-      const windOk = clamp((localWindKt - 8.2) / 6.5, 0, 1.35);
-      const naturalSurf = down * (SEA.surf + 0.16 * runDeep) * Math.max(0, -climb) * (0.50 + 1.05 * windOk) * clamp(this.v / (1.9 * SPEED_SCALE), 0.35, 1.18);
+      // ランニング・リーチングでのサーフィン加速(バウが下がり気味になる)と波から下りた時の減速(バウが上がり気味になる)
+      const windOk = clamp((localWindKt - 5.0) / 6.0, 0.35, 1.45);
+      const surfWaveK = Math.pow(Math.max(0, -climb), 0.82);
+      const climbWaveK = Math.pow(Math.max(0, climb), 0.85);
+      const naturalSurf = down * (SEA.surf * 1.35 + 0.34 * runDeep) * surfWaveK * (0.65 + 1.05 * windOk) * clamp(this.v / (1.75 * SPEED_SCALE), 0.45, 1.28);
       // 波から下りた時・次の波の裏斜面(climb > 0)に入った時の減速(特にランニングで顕著)
-      const waveOffSlow = down * (0.09 + 0.15 * runDeep) * Math.max(0, climb) * (0.40 + 0.80 * windOk);
+      const waveOffSlow = down * (0.16 + 0.28 * runDeep) * climbWaveK * (0.60 + 0.85 * windOk);
       wf += naturalSurf - waveOffSlow;
-      this.isSurfing = naturalSurf > 0.10 && down > 0.25;
+      this.isSurfing = naturalSurf > 0.08 && down > 0.25;
+      // ランニングで波に乗って加速する時はバウが下がり気味(負のピッチ)、波から下りて減速する時はバウが上がり気味(正のピッチ)になる挙動
+      const runPitchTarget = (0.35 * down + 0.65 * runDeep) * clamp((-surfWaveK * 0.082 + climbWaveK * 0.072) * (0.65 + 0.45 * windOk), -0.095, 0.085);
+      this.runWavePitch = (this.runWavePitch || 0) + (runPitchTarget - (this.runWavePitch || 0)) * (1 - Math.exp(-dt * 6.5));
 
       if (SEA.type === 'chop') wf -= down * 0.040 * Hn * (0.5 + 0.5 * Math.abs(climb)) * slowFactor;
       this.waveF = wf;
@@ -1012,8 +1022,8 @@ export class Boat {
     }
     // タック回頭中や直後は運動エネルギー(慣性)で急激に減速せず、滑らかに速度が推移するよう減速時定数を大きくする
     // ランニング・リーチングの波乗り・波間の加減速はダイレクトに艇速へ反映されるよう下レグでは時定数を短くする
-    const surfResponsive = (twa > 1.50 && localWindKt >= 9.0) ? 0.72 : 1.0;
-    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.85 : 2.0 * surfResponsive)) : (turning ? 8.5 : 2.35 * surfResponsive);
+    const surfResponsive = twa > 1.75 ? 0.44 : (twa > 1.40 ? 0.68 : 1.0);
+    const tau = this.postFinishStop ? 1.8 : (twaDeg <= 10.5 && !turning) ? (this.v > 0 ? 1.25 : 1.05) : target > this.v ? (this.tacking ? 1.5 : (this.isSurfing ? 0.52 : 1.85 * surfResponsive)) : (turning ? 8.5 : 1.95 * surfResponsive);
     this.v += (target - this.v) * (1 - Math.exp(-dt / tau));
     if (this.postFinishStop && Math.abs(this.v) < 0.04) this.v = 0;
 
