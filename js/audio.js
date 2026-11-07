@@ -371,28 +371,15 @@ export function updateSailingAudio(dt, b, active = true) {
     chineFilter.frequency.setTargetAtTime(580 + sp * 620 + waveMod3 * 240, now, 0.10);
   }
 
-  // シバー: 真風角0度付近で「ザーっ」と鳴らないよう連続ノイズ(shiverGain)を大幅に抑え、
-  // わずかな時間の間に風軸を超えたり0度付近を通過する場合はさらに音量を絞る
-  if (b) {
-    if (_lastAudioTack !== null && b.tack !== _lastAudioTack) {
-      _sinceWindCross = 0;
-    } else {
-      _sinceWindCross = Math.min(99, _sinceWindCross + dt);
-    }
-    _lastAudioTack = b.tack;
-  }
+  // シバー: セールの「バサッ」音(shiverFlap)は元の音量・反応に戻し、0度付近での連続ノイズ(ザーっという音)のみ抑える
   const luff = active && b ? clamp01(b.luff) : 0;
-  _luffHoldTime = luff > 0.08 ? Math.min(5.0, _luffHoldTime + dt) : Math.max(0, _luffHoldTime - dt * 2.5);
-  // 0度付近(twa < 18°)や風軸通過直後(2.2秒以内)・短時間のシバーでは音をごく控えめにする
-  const nearZeroAtten = twa < 0.32 ? 0.22 + 0.48 * clamp01(twa / 0.32) : 1.0;
-  const crossAtten = _sinceWindCross < 2.2 ? 0.20 + 0.80 * (_sinceWindCross / 2.2) : 1.0;
-  const briefAtten = clamp01(_luffHoldTime / 0.85);
-  const lv = luff > 0.08 ? luff * nearZeroAtten * crossAtten * (0.25 + 0.75 * briefAtten) : 0;
-  shiverGain.gain.setTargetAtTime(lv * 0.042, now, 0.06);
-  shiverGain._amp.gain.setTargetAtTime(lv * 0.035, now, 0.06);
+  const lv = luff > 0.08 ? luff : 0;
+  const zeroHissScale = twa < 0.18 ? 0.35 + 0.65 * clamp01(twa / 0.18) : 1.0;
+  shiverGain.gain.setTargetAtTime(lv * 0.042 * zeroHissScale, now, 0.06);
+  shiverGain._amp.gain.setTargetAtTime(lv * 0.035 * zeroHissScale, now, 0.06);
   tShiver -= dt;
   if (tShiver <= 0) {
-    tShiver = 0.13 + Math.random() * 0.08;
+    tShiver = 0.11 + Math.random() * 0.07;
     shiverLfo.frequency.setValueAtTime(8 + Math.random() * 5, now);
     if (active && lv > 0.10) shiverFlap(lv);
   }
@@ -556,17 +543,14 @@ export function flap(vol = 0.6) {
   if (!ctx || vol <= 0.02) return;
   noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.42 * vol);
 }
-// タック/ジャイブでセールが返る自然な「バサッ」: わずかな時間の間に風軸を何度も超える場合(0度付近での揺れ等)は音を抑え目にする
-export function sailFlog(vol = 0.8, isNearZeroOrRapid = false) {
+// タック/ジャイブでセールが返る自然な「バサッ」: 通常のタック・ジャイブは元の音量でしっかり鳴らし、ごく短時間に連続で風軸を行き来した時のみ抑える
+export function sailFlog(vol = 0.8) {
   if (!ctx || vol <= 0.02) return;
   const t0 = ctx.currentTime;
   const dtFlog = t0 - _lastSailFlogAt;
-  if (dtFlog < 0.45) return; // 極短時間の連続発音を防止
-  const rapidScale = dtFlog < 2.6 ? 0.22 + 0.78 * ((dtFlog - 0.45) / 2.15) : 1.0;
-  const zeroScale = isNearZeroOrRapid ? 0.28 : 1.0;
-  const effVol = vol * Math.min(rapidScale, zeroScale);
+  if (dtFlog < 0.22) return;
+  const effVol = dtFlog < 1.4 ? vol * 0.35 : vol;
   _lastSailFlogAt = t0;
-  if (effVol <= 0.02) return;
   // 1) 「シュッ…バサッ」: セール布が大きくしなって空気を切る中低域〜中域の布音
   const s1 = ctx.createBufferSource(); s1.buffer = noiseBuf; s1.playbackRate.value = 0.78;
   const bp1 = ctx.createBiquadFilter(); bp1.type = 'bandpass'; bp1.Q.value = 0.72;
