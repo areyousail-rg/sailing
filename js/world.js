@@ -287,6 +287,7 @@ void main(){
     }
   }
   // 3) 風下方向(wd)へ真っ直ぐ進む中〜近距離の風浪リップル(すべて wv - uWT*speed で風上から風下へ厳密に伝播)
+  vec2 gBase=g;
   if(dist<2200.0){
     vec2 pRip1=vec2(wu*0.58,wv*1.55-uWT*2.8);
     vec2 pRip2=vec2(wu*1.05+4.1,wv*2.85-uWT*3.9);
@@ -305,40 +306,32 @@ void main(){
 
   vec3 n=normalize(vec3(-g.x*1.14,1.0,-g.y*1.14));
   float ndv=max(dot(n,V),0.0);
-  // カメラ近傍や遠方で視線角が浅くなった際にフレネル反射で海面が白っぽく飛ぶのを防ぎ、しっかりとした海の青色を保つ
-  float effNdv=max(ndv,0.30+0.12*smoothstep(600.0,1650.0,dist));
-  float F=0.03+0.54*pow(max(1.0-effNdv,0.0001),3.8);
+  // カメラ近傍や遠方で視線角が浅くなった際にフレネル反射で海面が白っぽく飛ぶのを防ぎ、近景も奥側と同様に自然な海の青色を保つ
+  float effNdv=max(ndv,0.40+0.08*smoothstep(600.0,1650.0,dist));
+  float F=0.03+0.46*pow(max(1.0-effNdv,0.0001),3.8);
   vec3 R=reflect(-V,n); R.y=abs(R.y);
   vec3 refl=skyBase(R);
 
-  // 波の立体陰影: 添付画像1・2枚目の深いティール・コバルトブルーの海面色と波頭〜谷のコントラストを再現
+  // 波の立体陰影: 近景から遠景まで一貫した自然な海の深い青色(ティール〜コバルトブルー)を保つ
   float sunLit=clamp(dot(n,uSun)*0.5+0.5,0.0,1.0);
-  float elev=clamp(wH*1.48+vH*0.72,-1.0,1.25);
+  float elev=clamp(wH*1.38,-1.0,1.15);
   vec3 troughCol=vec3(0.004,0.066,0.172);
-  vec3 midCol=vec3(0.008,0.145,0.285);
-  vec3 crestCol=vec3(0.022,0.275,0.405);
-  float crest=clamp(length(g)*1.85+max(0.0,elev)*0.50,0.0,1.0);
-  vec3 body=mix(troughCol,midCol,smoothstep(-0.55,0.20,elev));
-  body=mix(body,crestCol,crest*0.66);
-  // 近景(添付画像2枚目): 切り立った波の斜面に走る風向きの細かい水の筋(リブ模様)
-  if(dist<110.0){
-    float ribFade=1.0-smoothstep(18.0,110.0,dist);
-    float rib1=vn(vec2(wu*3.4+wv*1.1,wv*2.1-uWT*3.2));
-    float rib2=vn(vec2(wu*7.6+wv*2.2+4.3,wv*4.2-uWT*4.5));
-    float ribVal=smoothstep(0.32,0.78,rib1*0.58+rib2*0.42);
-    body=mix(body,body*vec3(1.10,1.22,1.24)+vec3(0.015,0.065,0.085),ribVal*ribFade*(0.35+0.45*clamp(whitecapIntensity,0.0,1.2)));
-  }
+  vec3 midCol=vec3(0.008,0.142,0.282);
+  vec3 crestCol=vec3(0.018,0.235,0.372);
+  float crest=clamp(length(gBase)*1.65+max(0.0,elev)*0.42,0.0,1.0);
+  vec3 body=mix(troughCol,midCol,smoothstep(-0.55,0.22,elev));
+  body=mix(body,crestCol,crest*0.58);
   // 波頭の太陽光透け(SSS)と波斜面の明暗コントラスト
-  float sss=max(0.0,elev)*pow(clamp(dot(V,-uSun+vec3(0.0,0.45,0.0)),0.0,1.0),2.2)*0.40+crest*0.15;
-  body+=vec3(0.02,0.32,0.46)*sss;
-  body*=0.76+0.36*sunLit;
+  float sss=max(0.0,elev)*pow(clamp(dot(V,-uSun+vec3(0.0,0.45,0.0)),0.0,1.0),2.2)*0.28+crest*0.08;
+  body+=vec3(0.015,0.22,0.36)*sss;
+  body*=0.76+0.34*sunLit;
 
-  float nearBlue=smoothstep(18.0,210.0,dist);
-  vec3 reflTint=mix(refl*vec3(0.55,0.75,0.96),refl,nearBlue);
-  vec3 col=mix(body,reflTint,F*(0.42+0.26*nearBlue-0.22*smoothstep(650.0,1700.0,dist)));
+  float nearBlue=smoothstep(25.0,220.0,dist);
+  vec3 reflTint=mix(refl*vec3(0.42,0.66,0.92),refl,nearBlue);
+  vec3 col=mix(body,reflTint,F*(0.32+0.26*nearBlue-0.20*smoothstep(650.0,1700.0,dist)));
   // 波面の太陽スペキュラハイライト(波の立体的な斜面がキラッと光る)
-  float spec=pow(max(dot(R,uSun),0.0001),95.0)*0.48+pow(max(dot(R,uSun),0.0001),22.0)*0.05;
-  col+=vec3(1.0,0.95,0.84)*spec*(0.32+0.68*F);
+  float spec=pow(max(dot(R,uSun),0.0001),95.0)*0.45+pow(max(dot(R,uSun),0.0001),24.0)*0.035;
+  col+=vec3(1.0,0.95,0.84)*spec*(0.30+0.65*F);
 
   // ブロー(風の強い海面のさざ波): 白波がグレーに濁らないよう白波合成の前に海面色へ適用する
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
@@ -346,27 +339,26 @@ void main(){
   col=mix(col,col*vec3(0.80,0.85,0.92),blow*(0.22+0.20*catpaw)*exp(-dist*0.0006));
   if(dist<4000.0){
     float streak=smoothstep(0.75,0.94,vn(vec2(wu*0.28,adv*0.10)));
-    col+=vec3(0.30,0.52,0.68)*streak*0.055*(0.4+gust)*exp(-dist*0.0012);
+    col+=vec3(0.30,0.52,0.68)*streak*0.045*(0.4+gust)*exp(-dist*0.0012);
   }
 
   if(dist<3200.0){
     // 原理: 14knotを超えると強風で波が高くなり、複数の波が重なって高くなった波頭(elev>0)の前斜面(fwdSlope>0)が崩れて白波が発生する
     float wci=clamp(whitecapIntensity,0.0,1.95);
-    float fwdSlope=max(0.0,dot(g,wd));
-    float crestSlope=length(g)*2.20+fwdSlope*1.85+max(0.0,elev)*0.95+farCrestField*0.28;
+    float fwdSlope=max(0.0,dot(gBase,wd));
+    float crestSlope=length(gBase)*2.15+fwdSlope*1.85+max(0.0,elev)*0.95+farCrestField*0.28;
     float foamN1=vn(vec2(wu*0.34,wv*0.78-uWT*2.15));
     float foamN2=vn(vec2(wu*1.35+3.7,wv*2.15-uWT*3.05));
     float foamN3=vn(vec2(wu*3.80-6.2,wv*4.60-uWT*3.90));
     float foamDetail=0.50*foamN1+0.32*foamN2+0.18*foamN3;
     float waveMetric=crestSlope+foamDetail*0.36;
-    float baseFoam=smoothstep(1.04,1.28,waveMetric)*0.04*(0.55+0.45*nearBlue);
+    float baseFoam=smoothstep(1.12,1.36,waveMetric)*0.025*nearBlue;
 
     float galeFoam=0.0;
-    float subSurfTurq=0.0;
     if(wci>0.001){
-      // 1) 遠景〜中景の白波(添付画像1枚目準拠):
-      // 海面全体が縞模様になるのではなく、波が重なって高くなった個々の波頭だけが局所的にパッと白く崩れ(横幅2〜5m×前後0.5〜1.2m)、
-      // そのすぐ風上背面に網目状の薄い泡跡がわずかに残るリアルな点在パターン
+      // 近景から遠景まで統一された白波パターン:
+      // 海面全体が白くなったり縞模様になるのではなく、自然な青い海面の上に、波が重なって高くなった個々の波頭だけが
+      // 局所的にパッと白く崩れ(横幅2〜5m×前後0.5〜1.2m)、そのすぐ風上背面に網目状の薄い泡跡がわずかに残る表現
       float warp1=vn(vec2(wu*0.09+1.3,wv*0.09-uWT*0.35))*4.2;
       float warp2=vn(vec2(wu*0.14-3.8,wv*0.13-uWT*0.48))*4.2;
       float wv1=sin(wv*0.48-uWT*2.40+warp1);
@@ -384,27 +376,10 @@ void main(){
       float laceTex=smoothstep(0.48,0.82,foamN2*0.48+foamN3*0.52);
       float wcMidFar=lipEdge*(0.78+0.22*foamN3)+wakeZone*laceTex*0.42*smoothstep(0.58,0.86,patchCell);
 
-      // 2) 近景の白波(添付画像2枚目準拠):
-      // カメラ・船体近くの3D波浪パッチ(dist<90m)で、実際に3D頂点が高く盛り上がった波の頂点(vH/elev)と急な前斜面(fwdSlope)が
-      // ザバッと塊感のある真っ白な泡・しぶきとなって崩れ落ちる表現
-      float nearMask=1.0-smoothstep(14.0,88.0,dist);
-      float foamN4=vn(vec2(wu*8.8+2.1,wv*11.5-uWT*5.6));
-      float foamN5=vn(vec2(wu*16.5-5.4,wv*19.0-uWT*7.2));
-      float real3DCrest=clamp(max(0.0,vH)*2.15+max(0.0,elev)*0.95+fwdSlope*2.10,0.0,2.2);
-      // 波の頂点〜前斜面リップの分厚い白泡
-      float closeLip=smoothstep(0.54-0.12*min(wci,1.3),0.92,real3DCrest+foamN2*0.28-0.18*(1.0-patchGate));
-      // 前斜面へ崩れ広がる泡の粒・レース模様(画像2枚目手前の斜面)
-      float closeSpill=smoothstep(0.32-0.08*min(wci,1.2),0.78,real3DCrest+foamN1*0.35)*smoothstep(0.30,0.74,foamN3*0.45+foamN4*0.35+foamN5*0.20);
-      float closeTumble=nearMask*clamp(closeLip*(0.82+0.28*foamN4)+closeSpill*0.68,0.0,1.0);
-      // 崩れる波頭直下のエメラルド〜ターコイズ色の気泡混じり海水(画像2枚目の波頭下の色味)
-      subSurfTurq=clamp((closeLip*0.85+closeSpill*0.55)*nearMask+wcMidFar*0.28*(1.0-nearMask),0.0,0.75)*smoothstep(0.0,0.30,wci);
-
       float onset=smoothstep(0.0,0.20,wci)*(0.62+0.38*min(wci,1.35));
-      galeFoam=clamp(mix(wcMidFar,max(wcMidFar*0.85,closeTumble*1.08),nearMask)*onset,0.0,0.98);
+      galeFoam=clamp(wcMidFar*onset,0.0,0.96);
     }
-    // 崩れる波頭のすぐ下に気泡を含んだ明るいエメラルド〜ターコイズ色をブレンド
-    col=mix(col,vec3(0.09,0.48,0.60),subSurfTurq*exp(-dist*0.0022));
-    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.98)*exp(-dist*0.00075);
+    float totalFoam=clamp(baseFoam+galeFoam,0.0,0.96)*exp(-dist*0.00075);
     // 白波は太陽光を浴びて輝く純白(影部分はわずかに青みがかった白)
     vec3 foamShadow=vec3(0.84,0.92,0.97);
     vec3 foamBright=vec3(0.995,0.998,1.0);
