@@ -13,7 +13,7 @@ import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearby
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
 const FINISH_WINDOW = 150; // トップフィニッシュからこの秒数以内にフィニッシュした艇はタイムを記録(超過はDNF)
-const N_BOATS = 21; // 自艇1 + CP艇20 (21艇フリート)
+const N_BOATS = 20; // 自艇1 + CP艇19 (20艇フリート)
 const START_T = -60;
 const IS_TOUCH = MOBILE || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || new URLSearchParams(location.search).has('touch');
 const NATS = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GER', 'GBR', 'AUS', 'NZL', 'CAN', 'KOR', 'CHN'];
@@ -287,9 +287,9 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
-    // CP20艇用スタート隊形: 第二線スタート(secondRow: 2艇)、本部船上待機(highComFail: 1艇)、ギャップ狙い(gapShooter: 3艇)、残り14艇は第一線(firstRow)
+    // 20艇フリート(CP19艇)用スタート隊形: 第二線スタート(secondRow: 2艇)、本部船上待機(highComFail: 1艇)、ギャップ狙い(gapShooter: 3艇)、残り13艇は第一線(firstRow)
     const startRole =
-      (kIdx === 20) ? 'highComFail' :
+      (kIdx === 19) ? 'highComFail' :
       (kIdx === 15 || kIdx === 18) ? 'secondRow' :
       (kIdx === 5 || kIdx === 10 || kIdx === 14) ? 'gapShooter' :
       'firstRow';
