@@ -477,10 +477,10 @@ export function airHorn(dur = 1.0, f0 = 392, vol = 0.5, delay = 0) {
   const la = ctx.createGain(); la.gain.value = f0 * 0.005; lfo.connect(la);
   oscs.forEach((o) => la.connect(o.frequency)); lfo.start(t); lfo.stop(t + dur + 0.4);
 }
-// 競技委員会の信号: 'long'=1分前(長い1音) / 'short'=スタート(短い1音) / 'recall'=個別リコール追加ホーン(明確な間を置いて2音目を鳴らす)
+// 競技委員会の信号: 'long'=1分前(長い1音) / 'short'=スタート(短い1音) / 'recall'=個別リコール追加ホーン(1音目から約2秒の間を置いて2音目を鳴らす)
 export function signalHorn(kind) {
   if (kind === 'long') airHorn(1.7, 415, 0.55);
-  else if (kind === 'recall') airHorn(0.68, 415, 0.65, 0.80);
+  else if (kind === 'recall') airHorn(0.68, 415, 0.65, 2.55);
   else airHorn(0.55, 415, 0.62);
 }
 // 互換: 旧API
