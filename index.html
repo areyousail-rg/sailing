@@ -6,24 +6,24 @@
   <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261108p">
+  <link rel="stylesheet" href="style.css?v=20261108q">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261108p",
-      "./js/sim.js": "./js/sim.js?v=20261108p",
-      "./js/review.js": "./js/review.js?v=20261108p",
-      "./js/ai.js": "./js/ai.js?v=20261108p",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261108p",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261108p",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261108p",
-      "./js/crew.js": "./js/crew.js?v=20261108p",
-      "./js/camera.js": "./js/camera.js?v=20261108p",
-      "./js/course.js": "./js/course.js?v=20261108p",
-      "./js/rules.js": "./js/rules.js?v=20261108p",
-      "./js/audio.js": "./js/audio.js?v=20261108p"
+      "./js/world.js": "./js/world.js?v=20261108q",
+      "./js/sim.js": "./js/sim.js?v=20261108q",
+      "./js/review.js": "./js/review.js?v=20261108q",
+      "./js/ai.js": "./js/ai.js?v=20261108q",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261108q",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261108q",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261108q",
+      "./js/crew.js": "./js/crew.js?v=20261108q",
+      "./js/camera.js": "./js/camera.js?v=20261108q",
+      "./js/course.js": "./js/course.js?v=20261108q",
+      "./js/rules.js": "./js/rules.js?v=20261108q",
+      "./js/audio.js": "./js/audio.js?v=20261108q"
     }
   }
   </script>
@@ -352,16 +352,14 @@
         <h1>スナイプ級</h1>
         <div id="menuWindHeader" class="menuWindHeader">
           <div class="mwhMain">
-            <span class="mwhItem"><small class="mwhSub">風向</small><b id="mwhDir" class="mwhVal">SSW 200°</b></span>
+            <span class="mwhItem"><small class="mwhSub">現地風向</small><b id="mwhDir" class="mwhVal">200°</b></span>
             <span class="mwhSep">/</span>
-            <span class="mwhItem"><small class="mwhSub">風速</small><b id="mwhSpd" class="mwhVal">9<small>kt</small></b><span id="mwhMax" class="mwhMax">最大 12kt</span></span>
+            <span class="mwhItem"><small class="mwhSub">現地風速</small><b id="mwhSpd" class="mwhVal">9<small>kt</small></b><span id="mwhMax" class="mwhMax">最大 12kt</span></span>
             <span id="mwhFlag" class="mwhFlag hidden"></span>
           </div>
           <div class="mwhPresets" id="mwhPresets" title="風速条件の切替">
-            <button type="button" class="mwhBtn sel" data-wmode="real">実況風</button>
-            <button type="button" class="mwhBtn" data-wmode="15">白波15kt</button>
-            <button type="button" class="mwhBtn" data-wmode="yellow">黄旗</button>
-            <button type="button" class="mwhBtn" data-wmode="red">赤旗</button>
+            <button type="button" class="mwhBtn sel" data-wmode="real">現地風</button>
+            <button type="button" class="mwhBtn" data-wmode="moderate">順風</button>
           </div>
         </div>
       </div>
@@ -594,6 +592,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261108p"></script>
+  <script type="module" src="js/main.js?v=20261108q"></script>
 </body>
 </html>
