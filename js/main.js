@@ -2260,7 +2260,7 @@ function showResult() {
       date: dateStr,
       venue: cfg.venue === 'enoshima' ? '江の島' : '八景島',
       course: cfg.courseMode === 'upwind' ? '上マークF' : 'トラペゾイド(IL2)',
-      wind: `${compassDir(currentWindDeg)} ${BASE_WIND_KT}kt`,
+      wind: `${currentWindDeg}° ${BASE_WIND_KT}kt`,
       rank: player.dsq ? null : p > 0 ? p : null,
       fleet: boats.length,
       status: player.dsq ? 'DSQ' : p > 0 ? 'FIN' : 'DNF',
@@ -2615,22 +2615,33 @@ async function fetchRealWeather(venueId) {
 // ---------- メニューUI ----------
 let currentWindDeg = 15;
 let currentSideBiasDesc = '';
-let selectedWindPreset = 'real'; // 'real' | '15' | 'yellow' | 'red'
+let selectedWindPreset = 'real'; // 'real' (現地風) | 'moderate' (順風)
+
+function isRedFlagWeather(venueId, baseW) {
+  if (!baseW) return false;
+  const maxKt = Math.max(baseW.rawKt || 0, baseW.gustKt || 0);
+  const redThreshold = venueId === 'hakkeijima' ? 18 : 20;
+  return maxKt > redThreshold;
+}
+
+function syncWindPresetButtons(venueId, baseW) {
+  const redFlag = isRedFlagWeather(venueId, baseW);
+  if (redFlag) selectedWindPreset = 'moderate';
+  const presetBox = $('mwhPresets');
+  if (!presetBox) return;
+  presetBox.querySelectorAll('.mwhBtn').forEach((b) => {
+    const mode = b.getAttribute('data-wmode');
+    b.classList.toggle('sel', mode === selectedWindPreset);
+  });
+}
 
 function resolveEffectiveWeather(venueId, baseW) {
   const windDeg = baseW.windDeg;
-  if (selectedWindPreset === '15') {
-    return { windDeg, rawKt: 14.8, gustKt: 15.6, effKt: 14.8, fallback: false };
+  if (isRedFlagWeather(venueId, baseW)) {
+    selectedWindPreset = 'moderate';
   }
-  if (selectedWindPreset === 'yellow') {
-    const rawKt = venueId === 'hakkeijima' ? 14.5 : 16.2;
-    const gustKt = venueId === 'hakkeijima' ? 17.0 : 19.0;
-    return { windDeg, rawKt, gustKt, effKt: rawKt, fallback: false };
-  }
-  if (selectedWindPreset === 'red') {
-    const rawKt = venueId === 'hakkeijima' ? 17.2 : 19.0;
-    const gustKt = venueId === 'hakkeijima' ? 20.5 : 22.5;
-    return { windDeg, rawKt, gustKt, effKt: rawKt, fallback: false };
+  if (selectedWindPreset === 'moderate') {
+    return { windDeg, rawKt: 10, gustKt: 12, effKt: 10, fallback: false };
   }
   return baseW;
 }
@@ -2638,10 +2649,10 @@ function resolveEffectiveWeather(venueId, baseW) {
 function updateWeatherInfoUI(windDeg, kt, gustKt, desc, fallback) {
   currentWindDeg = windDeg;
   currentSideBiasDesc = desc;
-  const dirStr = `${compassDir(windDeg)} ${windDeg}°`;
+  const dirStr = `${windDeg}°`;
   const maxKt = Math.max(kt, gustKt || kt);
 
-  // スタート画面上部に風向・風速・最大風速・赤旗/黄旗を大きく表示
+  // スタート画面上部に現地風向・現地風速・最大風速・赤旗/黄旗を大きく表示
   const dirEl = $('mwhDir');
   const spdEl = $('mwhSpd');
   const maxEl = $('mwhMax');
@@ -2664,6 +2675,7 @@ function updateWeatherInfoUI(windDeg, kt, gustKt, desc, fallback) {
       flagEl.textContent = '';
     }
   }
+  syncWindPresetButtons(cfg.venue, { rawKt: kt, gustKt: maxKt });
 
   // 下部には風速や風向の文字は入れず、海面特性・波・潮汐のみを記載
   const infoEl = $('realWeatherInfo');
@@ -2687,15 +2699,16 @@ function applyVenue() {
     setWindParams(effW.effKt, bias);
     world.setVenue(cfg.venue, effW.windDeg, bias); applySea(effW.windDeg, effW.effKt);
     rebuildObstacles();
-    updateWeatherInfoUI(effW.windDeg, effW.rawKt, effW.gustKt, desc, effW.fallback);
+    updateWeatherInfoUI(cached.windDeg, cached.rawKt, cached.gustKt, desc, cached.fallback);
   } else {
     // 初回取得: まずデフォルトで初期化し、非同期で1回だけ取得して反映
-    const defW = resolveEffectiveWeather(cfg.venue, { windDeg: v.defaultWindDeg, rawKt: v.defaultWindKt, gustKt: v.defaultWindKt + 3, effKt: v.defaultWindKt, fallback: false });
-    const { bias, desc } = computeSideBias(cfg.venue, defW.windDeg);
-    setWindParams(defW.effKt, bias);
-    world.setVenue(cfg.venue, defW.windDeg, bias); applySea(defW.windDeg, defW.effKt);
+    const baseDef = { windDeg: v.defaultWindDeg, rawKt: v.defaultWindKt, gustKt: v.defaultWindKt + 3, effKt: v.defaultWindKt, fallback: false };
+    const effW = resolveEffectiveWeather(cfg.venue, baseDef);
+    const { bias, desc } = computeSideBias(cfg.venue, effW.windDeg);
+    setWindParams(effW.effKt, bias);
+    world.setVenue(cfg.venue, effW.windDeg, bias); applySea(effW.windDeg, effW.effKt);
     rebuildObstacles();
-    updateWeatherInfoUI(defW.windDeg, defW.rawKt, defW.gustKt, desc, false);
+    updateWeatherInfoUI(baseDef.windDeg, baseDef.rawKt, baseDef.gustKt, desc, false);
     fetchRealWeather(cfg.venue).then((w) => {
       if (state.phase !== 'menu') return;
       const effW = resolveEffectiveWeather(cfg.venue, w);
@@ -2706,7 +2719,7 @@ function applyVenue() {
       makeFleet();
       cam.inited = false;
       if (player) cam.update(0, performance.now() / 1000, player, boats);
-      updateWeatherInfoUI(effW.windDeg, effW.rawKt, effW.gustKt, bInfo.desc, effW.fallback);
+      updateWeatherInfoUI(w.windDeg, w.rawKt, w.gustKt, bInfo.desc, w.fallback);
     });
   }
 }
@@ -2843,8 +2856,16 @@ function initMenu() {
   if (presetBox) {
     presetBox.querySelectorAll('.mwhBtn').forEach((btn) => {
       btn.onclick = () => {
-        selectedWindPreset = btn.getAttribute('data-wmode') || 'real';
-        presetBox.querySelectorAll('.mwhBtn').forEach((b) => b.classList.toggle('sel', b === btn));
+        const mode = btn.getAttribute('data-wmode') || 'real';
+        const cached = weatherCache[cfg.venue];
+        if (mode === 'real' && isRedFlagWeather(cfg.venue, cached)) {
+          selectedWindPreset = 'moderate';
+          syncWindPresetButtons(cfg.venue, cached);
+          toast('赤旗(出艇禁止基準)のため順風が選択されます', 'warn', 2500);
+          return;
+        }
+        selectedWindPreset = mode;
+        syncWindPresetButtons(cfg.venue, cached);
         applyVenue();
         makeFleet();
         cam.inited = false;
