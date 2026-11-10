@@ -324,10 +324,18 @@ void main(){
   vec3 deepCol=vec3(0.010,0.050,0.098);
   vec3 scatCol=vec3(0.020,0.118,0.165);
   vec3 body=mix(deepCol,scatCol,0.30+0.40*(1.0-ndv));
-  // 波の峰の薄い水が逆光で透ける(サブサーフェス散乱): 太陽側を向いて見た波頭だけがほんのり青緑に透ける
+  // 波の峰の薄い水が透ける(サブサーフェス散乱)＋太陽に向いていない時も太陽光が水中に差し込んで透けるうっすらとした透明感
   float trans=pow(clamp(dot(V,normalize(-uSun+vec3(0.0,0.60,0.0))),0.0,1.0),3.0);
-  float sssAmt=smoothstep(0.0,0.9,elev)*(0.12+0.85*trans);
+  vec2 vHoriz=normalize(vec2(-V.x,-V.z)+vec2(1e-6,0.0));
+  float sunAz=dot(vHoriz,normalize(uSun.xz));
+  float offSun=1.0-smoothstep(0.20,0.88,sunAz);
+  float crestGlow=smoothstep(-0.08,0.72,elev)*(0.26+0.18*sunLit)*offSun;
+  float sssAmt=smoothstep(0.0,0.9,elev)*(0.12+0.85*trans)+crestGlow;
   body+=vec3(0.020,0.150,0.140)*sssAmt;
+  // 順光・側光でも海面下へ透過した光が波の斜面や浅層で青緑に澄んで見える水中散乱(近〜中景中心にうっすら付与)
+  float sunPen=pow(sunLit,1.35)*(0.42+0.58*smoothstep(-0.32,0.55,elev));
+  float rippleClarity=clamp(length(gs)*2.2,0.0,1.0)*exp(-dist*0.006);
+  body+=vec3(0.016,0.115,0.125)*offSun*(0.30*sunPen+0.14*rippleClarity)*exp(-dist*0.0016);
   body*=0.82+0.28*sunLit;
 
   vec3 col=mix(body,refl,F);
@@ -336,6 +344,22 @@ void main(){
   float sd=max(dot(R,uSun),0.0);
   float spec=pow(sd,shin)*(shin*0.012)+pow(sd,shin*0.12)*0.035;
   col+=vec3(1.0,0.94,0.82)*spec*clamp(F*6.0,0.15,1.0);
+  // 太陽に向かっていない方向でも、傾いた細かい波面ファセットが空・太陽散乱光を拾ってうっすら粒状にきらめく表現
+  // 裏向き斜面(ndv≈0)の折り返し反射は除外し、澄んだ水面が見える表向き波面の上に繊細な粒状グレアを乗せる
+  vec2 gnGlint=g*0.35+gs*1.35;
+  vec3 nGlint=normalize(vec3(-gnGlint.x,1.0,-gnGlint.y));
+  vec3 Rglint=reflect(-V,nGlint);
+  float shinSky=mix(920.0,210.0,clamp(sig*4.2,0.0,1.0));
+  float vTan=V.y/max(length(V.xz),0.25);
+  float nearK=smoothstep(0.06,0.42,vTan);
+  float targetTan=vTan+mix(0.34,0.25,nearK);
+  vec3 skyGlintDir=normalize(vec3(vHoriz.x,targetTan,vHoriz.y));
+  float sdSky=max(dot(Rglint,skyGlintDir),0.0);
+  float specSky=pow(sdSky,shinSky)*(shinSky*0.0046);
+  float frontFace=smoothstep(0.09,0.26,ndv);
+  float skyGlintMask=offSun*frontFace*(0.50+0.50*sunLit)*(0.52+0.48*smoothstep(-0.20,0.48,elev))*exp(-dist*0.0085);
+  vec3 skyGlintCol=mix(vec3(0.93,0.98,1.0),vec3(1.0,0.96,0.86),sunLit);
+  col+=skyGlintCol*min(specSky*skyGlintMask*0.38,0.72);
 
   // ブロー(風の強い海面のさざ波): 物理のブロー移動速度(adv = ca + uWT*4.8)と完全に同期して風上から風下へ流れる
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
