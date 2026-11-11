@@ -468,8 +468,12 @@ function landH(x, z) {
   const d = coastD(x, z);
   if (d < -40) return -6;
   const ramp = smooth(-12, 110, d);
-  const hills = Math.pow(smooth(480, 6800, d), 1.35) * 480 * (0.38 + 0.62 * noise2(x / 2600, d / 2200)) + smooth(180, 1300, d) * 34 * noise2(x / 500, d / 400);
-  return -0.5 + 4.2 * ramp + hills;
+  // 藤沢・片瀬・鵠沼・辻堂・茅ヶ崎の奥は平坦な湘南平野〜相模野台地(標高4〜20m程度、背後に山脈なし)
+  const plain = smooth(250, 2800, d) * (9 + 7 * noise2(x / 1800, d / 1800));
+  // 東側(腰越・七里ヶ浜・鎌倉山 x > 950)のみ、鎌倉へ続く実際のなだらかな緑の丘陵(約45〜95m)を配置し、奥で低く収める
+  const eastK = smooth(950, 2600, x) * (1 - 0.55 * smooth(2800, 6500, d));
+  const kamakuraHills = eastK * smooth(140, 1350, d) * (42 + 52 * noise2(x / 900, d / 800));
+  return -0.5 + 3.8 * ramp + plain + kamakuraHills;
 }
 function colorLand(x, z, h, out) {
   const d = coastD(x, z);
@@ -482,21 +486,22 @@ function colorLand(x, z, h, out) {
     out.setRGB(0.12 + 0.04 * g, 0.28 + 0.06 * g, 0.14 + 0.03 * g);
   } else {
     const g = noise2(x / 160, z / 160);
-    const u = smooth(25, 380, h);
-    const distHaze = smooth(1800, 5800, d);
-    // 湘南の丘陵・鎌倉山〜藤沢の緑をしっかり濃い常緑樹色にし、遠方の山のみ緩やかに霞ませる
-    const r0 = 0.16 + 0.05 * g, g0 = 0.34 + 0.07 * g, b0 = 0.17 + 0.04 * g;
-    const r1 = 0.38 + 0.06 * u, g1 = 0.49 + 0.06 * u, b1 = 0.56 + 0.05 * u;
-    const k = Math.max(u * 0.55, distHaze * 0.68);
-    out.setRGB(r0 + (r1 - r0) * k, g0 + (g1 - g0) * k, b0 + (b1 - b0) * k);
-    // 藤沢・片瀬・鵠沼・腰越・鎌倉の市街地ブロックを自然な街並み色で表現
-    if (d < 2600 && h < 52) {
+    const u = smooth(25, 160, h);
+    const distHaze = smooth(1800, 6200, d);
+    // 湘南の緑地・鎌倉山の常緑樹色と、藤沢・片瀬・鵠沼・腰越の市街地ブロックを距離霞みへ自然になじませる
+    let r = 0.16 + 0.05 * g, gg = 0.34 + 0.07 * g, b = 0.17 + 0.04 * g;
+    if (d < 5200 && h < 42) {
       const townNoise = noise2(x / 52, z / 52);
-      if (townNoise > 0.38) {
+      if (townNoise > 0.36) {
         const bldTone = noise2(x / 18, z / 18);
-        out.setRGB(0.56 + 0.10 * bldTone, 0.54 + 0.09 * bldTone, 0.50 + 0.08 * bldTone);
+        r = 0.55 + 0.09 * bldTone;
+        gg = 0.53 + 0.08 * bldTone;
+        b = 0.50 + 0.07 * bldTone;
       }
     }
+    const r1 = 0.44 + 0.05 * u, g1 = 0.54 + 0.05 * u, b1 = 0.62 + 0.05 * u;
+    const k = Math.max(u * 0.35, distHaze * 0.72);
+    out.setRGB(r + (r1 - r) * k, gg + (g1 - gg) * k, b + (b1 - b) * k);
   }
 }
 
@@ -751,12 +756,16 @@ export function createWorld(scene) {
     const h = islandH(x, z); if (h < 2.2 || h > 18) continue;
     house(x, h - 0.5, z, 8 + rnd() * 10, 6 + rnd() * 8, 8 + rnd() * 10); k++;
   }
-  // 海岸の街並み(片瀬・鵠沼・腰越・藤沢): 海岸沿いから丘陵手前まで密に建物を配置
-  for (let k = 0; k < 2100; k++) {
-    const x = -9000 + rnd() * 21000, z = COAST_Z - 165 - Math.pow(rnd(), 1.25) * 1650;
-    const h = landH(x, z); if (h < 1.5) continue;
-    const tall = rnd() < 0.15;
-    house(x, h - 0.5, z, 10 + rnd() * 18, tall ? 20 + rnd() * 28 : 7 + rnd() * 14, 10 + rnd() * 18);
+  // 海岸の街並み(片瀬江ノ島駅周辺・鵠沼・腰越・藤沢): 風致地区らしい2〜3階建て低層中心＋R134沿いの中層マンション(4〜5階程度)に抑える
+  for (let k = 0; k < 1350; k++) {
+    const x = -9000 + rnd() * 12400, z = COAST_Z - 165 - Math.pow(rnd(), 1.25) * 1650;
+    const h = landH(x, z); if (h < 1.5 || h > 42) continue;
+    const nearKatase = Math.abs(x + 150) < 1500 && z > COAST_Z - 950;
+    const midRise = rnd() < (nearKatase ? 0.10 : 0.12);
+    const bh = nearKatase
+      ? (midRise ? 9.5 + rnd() * 4.5 : 4.5 + rnd() * 4.0)
+      : (midRise ? 10.5 + rnd() * 6.0 : 5.0 + rnd() * 4.5);
+    house(x, h - 0.5, z, 8 + rnd() * 13, bh, 8 + rnd() * 13);
   }
   boxes.count = bn; enoshimaGroup.add(boxes);
 
