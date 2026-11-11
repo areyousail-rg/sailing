@@ -493,15 +493,19 @@ function drawMinimap() {
 
 const markPtr = { box: $('markPointer'), arrow: $('mpArrow'), label: $('mpText'), v3: new THREE.Vector3() };
 function updateMarkPointer(b) {
-  if (!markPtr.box || !b || b.finished || b.dsq || state.phase === 'menu') {
+  if (!markPtr.box || !b || b.finished || b.dsq || state.phase === 'menu' || state.resultShown || state.t < 0) {
     if (markPtr.box) markPtr.box.classList.add('hidden');
     return;
   }
   const L = LEGS[Math.min(b.leg, LEGS.length - 1)];
+  if (!L || L.type === 'finish') {
+    markPtr.box.classList.add('hidden');
+    return;
+  }
   const tg = L.type === 'mark' ? L.mark : L.center;
   const tw = toWorld(tg.a, tg.c);
   const distM = Math.round(Math.hypot(tw.x - b.x, tw.z - b.z) / 1.5);
-  const shortName = L.type === 'finish' ? 'FINISH' : L.type === 'gate' ? '4G' : L.name;
+  const shortName = L.type === 'gate' ? '4G' : L.name;
 
   markPtr.v3.set(tw.x, 4.2, tw.z);
   markPtr.v3.project(camera);

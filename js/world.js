@@ -349,17 +349,17 @@ void main(){
   vec2 gnGlint=g*0.35+gs*1.35;
   vec3 nGlint=normalize(vec3(-gnGlint.x,1.0,-gnGlint.y));
   vec3 Rglint=reflect(-V,nGlint);
-  float shinSky=mix(1050.0,260.0,clamp(sig*4.2,0.0,1.0));
+  float shinSky=mix(1250.0,340.0,clamp(sig*4.2,0.0,1.0));
   float vTan=V.y/max(length(V.xz),0.25);
   float nearK=smoothstep(0.06,0.42,vTan);
-  float targetTan=vTan+mix(0.34,0.25,nearK);
+  float targetTan=vTan+mix(0.38,0.28,nearK);
   vec3 skyGlintDir=normalize(vec3(vHoriz.x,targetTan,vHoriz.y));
   float sdSky=max(dot(Rglint,skyGlintDir),0.0);
-  float specSky=pow(sdSky,shinSky)*(shinSky*0.0036);
+  float specSky=pow(sdSky,shinSky)*(shinSky*0.0024);
   float frontFace=smoothstep(0.09,0.26,ndv);
-  float skyGlintMask=offSun*frontFace*(0.42+0.58*sunLit)*(0.45+0.55*smoothstep(-0.15,0.50,elev))*exp(-dist*0.0095);
+  float skyGlintMask=offSun*frontFace*(0.38+0.62*sunLit)*(0.25+0.75*smoothstep(-0.05,0.58,elev))*exp(-dist*0.0115);
   vec3 skyGlintCol=mix(vec3(0.93,0.98,1.0),vec3(1.0,0.96,0.86),sunLit);
-  col+=skyGlintCol*min(specSky*skyGlintMask*0.25,0.42);
+  col+=skyGlintCol*min(specSky*skyGlintMask*0.14,0.22);
 
   // ブロー(風の強い海面のさざ波): 物理のブロー移動速度(adv = ca + uWT*4.8)と完全に同期して風上から風下へ流れる
   float catpaw=0.55+0.45*vn(vec2(wu*0.35,adv*0.16));
