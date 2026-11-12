@@ -15,16 +15,50 @@ let bgmVoiceEnabled = true;
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
 
+const MASTER_GAIN = 0.48;
+
 function softClip(k) {
   const n = 1024, c = new Float32Array(n);
   for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); }
   return c;
 }
+// 通常域(|x| <= 0.64)は完全リニア(無歪み)のまま通し、突発的な大音量重畳時のみ ±0.90 未満へ滑らかに収めるブリックウォール・ソフトリミッター
+function makeMasterLimiterCurve() {
+  const n = 8192, c = new Float32Array(n);
+  const knee = 0.64, ceil = 0.90, span = ceil - knee;
+  for (let i = 0; i < n; i++) {
+    const s = (i / (n - 1)) * 2 - 1;
+    const x = s * 2;
+    const a = Math.abs(x);
+    if (a <= knee) {
+      c[i] = x;
+    } else {
+      c[i] = Math.sign(x) * (knee + span * Math.tanh((a - knee) / span));
+    }
+  }
+  return c;
+}
 function makeImpulse(sec, decay) {
-  const len = Math.floor(ctx.sampleRate * sec), buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  const sr = ctx.sampleRate || 44100;
+  const len = Math.floor(sr * sec), buf = ctx.createBuffer(2, len, sr);
+  const hpAlpha = Math.exp((-2 * Math.PI * 165) / sr);
+  const lpAlpha = 1 - Math.exp((-2 * Math.PI * 4200) / sr);
+  const fadeIn = Math.max(1, Math.floor(sr * 0.012));
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    let prevIn = 0, hp = 0, lp = 0, peak = 1e-6;
+    for (let i = 0; i < len; i++) {
+      const env = Math.pow(1 - i / len, decay) * Math.min(1, i / fadeIn);
+      const raw = (Math.random() * 2 - 1) * env;
+      hp = hpAlpha * (hp + raw - prevIn);
+      prevIn = raw;
+      lp += lpAlpha * (hp - lp);
+      d[i] = lp;
+      const al = Math.abs(lp);
+      if (al > peak) peak = al;
+    }
+    const norm = 0.34 / peak;
+    for (let i = 0; i < len; i++) d[i] *= norm;
   }
   return buf;
 }
@@ -70,13 +104,21 @@ export function initAudio() {
       }
     };
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const dcBlock = ctx.createBiquadFilter();
+    dcBlock.type = 'highpass'; dcBlock.frequency.value = 28; dcBlock.Q.value = 0.707;
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.25;
-    master = ctx.createGain(); master.gain.value = 0.62; master.connect(comp); comp.connect(ctx.destination);
-    // 開けた水面の残響(ホーンに奥行きを与える)
-    const conv = ctx.createConvolver(); conv.buffer = makeImpulse(2.2, 3.2);
+    comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.002; comp.release.value = 0.18;
+    const limiterPad = ctx.createGain();
+    limiterPad.gain.value = 0.5;
+    const limiter = ctx.createWaveShaper();
+    limiter.curve = makeMasterLimiterCurve();
+    limiter.oversample = '4x';
+    master = ctx.createGain(); master.gain.value = muted ? 0 : MASTER_GAIN;
+    master.connect(dcBlock); dcBlock.connect(comp); comp.connect(limiterPad); limiterPad.connect(limiter); limiter.connect(ctx.destination);
+    // 開けた水面の自然な残響(過大レベルによる音割れを防ぐ帯域制限＆正規化インパルス)
+    const conv = ctx.createConvolver(); conv.buffer = makeImpulse(2.0, 3.4);
     fx = ctx.createGain(); fx.gain.value = 1; fx.connect(conv);
-    const wet = ctx.createGain(); wet.gain.value = 0.55; conv.connect(wet); wet.connect(master);
+    const wet = ctx.createGain(); wet.gain.value = 0.24; conv.connect(wet); wet.connect(master);
 
     // ノイズ素材: 白色 / ブラウン(風・水流用)
     const sr = ctx.sampleRate;
@@ -88,9 +130,9 @@ export function initAudio() {
     // 風(ガストでゆっくり強弱)
     const wsrc = loopSource(brown);
     const wlp = ctx.createBiquadFilter(); wlp.type = 'lowpass'; wlp.frequency.value = 720;
-    windGain = ctx.createGain(); windGain.gain.value = 0.18;
+    windGain = ctx.createGain(); windGain.gain.value = 0.14;
     const gust = ctx.createOscillator(); gust.frequency.value = 0.11;
-    const gustAmp = ctx.createGain(); gustAmp.gain.value = 0.05; gust.connect(gustAmp); gustAmp.connect(windGain.gain); gust.start();
+    const gustAmp = ctx.createGain(); gustAmp.gain.value = 0.04; gust.connect(gustAmp); gustAmp.connect(windGain.gain); gust.start();
     wsrc.connect(wlp); wlp.connect(windGain); windGain.connect(master);
 
     // 艇の音バス(カメラがドローンの時は小さく、艇内では大きく)
@@ -138,9 +180,9 @@ export function initAudio() {
   } catch (e) { console.warn('audio init failed', e); ctx = null; }
 }
 
-export function setWind(speedNorm) { if (windGain && ctx) windGain.gain.setTargetAtTime(0.10 + 0.22 * speedNorm, ctx.currentTime, 0.3); }
+export function setWind(speedNorm) { if (windGain && ctx) windGain.gain.setTargetAtTime(0.08 + 0.16 * speedNorm, ctx.currentTime, 0.3); }
 export function setCameraAudio(cockpit) { camMul = cockpit ? 1.0 : 0.45; }
-export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.62; return muted; }
+export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : MASTER_GAIN; return muted; }
 export function isBgmVoiceEnabled() { return bgmVoiceEnabled; }
 export function setBgmVoiceEnabled(on) {
   bgmVoiceEnabled = !!on;
@@ -236,72 +278,73 @@ function wakeGurgle(sp, heel) {
   }
 }
 
-// 4) ハルが波を叩くスラップ＆飛沫 (軽快なチョップ波・飛沫を伴うスプラッシュ・重めのバウバンプの3パターン)
+// 4) ハルが細かいさざ波に触れる控えめなリップルスラップ
 function waveSlap(sp, heel) {
   const t = ctx.currentTime;
   const variant = Math.random();
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-  s.playbackRate.value = 0.65 + Math.random() * 0.65;
+  s.playbackRate.value = 0.68 + Math.random() * 0.55;
   const f = ctx.createBiquadFilter();
   f.type = variant < 0.45 ? 'lowpass' : 'bandpass';
-  f.Q.value = variant < 0.45 ? 1.3 : 0.95;
-  const fHi = (variant < 0.35 ? 1100 : variant < 0.75 ? 1850 : 2400) + Math.random() * 700;
-  const fLo = 180 + Math.random() * 160;
-  const dur = (variant < 0.35 ? 0.28 : 0.42) + Math.random() * 0.18;
+  f.Q.value = variant < 0.45 ? 1.15 : 0.90;
+  const fHi = (variant < 0.35 ? 1050 : variant < 0.75 ? 1650 : 2100) + Math.random() * 550;
+  const fLo = 190 + Math.random() * 140;
+  const dur = (variant < 0.35 ? 0.24 : 0.34) + Math.random() * 0.14;
   f.frequency.setValueAtTime(fHi, t);
   f.frequency.exponentialRampToValueAtTime(fLo, t + dur);
 
   const g = ctx.createGain();
-  const vol = (0.08 + 0.24 * sp) * (1 + heel * 1.5) * (0.8 + Math.random() * 0.4);
+  const vol = (0.032 + 0.095 * sp) * (1 + heel * 1.1) * (0.8 + Math.random() * 0.35);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.010);
+  g.gain.linearRampToValueAtTime(vol, t + 0.012);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
   s.connect(f); f.connect(g); g.connect(boatBus);
   s.start(t, Math.random() * 1.0); s.stop(t + dur + 0.06);
 
-  // 船体のFRP共鳴音 (波の当たり方でピッチと深さが変化)
+  // 船体の微かなFRP共鳴
   const o = ctx.createOscillator(), og = ctx.createGain();
-  o.type = variant > 0.65 ? 'triangle' : 'sine';
-  const bodyF0 = 78 + Math.random() * 42;
+  o.type = 'sine';
+  const bodyF0 = 80 + Math.random() * 34;
   o.frequency.setValueAtTime(bodyF0, t);
-  o.frequency.exponentialRampToValueAtTime(bodyF0 * 0.48, t + 0.24);
+  o.frequency.exponentialRampToValueAtTime(bodyF0 * 0.52, t + 0.20);
   og.gain.setValueAtTime(0.0001, t);
-  og.gain.linearRampToValueAtTime((0.11 + Math.random() * 0.08) * sp, t + 0.01);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-  o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.32);
+  og.gain.linearRampToValueAtTime((0.038 + Math.random() * 0.03) * sp, t + 0.01);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.25);
 }
 
-// 5) 三角波・短周期波にはたかれた際、海に船底がたたきつけられる控えめな「ドン / バシャン」という水叩き音
+// 5) 波が高いときに風上へ向かう際、バウが波にはたかれる控えめな「パシャン / トン…ザッ」というリアルな波叩き音
 function hullWaveSlam(slam) {
   if (!ctx || !noiseBuf || !boatBus) return;
   const t = ctx.currentTime;
   const intensity = clamp01(slam);
-  // 水面を叩く中低域スプラッシュ(控えめな音量)
+  // ① バウフレアが波頭を叩いて水しぶきが散る控えめなスプラッシュ音
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-  s.playbackRate.value = 0.58 + Math.random() * 0.25;
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.4;
-  lp.frequency.setValueAtTime(780 + intensity * 420, t);
-  lp.frequency.exponentialRampToValueAtTime(160, t + 0.26);
+  s.playbackRate.value = 0.66 + Math.random() * 0.26;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.05;
+  bp.frequency.setValueAtTime(980 + intensity * 480 + Math.random() * 180, t);
+  bp.frequency.exponentialRampToValueAtTime(240 + Math.random() * 60, t + 0.21);
   const g = ctx.createGain();
-  const vol = (0.045 + 0.075 * intensity) * (0.85 + Math.random() * 0.3);
+  const vol = (0.026 + 0.048 * intensity) * (0.85 + Math.random() * 0.28);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.012);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-  s.connect(lp); lp.connect(g); g.connect(boatBus);
-  s.start(t, Math.random() * 1.0); s.stop(t + 0.30);
+  g.gain.linearRampToValueAtTime(vol, t + 0.009);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.23);
+  s.connect(bp); bp.connect(g); g.connect(boatBus);
+  s.start(t, Math.random() * 1.1); s.stop(t + 0.26);
 
-  // FRPハルが海面に着水・叩きつけられる重みのある「ドン」という共鳴音(抑え目)
+  // ② スナイプ級のFRPハルが波にはたかれる控えめで自然な「トン」という中空共鳴
   const o = ctx.createOscillator(), og = ctx.createGain();
   o.type = 'triangle';
-  const f0 = 92 + Math.random() * 22;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
+  const f0 = 98 + Math.random() * 20 + intensity * 12;
   o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(38, t + 0.19);
-  const thudVol = (0.055 + 0.085 * intensity) * (0.85 + Math.random() * 0.3);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.15);
+  const thudVol = (0.024 + 0.042 * intensity) * (0.85 + Math.random() * 0.25);
   og.gain.setValueAtTime(0.0001, t);
-  og.gain.linearRampToValueAtTime(thudVol, t + 0.008);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.21);
-  o.connect(og); og.connect(boatBus);
-  o.start(t); o.stop(t + 0.23);
+  og.gain.linearRampToValueAtTime(thudVol, t + 0.007);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  o.connect(lp); lp.connect(og); og.connect(boatBus);
+  o.start(t); o.stop(t + 0.20);
 }
 
 let _lastAudioTack = null;
@@ -361,16 +404,16 @@ export function updateSailingAudio(dt, b, active = true) {
   const dynWave = clampN(0.5 + 0.28 * waveMod1 + 0.18 * waveMod2 + 0.12 * waveMod3, 0.1, 1.15);
 
   // 連続水流音のゲインとフィルタ周波数を波のうねり・ヒール・艇速で絶えず表情付けする
-  hissGain.gain.setTargetAtTime((0.008 + 0.26 * Math.pow(sp, 1.35)) * (1 + heel * 2.2) * (0.72 + 0.55 * dynWave), now, 0.08);
+  hissGain.gain.setTargetAtTime((0.006 + 0.20 * Math.pow(sp, 1.35)) * (1 + heel * 2.0) * (0.72 + 0.50 * dynWave), now, 0.08);
   if (hissHP && hissLP) {
     hissHP.frequency.setTargetAtTime(1050 + sp * 480 - heel * 500 + waveMod2 * 220, now, 0.10);
     hissLP.frequency.setTargetAtTime(3800 + sp * 3600 + dynWave * 1600, now, 0.10);
   }
-  rushGain.gain.setTargetAtTime((0.015 + 0.25 * sp) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12);
+  rushGain.gain.setTargetAtTime((0.012 + 0.20 * sp) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12);
   rushFilter.frequency.setTargetAtTime(260 + sp * 780 + waveMod1 * 140 + heel * 260, now, 0.12);
 
   if (chineGain && chineFilter) {
-    chineGain.gain.setTargetAtTime(sp * (0.04 + 0.12 * heel + 0.05 * Math.abs(waveMod2)), now, 0.10);
+    chineGain.gain.setTargetAtTime(sp * (0.032 + 0.10 * heel + 0.04 * Math.abs(waveMod2)), now, 0.10);
     chineFilter.frequency.setTargetAtTime(580 + sp * 620 + waveMod3 * 240, now, 0.10);
   }
 
@@ -388,9 +431,10 @@ export function updateSailingAudio(dt, b, active = true) {
   }
   if (!active) return;
 
-  // 三角波・急な波にはたかれた際の船底着水スラム音(抑え目)
-  if (b && b.waveSlam > 0) {
-    const slam = b.waveSlam;
+  // 波が高いときに風上へ向かう際など、波にはたかれた控えめなハル波叩き音
+  if (b && (b.upwindWaveHit > 0 || b.waveSlam > 0)) {
+    const slam = Math.max(b.upwindWaveHit || 0, b.waveSlam || 0);
+    b.upwindWaveHit = 0;
     b.waveSlam = 0;
     hullWaveSlam(slam);
   }
@@ -413,10 +457,10 @@ export function updateSailingAudio(dt, b, active = true) {
     tGurgle = (0.28 + Math.random() * 0.55) / (0.4 + sp * 1.4);
     wakeGurgle(sp, heel);
   }
-  // 波打ちスラップ音
+  // さざ波リップルスラップ音(控えめな頻度)
   tSlap -= dt;
-  if (tSlap <= 0 && sp > 0.14) {
-    tSlap = (0.35 + Math.random() * 0.88) / (0.35 + sp * (upwind ? 1.45 : 1.05));
+  if (tSlap <= 0 && sp > 0.16) {
+    tSlap = (0.65 + Math.random() * 1.25) / (0.35 + sp * (upwind ? 1.25 : 0.90));
     waveSlap(sp, heel);
   }
 }
@@ -445,7 +489,7 @@ export function updateNearbyBoatSound(player, boats, active = true) {
 
 // ---- エアホーン ----
 // dur: 吹鳴秒数, f0: 基音(Hz), vol: 音量, delay: 開始遅延(秒)
-export function airHorn(dur = 1.0, f0 = 392, vol = 0.5, delay = 0) {
+export function airHorn(dur = 1.0, f0 = 392, vol = 0.42, delay = 0) {
   if (!ctx) return;
   const t = ctx.currentTime + delay;
   const env = ctx.createGain();
@@ -453,13 +497,13 @@ export function airHorn(dur = 1.0, f0 = 392, vol = 0.5, delay = 0) {
   env.gain.linearRampToValueAtTime(vol, t + 0.065);               // 空気が立ち上がる
   env.gain.setValueAtTime(vol * 0.93, t + Math.max(0.12, dur - 0.04));
   env.gain.exponentialRampToValueAtTime(0.0006, t + dur + 0.2);   // 余韻
-  const shaper = ctx.createWaveShaper(); shaper.curve = softClip(2.4); shaper.oversample = '2x';
-  const form = ctx.createBiquadFilter(); form.type = 'peaking'; form.frequency.value = 1150; form.gain.value = 7; form.Q.value = 1.0;
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3400; lp.Q.value = 0.6;
-  const mix = ctx.createGain(); mix.gain.value = 0.2;
+  const shaper = ctx.createWaveShaper(); shaper.curve = softClip(2.1); shaper.oversample = '2x';
+  const form = ctx.createBiquadFilter(); form.type = 'peaking'; form.frequency.value = 1150; form.gain.value = 4.2; form.Q.value = 1.0;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3300; lp.Q.value = 0.6;
+  const mix = ctx.createGain(); mix.gain.value = 0.13;
   mix.connect(shaper); shaper.connect(form); form.connect(lp); lp.connect(env);
   env.connect(master);
-  const send = ctx.createGain(); send.gain.value = 0.5; env.connect(send); send.connect(fx);
+  const send = ctx.createGain(); send.gain.value = 0.28; env.connect(send); send.connect(fx);
   const oscs = [];
   [[1, 'sawtooth', 0], [1.006, 'sawtooth', 4], [0.994, 'sawtooth', -4], [2, 'square', 0], [3.01, 'sawtooth', 0]].forEach(([m, type, det], i) => {
     const o = ctx.createOscillator(); o.type = type; o.detune.value = det;
@@ -473,7 +517,7 @@ export function airHorn(dur = 1.0, f0 = 392, vol = 0.5, delay = 0) {
   // 空気の吹き出しノイズ
   const ns = ctx.createBufferSource(); ns.buffer = noiseBuf; ns.loop = true;
   const nb = ctx.createBiquadFilter(); nb.type = 'bandpass'; nb.frequency.value = 2300; nb.Q.value = 0.6;
-  const ng = ctx.createGain(); ng.gain.value = 0.16;
+  const ng = ctx.createGain(); ng.gain.value = 0.14;
   ns.connect(nb); nb.connect(ng); ng.connect(mix); ns.start(t); ns.stop(t + dur + 0.4);
   // 微かな震え
   const lfo = ctx.createOscillator(); lfo.frequency.value = 34;
@@ -482,18 +526,18 @@ export function airHorn(dur = 1.0, f0 = 392, vol = 0.5, delay = 0) {
 }
 // 競技委員会の信号: 'long'=1分前(長い1音) / 'short'=スタート(短い1音) / 'recall'=個別リコール追加ホーン(1音目から約2秒の間を置いて2音目を鳴らす)
 export function signalHorn(kind) {
-  if (kind === 'long') airHorn(1.7, 415, 0.55);
-  else if (kind === 'recall') airHorn(0.68, 415, 0.65, 2.55);
-  else airHorn(0.55, 415, 0.62);
+  if (kind === 'long') airHorn(1.7, 415, 0.42);
+  else if (kind === 'recall') airHorn(0.68, 415, 0.48, 2.55);
+  else airHorn(0.55, 415, 0.46);
 }
 // 互換: 旧API
-export function horn(dur = 0.25, freq = 440) { airHorn(dur, freq * 0.9, 0.42); }
+export function horn(dur = 0.25, freq = 440) { airHorn(dur, freq * 0.9, 0.34); }
 
 export function beep(freq = 880, dur = 0.08) {
   if (!ctx) return;
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.type = 'sine'; o.frequency.value = freq;
-  g.gain.setValueAtTime(0.2, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+  g.gain.setValueAtTime(0.15, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
   o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime + dur + 0.02);
 }
 
@@ -520,7 +564,7 @@ export function thud(vol = 1, speedNorm = 1) {
   const sp = clampN(speedNorm, 0.08, 1.25);
   const sp01 = clamp01((sp - 0.08) / 0.92);
   const velGain = 0.22 + 0.78 * Math.pow(sp01, 1.20);
-  const v = vol * velGain;
+  const v = vol * velGain * 0.56;
   const dur = 0.11 + 0.12 * sp01;
   tone(90 + 44 * sp01, dur, 'sine', 0.65 * v, 42);
   noiseBurst(0.085 + 0.10 * sp01, 330 + 310 * sp01, 'lowpass', 0.72 * v);
@@ -533,7 +577,7 @@ export function markHit(vol = 1, speedNorm = 1) {
   if (!ctx || vol <= 0.02) return;
   const sp01 = clamp01((clampN(speedNorm, 0.10, 1.20) - 0.10) / 0.90);
   const velGain = 0.26 + 0.74 * Math.pow(sp01, 1.15);
-  const v = vol * velGain;
+  const v = vol * velGain * 0.58;
   tone(185 + 30 * sp01, 0.32 + 0.18 * sp01, 'triangle', 0.52 * v, 145);
   tone(300 + 35 * sp01, 0.22 + 0.13 * sp01, 'sine', 0.28 * v, 250);
   if (sp01 > 0.20) {
@@ -544,15 +588,15 @@ export function markHit(vol = 1, speedNorm = 1) {
 // セールが「パンッ」と返る音(タック/ジャイブ時: 低音ブザー成分を排し、セール布の音のみ)
 export function flap(vol = 0.6) {
   if (!ctx || vol <= 0.02) return;
-  noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.42 * vol);
+  noiseBurst(0.07, 1300 + Math.random() * 500, 'bandpass', 0.30 * vol);
 }
-// タック/ジャイブでセールが返る自然な「バサッ」: 通常のタック・ジャイブは元の音量でしっかり鳴らし、ごく短時間に連続で風軸を行き来した時のみ抑える
+// タック/ジャイブでセールが返る自然な「バサッ」: 通常のタック・ジャイブは自然な音量で鳴らし、ごく短時間に連続で風軸を行き来した時のみ抑える
 export function sailFlog(vol = 0.8) {
   if (!ctx || vol <= 0.02) return;
   const t0 = ctx.currentTime;
   const dtFlog = t0 - _lastSailFlogAt;
   if (dtFlog < 0.22) return;
-  const effVol = dtFlog < 1.4 ? vol * 0.35 : vol;
+  const effVol = (dtFlog < 1.4 ? vol * 0.35 : vol) * 0.68;
   _lastSailFlogAt = t0;
   // 1) 「シュッ…バサッ」: セール布が大きくしなって空気を切る中低域〜中域の布音
   const s1 = ctx.createBufferSource(); s1.buffer = noiseBuf; s1.playbackRate.value = 0.78;
@@ -586,6 +630,7 @@ export function sailFlog(vol = 0.8) {
 export function poleClank(up = true, vol = 0.88) {
   if (!ctx || vol <= 0.02) return;
   const t = ctx.currentTime;
+  const v = vol * 0.46;
   const slideDur = up ? 0.195 : 0.105;
 
   // 1) 「シャーー」: アルミポールがステンレス製ランチャーリングを滑る長めの金属擦過音(高域レゾナンス付き)
@@ -596,8 +641,8 @@ export function poleClank(up = true, vol = 0.88) {
   bpSlide.frequency.exponentialRampToValueAtTime(up ? 6200 : 2300, t + slideDur);
   const gSlide = ctx.createGain();
   gSlide.gain.setValueAtTime(0.0001, t);
-  gSlide.gain.linearRampToValueAtTime(0.56 * vol, t + 0.016);
-  gSlide.gain.setValueAtTime(0.52 * vol, t + slideDur - 0.018);
+  gSlide.gain.linearRampToValueAtTime(0.56 * v, t + 0.016);
+  gSlide.gain.setValueAtTime(0.52 * v, t + slideDur - 0.018);
   gSlide.gain.exponentialRampToValueAtTime(0.0001, t + slideDur + 0.032);
   sSlide.connect(bpSlide); bpSlide.connect(gSlide); gSlide.connect(master);
   sSlide.start(t, Math.random() * 1.2); sSlide.stop(t + slideDur + 0.040);
@@ -609,8 +654,8 @@ export function poleClank(up = true, vol = 0.88) {
     om.frequency.setValueAtTime(up ? f0 : f1, t);
     om.frequency.exponentialRampToValueAtTime(up ? f1 : f0, t + slideDur);
     ogm.gain.setValueAtTime(0.0001, t);
-    ogm.gain.linearRampToValueAtTime(a * vol, t + 0.018);
-    ogm.gain.setValueAtTime(a * 0.9 * vol, t + slideDur * 0.78);
+    ogm.gain.linearRampToValueAtTime(a * v, t + 0.018);
+    ogm.gain.setValueAtTime(a * 0.9 * v, t + slideDur * 0.78);
     ogm.gain.exponentialRampToValueAtTime(0.0001, t + slideDur + 0.015);
     om.connect(ogm); ogm.connect(master);
     om.start(t); om.stop(t + slideDur + 0.02);
@@ -622,7 +667,7 @@ export function poleClank(up = true, vol = 0.88) {
   const hpClick = ctx.createBiquadFilter(); hpClick.type = 'bandpass'; hpClick.frequency.value = up ? 6300 : 5100; hpClick.Q.value = 3.5;
   const gClick = ctx.createGain();
   gClick.gain.setValueAtTime(0.0001, tk);
-  gClick.gain.linearRampToValueAtTime(0.72 * vol, tk + 0.0015);
+  gClick.gain.linearRampToValueAtTime(0.72 * v, tk + 0.0015);
   gClick.gain.exponentialRampToValueAtTime(0.0001, tk + 0.032);
   sClick.connect(hpClick); hpClick.connect(gClick); gClick.connect(master);
   sClick.start(tk, Math.random() * 1.0); sClick.stop(tk + 0.038);
@@ -648,7 +693,7 @@ export function poleClank(up = true, vol = 0.88) {
     o.frequency.setValueAtTime(fStart * 1.05, tStart);
     o.frequency.exponentialRampToValueAtTime(fStart, tStart + 0.011);
     og.gain.setValueAtTime(0.0001, tStart);
-    og.gain.linearRampToValueAtTime(a * vol, tStart + 0.0014);
+    og.gain.linearRampToValueAtTime(a * v, tStart + 0.0014);
     og.gain.exponentialRampToValueAtTime(0.0001, tStart + dur);
     o.connect(og); og.connect(master);
     o.start(tStart); o.stop(tStart + dur + 0.015);
@@ -666,7 +711,7 @@ export function poleClank(up = true, vol = 0.88) {
     const bpSnap = ctx.createBiquadFilter(); bpSnap.type = 'bandpass'; bpSnap.frequency.value = freq; bpSnap.Q.value = 1.05;
     const gSnap = ctx.createGain();
     gSnap.gain.setValueAtTime(0.0001, tSub);
-    gSnap.gain.linearRampToValueAtTime(gainA * vol, tSub + 0.009);
+    gSnap.gain.linearRampToValueAtTime(gainA * v, tSub + 0.009);
     gSnap.gain.exponentialRampToValueAtTime(0.0001, tSub + dur);
     sSnap.connect(bpSnap); bpSnap.connect(gSnap); gSnap.connect(master);
     sSnap.start(tSub, Math.random() * 1.0); sSnap.stop(tSub + dur + 0.015);
@@ -680,7 +725,7 @@ export function poleClank(up = true, vol = 0.88) {
   bpf.frequency.exponentialRampToValueAtTime(up ? 760 : 540, tf + 0.068);
   bpf.frequency.exponentialRampToValueAtTime(210, tf + 0.34);
   const gf = ctx.createGain();
-  const flapVol = (up ? 0.78 : 0.52) * vol;
+  const flapVol = (up ? 0.78 : 0.52) * v;
   gf.gain.setValueAtTime(0.0001, tf);
   gf.gain.linearRampToValueAtTime(flapVol * 0.90, tf + 0.022);
   gf.gain.linearRampToValueAtTime(flapVol, tf + 0.082);
@@ -701,7 +746,7 @@ export function orientStepSfx(accent = false) {
   bp.frequency.exponentialRampToValueAtTime(420, t + 0.16);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(0.38, t + 0.018);
+  g.gain.linearRampToValueAtTime(0.24, t + 0.018);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
   s.connect(bp); bp.connect(g); g.connect(master);
   s.start(t, Math.random() * 0.8); s.stop(t + 0.19);
@@ -712,7 +757,7 @@ export function orientStepSfx(accent = false) {
   punch.frequency.setValueAtTime(accent ? 165 : 135, t);
   punch.frequency.exponentialRampToValueAtTime(46, t + 0.16);
   pg.gain.setValueAtTime(0.0001, t);
-  pg.gain.linearRampToValueAtTime(0.42, t + 0.006);
+  pg.gain.linearRampToValueAtTime(0.26, t + 0.006);
   pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
   punch.connect(pg); pg.connect(master);
   punch.start(t); punch.stop(t + 0.20);
@@ -726,7 +771,7 @@ export function orientStepSfx(accent = false) {
     lp.frequency.exponentialRampToValueAtTime(680, t + 0.22);
     o.frequency.setValueAtTime(freq, t + i * 0.008);
     og.gain.setValueAtTime(0.0001, t + i * 0.008);
-    og.gain.linearRampToValueAtTime(0.085, t + i * 0.008 + 0.01);
+    og.gain.linearRampToValueAtTime(0.055, t + i * 0.008 + 0.01);
     og.gain.exponentialRampToValueAtTime(0.0001, t + (accent ? 0.34 : 0.22));
     o.connect(lp); lp.connect(og); og.connect(master);
     o.start(t + i * 0.008); o.stop(t + 0.36);
@@ -824,21 +869,21 @@ export function playBgm(mode = 'result') {
   // --- スタジオBGMマスターバス + ステレオ・ピンポンディレイ + ホールリバーブセンド ---
   const outBus = ctx.createGain();
   outBus.gain.setValueAtTime(0.0008, ctx.currentTime);
-  const targetGain = mode === 'result' ? 0.56
-    : mode === 'review' ? 0.50
-    : mode === 'menu' ? 0.48
-    : mode === 'orientation' ? 0.45
-    : mode.startsWith('prestart') ? 0.36
-    : 0.40;
+  const targetGain = mode === 'result' ? 0.46
+    : mode === 'review' ? 0.42
+    : mode === 'menu' ? 0.40
+    : mode === 'orientation' ? 0.38
+    : mode.startsWith('prestart') ? 0.29
+    : 0.27;
   outBus.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.32);
   outBus.connect(master);
 
   const inBus = ctx.createGain();
   inBus.gain.value = 1.0;
   const lowShelf = ctx.createBiquadFilter();
-  lowShelf.type = 'lowshelf'; lowShelf.frequency.value = 115; lowShelf.gain.value = 2.2;
+  lowShelf.type = 'lowshelf'; lowShelf.frequency.value = 115; lowShelf.gain.value = 1.4;
   const airShelf = ctx.createBiquadFilter();
-  airShelf.type = 'highshelf'; airShelf.frequency.value = 7200; airShelf.gain.value = 1.8;
+  airShelf.type = 'highshelf'; airShelf.frequency.value = 7200; airShelf.gain.value = 1.2;
   // レース・スタート前は信号ホーン帯域(約415Hz)をわずかにすっきりさせ、効果音との分離を極上にする
   const hornDip = ctx.createBiquadFilter();
   hornDip.type = 'peaking'; hornDip.frequency.value = 415; hornDip.Q.value = 1.6;
@@ -846,13 +891,13 @@ export function playBgm(mode = 'result') {
   inBus.connect(lowShelf); lowShelf.connect(hornDip); hornDip.connect(airShelf); airShelf.connect(outBus);
 
   const revSend = ctx.createGain();
-  revSend.gain.value = mode === 'review' ? 0.36 : mode === 'menu' ? 0.30 : mode === 'result' ? 0.30 : 0.23;
+  revSend.gain.value = mode === 'review' ? 0.24 : mode === 'menu' ? 0.20 : mode === 'result' ? 0.20 : 0.16;
   airShelf.connect(revSend);
   if (fx) revSend.connect(fx);
 
   // ステレオ・ピンポンディレイ (リード・エレピ・ベル・ブラスに立体的な奥行きと広がりを付与)
   const dlySend = ctx.createGain();
-  dlySend.gain.value = 0.24;
+  dlySend.gain.value = 0.18;
   const dlyHP = ctx.createBiquadFilter(); dlyHP.type = 'highpass'; dlyHP.frequency.value = 420;
   const dlyLP = ctx.createBiquadFilter(); dlyLP.type = 'lowpass'; dlyLP.frequency.value = 3900;
   const dlyL = ctx.createDelay(1.0), dlyR = ctx.createDelay(1.0);
@@ -1534,262 +1579,190 @@ export function playBgm(mode = 'result') {
       playHat(t0, sub % 4 === 0 ? 0.72 : sub % 2 === 0 ? 0.46 : 0.28, sub === 14, 0.25);
     });
   } else if (mode === 'race_enoshima') {
-    // 4) 江の島レース中BGM: "Sunlight Over Sagami Bay" (130 BPM, 32小節=512ステップ 約59秒大作ループ!)
-    // T-Square / Wave Race / マリオカート級の王道オーシャン・ジャズフュージョン (FMエレピ・カッティングギター・EWIウインドリード・ホーン・ストリングス)
+    // 4) 江の島レース中BGM: "Shonan Breeze Lounge" (104 BPM, 32小節=512ステップ)
+    // 海と風の音に溶け込む、落ち着いた上質メロウ・コースタルジャズ＆フェンダーローズ・ラウンジ
     const chords = [
-      // Section A (Bars 1-8: 湘南の風を掴む爽快メインテーマ)
-      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('E2', 'G#4 B4 D5 F#5'),
+      // Section A (Bars 1-8: 穏やかな相模湾の潮風 — Dmaj9 -> Bm11 -> Em9 -> A13sus4)
+      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('B1', 'F#4 A4 D5 E5'),
+      chordSpec('E2', 'G4 B4 D5 F#5'),  chordSpec('A1', 'E4 G4 B4 D5'),
+      chordSpec('F#2', 'E4 A4 C#5 E5'), chordSpec('B1', 'F#4 A4 C5 D#5'),
+      chordSpec('E2', 'G4 B4 D5 F#5'),  chordSpec('A1', 'E4 G4 B4 C#5'),
+      // Section B (Bars 9-16: 陽光を映す緩やかなうねり — Gmaj9 -> F#m11 -> Em9 -> Dmaj9)
+      chordSpec('G2', 'F#4 A4 B4 D5'),  chordSpec('F#2', 'E4 A4 B4 C#5'),
+      chordSpec('E2', 'G4 B4 D5 F#5'),  chordSpec('A1', 'E4 G4 B4 D5'),
+      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('C2', 'E4 G4 B4 D5'),
+      chordSpec('B1', 'F#4 A4 D5 E5'),  chordSpec('E2', 'G#4 B4 D5 F#5'),
+      // Section C (Bars 17-24: 水平線へ抜ける透明なフロー — Amaj9 -> F#m11 -> Dmaj9 -> E13sus4)
+      chordSpec('A1', 'E4 G#4 B4 C#5'), chordSpec('F#2', 'E4 A4 C#5 E5'),
+      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('E2', 'G4 B4 D5 F#5'),
       chordSpec('C#2', 'E4 G#4 B4 E5'), chordSpec('F#2', 'E4 A4 C#5 E5'),
-      chordSpec('B1', 'F#4 A4 D5 F#5'), chordSpec('E2', 'G#4 B4 D5 F#5'),
-      chordSpec('A1', 'E4 G#4 B4 C#5'), chordSpec('A1', 'E4 G4 B4 C#5'),
-      // Section B (Bars 9-16: 波濤を越えるライジング・プレコーラス)
-      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('D2', 'F4 A4 C5 E5'),
-      chordSpec('C#2', 'E4 G#4 B4 E5'), chordSpec('F#2', 'E4 A#4 C#5 E5'),
-      chordSpec('B1', 'F#4 A4 D5 F#5'), chordSpec('C#2', 'E4 G#4 B4 E5'),
-      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('E2', 'A4 B4 D5 F#5'),
-      // Section C (Bars 17-24: 相模湾の太陽が弾ける開放感満点のフルサビ！3度ツインリード＆ストリングス＆ホーン)
-      chordSpec('A1', 'E4 G#4 B4 C#5'), chordSpec('G#1', 'E4 G#4 B4 D5'),
-      chordSpec('F#2', 'E4 A4 C#5 E5'), chordSpec('E2', 'G4 B4 D5 F#5'),
-      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('C#2', 'E4 G#4 B4 E5'),
-      chordSpec('B1', 'F#4 A4 D5 F#5'), chordSpec('E2', 'G#4 B4 D5 F#5'),
-      // Section D (Bars 25-32: ドラマチック転調ブリッジ＆フュージョン・ユニゾンキメ！)
-      chordSpec('F2', 'A4 C5 E5 G5'),   chordSpec('G2', 'B4 D5 F5 A5'),
-      chordSpec('E2', 'G4 B4 D5 F#5'),  chordSpec('A2', 'G4 B4 C5 E5'),
-      chordSpec('B1', 'F#4 A4 D5 F#5'), chordSpec('C#2', 'E4 G#4 B4 E5'),
-      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('E2', 'G#4 B4 D5 F#5'),
+      chordSpec('B1', 'F#4 A4 D5 F#5'), chordSpec('E2', 'A4 B4 D5 F#5'),
+      // Section D (Bars 25-32: 余韻と静かなグルーヴの帰還)
+      chordSpec('G2', 'F#4 A4 B4 D5'),  chordSpec('G2', 'F4 A4 B4 D5'),
+      chordSpec('F#2', 'E4 A4 C#5 E5'), chordSpec('B1', 'F#4 A4 D5 E5'),
+      chordSpec('E2', 'G4 B4 D5 F#5'),  chordSpec('G2', 'F4 A#4 D5 E5'),
+      chordSpec('D2', 'F#4 A4 C#5 E5'), chordSpec('A1', 'E4 G4 B4 C#5'),
     ];
+    // 余白をたっぷり取った控えめで叙情的なフルート＆ヴィブラフォン・モチーフ
     const mel = parseBars([
       // Section A (Bars 1-8)
-      'E5 - - F#5 | - A5 - B5 | - A5 - F#5 | - E5 D5 -',
-      'G#5 - - A5 | - B5 - E6 | - D6 - B5 | - A5 G#5 -',
-      'E5 - F#5 G#5 | - A5 - C#6 | - B5 - A5 | - F#5 E5 -',
-      'F#5 - - A5 | - G#5 F#5 E5 | - . . . | . . C#5 D5',
-      'D5 - F#5 A5 | - B5 - D6 | - C#6 - B5 | - A5 F#5 -',
-      'G#5 - B5 D6 | - E6 - F#6 | - E6 - D6 | - B5 G#5 -',
-      'A5 - - B5 | - C#6 - E6 | - C#6 - A5 | - F#5 E5 -',
-      'A5 - - G5 | - E5 - C#5 | E5 - - - | . . E5 F#5',
+      'A5 - - - | F#5 - E5 - | . . . . | . . . .',
+      'G5 - - F#5 | - D5 - - | E5 - - - | . . . .',
+      'A5 - - B5 | - C#6 - A5 | - F#5 - - | . . . .',
+      'G5 - - F#5 | - E5 - D5 | E5 - - - | . . . .',
       // Section B (Bars 9-16)
-      'F#5 - - A5 | - B5 - C#6 | - B5 - A5 | - F#5 E5 -',
-      'F5 - - A5 | - C6 - D6 | - C6 - A5 | - G5 F5 -',
-      'E5 - - G#5 | - B5 - E6 | - D6 - C#6 | - B5 A5 -',
-      'A#5 - - C#6 | - F#6 - E6 | - C#6 - A#5 | - F#5 - .',
-      'B5 - C#6 D6 | - F#6 - E6 | - D6 - B5 | - A5 - .',
-      'G#5 - A5 B5 | - E6 - D6 | - C#6 - B5 | - G#5 - .',
-      'A5 - B5 C#6 | - D6 - E6 | - F#6 - E6 | - D6 C#6 -',
-      'B5 - - - | C#6 - D6 - | E6 - - - | . . E5 G#5',
-      // Section C: Chorus! (Bars 17-24)
-      'C#6 - - B5 | - A5 - E6 | - C#6 - B5 | - A5 G#5 -',
-      'B5 - - C#6 | - D6 - F#6 | - E6 - D6 | - B5 G#5 -',
-      'A5 - - B5 | - C#6 - F#6 | - E6 - C#6 | - B5 A5 -',
-      'G5 - A5 B5 | - D6 - E6 | - D6 - B5 | - A5 G5 -',
-      'F#5 - A5 C#6 | - E6 - F#6 | - E6 - C#6 | - A5 F#5 -',
-      'G#5 - B5 E6 | - F#6 - G#6 | - F#6 - E6 | - C#6 B5 -',
-      'D6 - - C#6 | - B5 - A5 | B5 - C#6 D6 | - E6 F#6 -',
-      'E6 - - - | D6 - B5 - | E6 - - - | . . . .',
-      // Section D: Bridge & Fusion Unison Run (Bars 25-32)
-      'C6 - - B5 | - A5 - G5 | A5 - C6 E6 | - D6 C6 -',
-      'B5 - - C6 | - D6 - G6 | - F6 - D6 | - B5 A5 -',
-      'G5 - A5 B5 | - D6 - E6 | - F#6 - E6 | - D6 B5 -',
-      'C6 - - B5 | - A5 - G5 | E5 - G5 A5 | - C6 D6 -',
-      'D6 - C#6 B5 | - A5 - F#5 | A5 - B5 C#6 | - D6 E6 -',
-      'E6 - D6 C#6 | - B5 - G#5 | B5 - C#6 D6 | - E6 F#6 -',
-      'F#6 - E6 C#6 | A5 F#5 A5 C#6 | E6 - D6 B5 | G#5 B5 D6 F#6',
-      'E6 - - - | . . B5 C#6 | D6 - E6 - | F#6 - G#6 -',
+      '. . F#5 - | A5 - B5 - | A5 - - - | . . . .',
+      'G5 - - F#5 | - E5 - - | . . . . | . . D5 E5',
+      'F#5 - - A5 | - G5 - E5 | - . . . | . . . .',
+      'F#5 - - E5 | - D5 - B4 | E5 - - - | . . . .',
+      // Section C (Bars 17-24)
+      'C#6 - - B5 | - A5 - - | . . . . | . . E5 F#5',
+      'A5 - - B5 | - G5 - F#5 | - E5 - - | . . . .',
+      'G#5 - - A5 | - B5 - C#6 | - A5 - - | . . . .',
+      'F#5 - - A5 | - B5 - - | A5 - - - | . . . .',
+      // Section D (Bars 25-32)
+      'B5 - - A5 | - F#5 - - | G5 - - F#5 | - D5 - -',
+      'E5 - - F#5 | - A5 - - | . . . . | . . . .',
+      'G5 - - F#5 | - E5 - D5 | E5 - - - | . . . .',
+      'F#5 - - - | E5 - - - | . . . . | . . . .',
     ]);
-    // サビ用の3度下ツインハーモニーライン (Section C)
-    const harmC = parseBars([
-      'A5 - - G#5 | - E5 - C#6 | - A5 - G#5 | - E5 E5 -',
-      'G#5 - - A5 | - B5 - D6 | - B5 - B5 | - G#5 E5 -',
-      'F#5 - - G#5 | - A5 - C#6 | - C#6 - A5 | - G#5 F#5 -',
-      'E5 - F#5 G5 | - B5 - B5 | - B5 - G5 | - F#5 E5 -',
-      'D5 - F#5 A5 | - C#6 - D6 | - C#6 - A5 | - F#5 D5 -',
-      'E5 - G#5 B5 | - D6 - E6 | - D6 - B5 | - A5 G#5 -',
-      'B5 - - A5 | - F#5 - F#5 | G#5 - A5 B5 | - C#6 D6 -',
-      'B5 - - - | B5 - G#5 - | B5 - - - | . . . .',
-    ]);
-    const bellArp = [0, 2, 3, 1, 2, 3, 0, 2];
-    let prevM = 0, prevH = 0;
-    startSequencer(130, 0.05, 512, (s, t0, stepSec) => {
-      const bar = Math.floor(s / 16), sub = s % 16, sec = Math.floor(bar / 8); // 0..3
+    const vibeNotes = [0, 2, 3, 1, 3, 2, 0, 1];
+    let prevM = 0;
+    startSequencer(104, 0.11, 512, (s, t0, stepSec) => {
+      const bar = Math.floor(s / 16), sub = s % 16, sec = Math.floor(bar / 8);
       const ch = chords[bar];
-      if (s === 0 || s === 128 || s === 256 || s === 384) playCrash(t0, sec === 2 ? 0.96 : 0.78);
 
-      // FMローズの爽快コードバッキング
-      if (sub === 0 || sub === 6 || sub === 10 || (sec >= 2 && sub === 14)) {
-        playEPiano(ch.notes, t0, (sub === 0 ? 4.8 : 2.6) * stepSec, sub === 0 ? 0.85 : 0.64, -0.26, sec === 2);
+      // 温かく丸みのあるFMフェンダーローズ (耳に刺さらないソフトなボイシング)
+      if (sub === 0 || sub === 10 || (bar % 2 === 1 && sub === 6)) {
+        const durSteps = sub === 0 ? 8.5 : (sub === 10 ? 5.2 : 3.2);
+        const vel = sub === 0 ? 0.72 : 0.50;
+        playEPiano(ch.notes, t0, durSteps * stepSec, vel, -0.20, false);
       }
-      // クリーンギター・16分カッティング
-      if (sub === 2 || sub === 3 || sub === 6 || sub === 11 || sub === 14) {
-        playGuitar(ch.notes, t0, (sub === 6 ? 2.2 : 1.1) * stepSec, sub === 6 ? 0.74 : 0.56, sub !== 6, 0.38);
+      // 控えめなアコースティック/クリーンギターの柔らかい裏拍コード
+      if (sub === 6 || (bar % 2 === 0 && sub === 14)) {
+        playGuitar(ch.notes, t0, 2.4 * stepSec, sub === 6 ? 0.42 : 0.32, true, 0.30);
       }
-      // Section B以降: シンフォニック・ストリングスの広がり
-      if (sec >= 1 && sub === 0) {
-        playStrings(ch.notes, t0, 15.5 * stepSec, sec === 2 ? 0.88 : 0.65, true);
+      // Section B・Cのみ: 遠くの水平線のように淡く広がるソフト・ストリングスパッド
+      if ((sec === 1 || sec === 2) && bar % 2 === 0 && sub === 0) {
+        playStrings(ch.notes, t0, 31.0 * stepSec, sec === 2 ? 0.48 : 0.38, true);
       }
-      // Section C・D: 華やかなホーンセクション・アクセントヒット
-      if ((sec === 2 && (sub === 0 || sub === 14)) || (sec === 3 && bar === 31 && (sub === 0 || sub === 8 || sub === 12))) {
-        playBrass(ch.notes, t0, (sub === 0 ? 3.2 : 1.8) * stepSec, 0.78, -0.22);
+      // 水面の光を思わせる控えめなヴィブラフォンの一雫
+      if ((sub === 4 && bar % 2 === 0) || (sub === 12 && sec >= 1 && bar % 2 === 1)) {
+        const bf = ch.notes[vibeNotes[(bar + (sub >> 2)) % 8] % ch.notes.length] * 2;
+        playBell(bf, t0, 3.4 * stepSec, 0.26, 0.26);
       }
-      // 海面のキラキラ感を彩るヴィブラフォン・アルペジオ
-      if (sec >= 1 && sub % 2 === 0) {
-        const bf = ch.notes[bellArp[(sub >> 1) % 8] % ch.notes.length] * 2;
-        playBell(bf, t0, 2.0 * stepSec, sec === 2 ? 0.42 : 0.30, 0.30);
-      }
-      // 歌うジャズフュージョン・ベースライン
-      if (sub === 0) playBass(ch.bass, t0, 3.6 * stepSec, 0.96, 'fusion');
-      else if (sub === 4 && sec >= 2) playBass(ch.bass * 2, t0, 1.6 * stepSec, 0.70, 'fusion');
-      else if (sub === 6) playBass(ch.bass * 1.5, t0, 1.8 * stepSec, 0.76, 'fusion');
-      else if (sub === 8) playBass(ch.bass, t0, 3.4 * stepSec, 0.88, 'fusion');
-      else if (sub === 12) playBass(ch.bass * 1.5, t0, 1.8 * stepSec, 0.78, 'fusion');
-      else if (sub === 14) playBass(ch.bass * 2, t0, 1.6 * stepSec, 0.80, 'fusion');
+      // 深く落ち着いたウォーム・エレキベース (音数を絞ってゆったり支える)
+      if (sub === 0) playBass(ch.bass, t0, 6.2 * stepSec, 0.80, 'warm');
+      else if (sub === 8) playBass(ch.bass * 1.5, t0, 4.2 * stepSec, 0.60, 'warm');
+      else if (sub === 14 && bar % 2 === 1) playBass(ch.bass * 2, t0, 1.8 * stepSec, 0.50, 'warm');
 
-      // リードメロディ (EWIウインドシンセ) + サビの3度ツインリード
+      // 余白を活かした穏やかなエアリー・フルートモチーフ
       const m = mel[s];
       if (m > 0) {
         const hLen = heldSteps(mel, s) * stepSec * 0.94;
         const mf = m2f(m);
-        playLead(mf, prevM, t0, hLen, sec === 2 ? 1.0 : 0.92, 'ewi', 0.06);
+        playLead(mf, prevM, t0, hLen, sec === 2 ? 0.56 : 0.50, 'flute', 0.06);
         prevM = mf;
-        if (sec === 2) {
-          const hm = harmC[s - 256];
-          if (hm > 0) {
-            const hf = m2f(hm);
-            playLead(hf, prevH, t0, hLen, 0.56, 'fusion', -0.22);
-            prevH = hf;
-          }
-        }
       }
 
-      // スタジオ・フュージョンドラム＋セクション終端のタムフィル
-      const isFill = (bar === 7 || bar === 15 || bar === 23 || bar === 31) && sub >= 10;
-      if (isFill) {
-        const tf = sub < 12 ? 220 : sub < 14 ? 165 : 118;
-        playTom(t0, tf, 0.90, ((sub - 10) / 5) * 0.9 - 0.45);
-        if (sub === 12 || sub === 15) playSnare(t0, 0.88, false);
-      } else {
-        if (sub === 0 || sub === 6 || sub === 10 || (sec >= 2 && sub === 3)) playKick(t0, sub === 0 ? 0.94 : 0.72);
-        if (sub === 4 || sub === 12) playSnare(t0, 0.88, false);
-        else if (sub === 7 || sub === 15) playSnare(t0, 0.30, false); // ゴーストノート
-        playHat(t0, sub % 4 === 0 ? 0.72 : sub % 2 === 0 ? 0.50 : 0.28, sub === 10 || sub === 14, 0.24);
+      // 落ち着いたクロススティック(リム)＆ソフトブラシ風ポケットグルーヴ
+      if (sub === 0 || sub === 10) playKick(t0, sub === 0 ? 0.66 : 0.46);
+      if (sub === 4 || sub === 12) playSnare(t0, 0.54, true);
+      if (sub % 2 === 0 || sub === 15) {
+        playHat(t0, sub % 4 === 0 ? 0.42 : 0.24, sub === 14 && bar % 4 === 3, 0.22);
       }
     });
   } else if (mode === 'race_hakkeijima') {
-    // 5) 八景島レース中BGM: "Yokohama Bay Velocity" (134 BPM, 32小節=512ステップ 約57秒大作ループ!)
-    // Casiopea / グランツーリスモ級の都会派アーバン・ジャズファンク＆ブラスフュージョン
+    // 5) 八景島レース中BGM: "Kanazawa Bay Cool Rhodes" (108 BPM, 32小節=512ステップ)
+    // 洗練されたクール＆メロウなアーバン・エレクトリックジャズ・ラウンジ (落ち着きのある大人のベイサイドグルーヴ)
     const chords = [
-      // Section A (Bars 1-8: スタイリッシュ・ベイサイド・グルーヴ)
+      // Section A (Bars 1-8: クールな東京湾の潮風 — Fm9 -> Bb13 -> Ebmaj9 -> Abmaj7#11)
       chordSpec('F2', 'Eb4 G4 Ab4 C5'), chordSpec('Bb1', 'D4 F4 Ab4 C5'),
-      chordSpec('Eb2', 'D4 G4 Bb4 D5'), chordSpec('Ab1', 'Eb4 G4 C5 Eb5'),
-      chordSpec('D2', 'F4 Ab4 C5 Eb5'), chordSpec('G1', 'F4 B4 Eb5 Ab5'),
-      chordSpec('C2', 'Eb4 G4 Bb4 D5'), chordSpec('C2', 'E4 G4 Bb4 Eb5'),
-      // Section B (Bars 9-16: ハイスピード・スラップ＆ホーン・ドライヴ)
-      chordSpec('F2', 'Eb4 G4 Ab4 C5'), chordSpec('G1', 'F4 B4 D5 Ab5'),
-      chordSpec('C2', 'Eb4 G4 Bb4 D5'), chordSpec('Bb1', 'D4 G4 Bb4 D5'),
-      chordSpec('Ab1', 'Eb4 G4 C5 D5'), chordSpec('F2', 'Eb4 Ab4 C5 Eb5'),
-      chordSpec('D2', 'F4 Ab4 C5 Eb5'), chordSpec('G1', 'F4 B4 Eb5 Ab5'),
-      // Section C (Bars 17-24: 東京湾の風を切り裂くアーバン・サビ！フルブラス＆ツインシンセ)
-      chordSpec('Ab1', 'Eb4 G4 C5 Eb5'), chordSpec('Bb1', 'F4 Ab4 C5 Eb5'),
-      chordSpec('G1', 'F4 Bb4 D5 G5'),   chordSpec('C2', 'Eb4 G4 Bb4 D5'),
-      chordSpec('F2', 'Eb4 G4 Ab4 C5'),  chordSpec('Bb1', 'D4 F4 Ab4 C5'),
-      chordSpec('Eb2', 'D4 G4 Bb4 D5'),  chordSpec('C2', 'E4 G4 Bb4 Eb5'),
-      // Section D (Bars 25-32: ジャズファンク・キメ＆超絶シンセラン・ターンアラウンド)
-      chordSpec('Db2', 'F4 Ab4 C5 Eb5'), chordSpec('C2', 'E4 G4 Bb4 Eb5'),
-      chordSpec('F2', 'Eb4 G4 Ab4 C5'),  chordSpec('Bb1', 'D4 F4 Ab4 C5'),
-      chordSpec('G1', 'F4 Bb4 D5 G5'),   chordSpec('C2', 'E4 G4 Bb4 Db5'),
-      chordSpec('F2', 'Eb4 Ab4 C5 Eb5'), chordSpec('G1', 'F4 B4 Eb5 Ab5'),
+      chordSpec('Eb2', 'D4 G4 Bb4 D5'), chordSpec('Ab1', 'Eb4 G4 C5 D5'),
+      chordSpec('D2', 'F4 Ab4 C5 Eb5'), chordSpec('G1', 'F4 B4 D5 Ab5'),
+      chordSpec('C2', 'Eb4 G4 Bb4 D5'), chordSpec('C2', 'E4 G4 Bb4 D5'),
+      // Section B (Bars 9-16: 静かな集中とタクティカル・フロウ)
+      chordSpec('F2', 'Eb4 G4 Ab4 C5'), chordSpec('D2', 'F4 Ab4 C5 Eb5'),
+      chordSpec('G1', 'F4 Bb4 D5 F5'),  chordSpec('C2', 'E4 G4 Bb4 D5'),
+      chordSpec('Ab1', 'Eb4 G4 C5 Eb5'), chordSpec('Bb1', 'D4 F4 Ab4 C5'),
+      chordSpec('G1', 'F4 Bb4 D5 F5'),  chordSpec('C2', 'E4 G4 Bb4 Db5'),
+      // Section C (Bars 17-24: 都会の海面に広がるメロウ・ハーモニー)
+      chordSpec('Db2', 'F4 Ab4 C5 Eb5'), chordSpec('Eb2', 'F4 G4 Bb4 D5'),
+      chordSpec('C2', 'Eb4 G4 Bb4 D5'),  chordSpec('F2', 'Eb4 Ab4 C5 Eb5'),
+      chordSpec('Bb1', 'D4 F4 Ab4 C5'),  chordSpec('C2', 'E4 G4 Bb4 D5'),
+      chordSpec('F2', 'Eb4 G4 Ab4 C5'),  chordSpec('E2', 'D4 G#4 B4 D5'),
+      // Section D (Bars 25-32: クールダウン・ターンアラウンド)
+      chordSpec('Ab1', 'Eb4 G4 C5 D5'), chordSpec('G1', 'F4 B4 D5 G5'),
+      chordSpec('C2', 'Eb4 G4 Bb4 D5'), chordSpec('Bb1', 'D4 F4 Ab4 C5'),
+      chordSpec('A1', 'E4 G4 C5 D5'),   chordSpec('Ab1', 'Eb4 F#4 C5 Eb5'),
+      chordSpec('G1', 'F4 Bb4 D5 F5'),  chordSpec('C2', 'E4 G4 Bb4 D5'),
     ];
     const mel = parseBars([
       // Section A (Bars 1-8)
-      'G5 - F5 Eb5 | - . F5 - | G5 - Bb5 C6 | - Bb5 G5 -',
-      'F5 - - Eb5 | - D5 C5 - | F5 - G5 Ab5 | - G5 F5 -',
-      'G5 - F5 Eb5 | - D5 - Bb5 | - G5 - F5 | - Eb5 D5 -',
-      'Eb5 - G5 Bb5 | - C6 - Eb6 | - D6 - C6 | - Bb5 G5 -',
-      'Ab5 - - G5 | - F5 Eb5 - | F5 - Ab5 C6 | - Bb5 Ab5 -',
-      'B5 - - C6 | - D6 - Eb6 | - D6 - B5 | - Ab5 G5 -',
-      'G5 - - Bb5 | - C6 - D6 | - C6 - Bb5 | - G5 Eb5 -',
-      'E5 - G5 Bb5 | - C6 - Eb6 | - C6 - . | . . F5 G5',
+      'C6 - - Bb5 | - Ab5 - G5 | . . . . | . . . .',
+      'Bb5 - - G5 | - F5 - Eb5 | - . . . | . . . .',
+      'Ab5 - - G5 | - F5 - - | B5 - - G5 | - . . .',
+      'Bb5 - - G5 | - Eb5 - - | E5 - - - | . . . .',
       // Section B (Bars 9-16)
-      'Ab5 - G5 F5 | - Eb5 - Ab5 | - G5 - F5 | - Eb5 C5 -',
-      'D5 - F5 G5 | - B5 - D6 | - C6 - B5 | - Ab5 G5 -',
-      'Eb6 - - D6 | - C6 Bb5 - | G5 - Bb5 C6 | - Bb5 G5 -',
-      'F5 - G5 Bb5 | - D6 - C6 | - Bb5 - G5 | - F5 - .',
-      'Eb5 - G5 C6 | - D6 - Eb6 | - D6 - C6 | - Bb5 Ab5 -',
-      'Ab5 - Bb5 C6 | - Eb6 - F6 | - Eb6 - C6 | - Bb5 Ab5 -',
-      'C6 - - Bb5 | - Ab5 F5 - | Ab5 - Bb5 C6 | - D6 Eb6 -',
-      'D6 - - - | Eb6 - F6 - | G6 - - - | . . C6 D6',
-      // Section C: Chorus! (Bars 17-24)
-      'Eb6 - - D6 | - C6 - Bb5 | C6 - Eb6 F6 | - Eb6 C6 -',
-      'D6 - - C6 | - Bb5 - Ab5 | Bb5 - C6 D6 | - Eb6 F6 -',
-      'G6 - - F6 | - D6 - Bb5 | D6 - - C6 | - Bb5 G5 -',
-      'Eb6 - - D6 | - C6 Bb5 - | G5 - Bb5 C6 | - D6 Eb6 -',
-      'C6 - - Bb5 | - Ab5 - G5 | Ab5 - C6 Eb6 | - D6 C6 -',
-      'D6 - - C6 | - Bb5 - Ab5 | F5 - Ab5 Bb5 | - C6 D6 -',
-      'Eb6 - - D6 | - Bb5 - G5 | Bb5 - C6 D6 | - Eb6 F6 -',
-      'E6 - - - | C6 - Bb5 - | G5 - - - | . . G5 Ab5',
-      // Section D: Jazz-Funk Soli Bridge (Bars 25-32)
-      'Ab5 - Bb5 C6 | - Eb6 - F6 | - Eb6 - C6 | - Bb5 Ab5 -',
-      'Bb5 - C6 E6 | - G6 - F6 | - E6 - C6 | - Bb5 G5 -',
-      'Ab5 - - G5 | - F5 - Eb5 | F5 - Ab5 C6 | - Eb6 F6 -',
-      'D6 - - C6 | - Bb5 - Ab5 | F5 - Ab5 Bb5 | - C6 D6 -',
-      'B5 - C6 D6 | - G6 - F6 | - D6 - B5 | - G5 F5 -',
-      'E5 - G5 Bb5 | - Db6 - C6 | - Bb5 - G5 | - E5 C5 -',
-      'F5 Ab5 C6 Eb6 | F6 - Eb6 C6 | Ab5 C6 Eb6 F6 | G6 - F6 Eb6',
-      'D6 - - . | B5 - . D6 | - Eb6 - F6 | - G6 - .',
+      '. . G5 Ab5 | C6 - Bb5 - | Ab5 - - - | . . . .',
+      'Bb5 - - A5 | - G5 - E5 | - . . . | . . . .',
+      'C6 - - Bb5 | - Ab5 - F5 | - . . . | . . . .',
+      'Bb5 - - G5 | - F5 - E5 | - . . . | . . . .',
+      // Section C (Bars 17-24)
+      'C6 - - Eb6 | - D6 - Bb5 | - . . . | . . . .',
+      'Bb5 - - G5 | - Ab5 - C6 | - . . . | . . . .',
+      'Ab5 - - F5 | - G5 - Bb5 | - E5 - - | . . . .',
+      'G5 - - Ab5 | - G5 - - | G#5 - - - | . . . .',
+      // Section D (Bars 25-32)
+      'C6 - - B5 | - G5 - - | Bb5 - - G5 | - F5 - -',
+      'G5 - - E5 | - Eb5 - - | . . . . | . . . .',
+      'F5 - - G5 | - Bb5 - - | E5 - - - | . . . .',
+      '. . . . | . . . . | . . . . | . . . .',
     ]);
+    const coolVibe = [0, 3, 2, 1, 2, 3, 1, 0];
     let prevM = 0;
-    startSequencer(134, 0.06, 512, (s, t0, stepSec) => {
+    startSequencer(108, 0.13, 512, (s, t0, stepSec) => {
       const bar = Math.floor(s / 16), sub = s % 16, sec = Math.floor(bar / 8);
       const ch = chords[bar];
-      if (s === 0 || s === 128 || s === 256 || s === 384) playCrash(t0, sec === 2 ? 0.96 : 0.80);
 
-      // 都会的なFMローズ＋クラビ風16分カッティング
-      if (sub === 0 || sub === 3 || sub === 6 || sub === 12) {
-        playEPiano(ch.notes, t0, (sub === 0 ? 3.5 : 1.8) * stepSec, sub === 0 ? 0.82 : 0.62, -0.28, sec >= 2);
+      // 艶やかで落ち着いたフェンダーローズ・ボイシング
+      if (sub === 0 || sub === 10 || (sub === 6 && bar % 2 === 0)) {
+        const durSteps = sub === 0 ? 7.5 : (sub === 10 ? 5.0 : 2.8);
+        playEPiano(ch.notes, t0, durSteps * stepSec, sub === 0 ? 0.70 : 0.48, -0.22, false);
       }
-      // ナイル・ロジャース風のキレのある16分ファンクギター・チャック
-      if (sub % 2 === 1 || sub === 6 || sub === 12) {
-        const openHit = sub === 6 || sub === 12;
-        playGuitar(ch.notes, t0, (openHit ? 1.8 : 0.8) * stepSec, openHit ? 0.72 : 0.50, !openHit, 0.40);
+      // さりげないミュート・ジャズギターのポケットアクセント
+      if (sub === 6 || sub === 14) {
+        playGuitar(ch.notes, t0, 1.4 * stepSec, sub === 6 ? 0.38 : 0.30, true, 0.32);
       }
-      // パンチの効いたビッグバンド・ホーンセクション・スタブ
-      if (sub === 0 || sub === 14 || (sec === 2 && sub === 6) || (bar === 31 && (sub === 0 || sub === 4 || sub === 8))) {
-        playBrass(ch.notes, t0, (sub === 0 ? 2.6 : 1.5) * stepSec, sec === 2 ? 0.88 : 0.72, -0.24);
+      // Section C・Dのみ: 薄く上品なトワイライト・ストリングスパッド
+      if (sec >= 2 && bar % 2 === 0 && sub === 0) {
+        playStrings(ch.notes, t0, 31.0 * stepSec, 0.44, true);
       }
-      // サビ・ブリッジでは艶やかなストリングスが夜景のように広がる
-      if ((sec === 2 || sec === 3) && sub === 0) {
-        playStrings(ch.notes, t0, 15.2 * stepSec, 0.76, true);
+      // クールなヴィブラフォンのスパース・コードトーン
+      if ((sub === 4 && bar % 2 === 1) || (sub === 12 && sec >= 1 && bar % 2 === 0)) {
+        const bf = ch.notes[coolVibe[(bar + (sub >> 2)) % 8] % ch.notes.length] * 2;
+        playBell(bf, t0, 3.0 * stepSec, 0.25, 0.24);
       }
-      // 超絶オクターブ・スラップベース
-      if (sub === 0) playBass(ch.bass, t0, 2.5 * stepSec, 0.98, 'slap');
-      else if (sub === 3) playBass(ch.bass * 2, t0, 1.2 * stepSec, 0.78, 'slap');
-      else if (sub === 6) playBass(ch.bass * 1.5, t0, 1.5 * stepSec, 0.76, 'slap');
-      else if (sub === 8) playBass(ch.bass, t0, 2.2 * stepSec, 0.90, 'slap');
-      else if (sub === 10) playBass(ch.bass * 2, t0, 1.2 * stepSec, 0.80, 'slap');
-      else if (sub === 13) playBass(ch.bass * 1.5, t0, 1.2 * stepSec, 0.72, 'slap');
-      else if (sub === 15) playBass(ch.bass * 2, t0, 1.0 * stepSec, 0.76, 'slap');
+      // 落ち着いたディープ・フィンガーベース (スラップを廃し丸くタイトな低音に)
+      if (sub === 0) playBass(ch.bass, t0, 5.2 * stepSec, 0.82, 'warm');
+      else if (sub === 6 && bar % 2 === 0) playBass(ch.bass * 1.5, t0, 2.4 * stepSec, 0.56, 'warm');
+      else if (sub === 10) playBass(ch.bass, t0, 3.8 * stepSec, 0.68, 'warm');
+      else if (sub === 14 && bar % 2 === 1) playBass(ch.bass * 2, t0, 1.6 * stepSec, 0.48, 'warm');
 
-      // アーバン・フュージョン・シンセリード (サビではオクターブ下ブラスもユニゾン)
+      // 控えめでクールなフルート＆ソフトベル・モチーフ (余白重視)
       const m = mel[s];
       if (m > 0) {
-        const hLen = heldSteps(mel, s) * stepSec * 0.92;
+        const hLen = heldSteps(mel, s) * stepSec * 0.94;
         const mf = m2f(m);
-        playLead(mf, prevM, t0, hLen, 0.95, 'fusion', 0.08);
-        if (sec === 2) playBell(mf, t0, Math.min(0.32, hLen), 0.36, -0.20);
+        playLead(mf, prevM, t0, hLen, 0.50, 'flute', 0.05);
+        if (sec === 2 && sub === 0) playBell(mf, t0, Math.min(0.45, hLen), 0.22, -0.18);
         prevM = mf;
       }
 
-      // タイトなファンク・ドラム＋フィルイン
-      const isFill = (bar === 7 || bar === 15 || bar === 23 || bar === 31) && sub >= 10;
-      if (isFill) {
-        const tf = sub < 12 ? 235 : sub < 14 ? 175 : 122;
-        playTom(t0, tf, 0.92, ((sub - 10) / 5) * 1.0 - 0.5);
-        if (sub === 11 || sub === 14) playSnare(t0, 0.90, false);
-      } else {
-        if (sub === 0 || sub === 6 || sub === 10 || sub === 15) playKick(t0, sub === 0 ? 0.96 : 0.74);
-        if (sub === 4 || sub === 12) playSnare(t0, 0.92, false);
-        else if (sub === 7 || sub === 9) playSnare(t0, 0.34, false);
-        playHat(t0, sub % 2 === 1 ? 0.74 : 0.44, sub === 3 || sub === 11, 0.26);
-      }
+      // 抑えめで心地よいアーバン・ラウンジビート (リムショット主体)
+      if (sub === 0 || sub === 10 || (sub === 6 && bar % 4 === 2)) playKick(t0, sub === 0 ? 0.68 : 0.48);
+      if (sub === 4 || sub === 12) playSnare(t0, 0.56, true);
+      playHat(t0, sub % 4 === 0 ? 0.40 : sub % 2 === 0 ? 0.24 : 0.14, sub === 14 && bar % 4 === 1, 0.22);
     });
   } else if (mode === 'result') {
     // 6) リザルト画面BGM: "Grand Regatta Podium" (122 BPM, 16小節=256ステップ, 祝祭ブラス＆シンフォニック・ウイニングアンセム)
@@ -1945,7 +1918,7 @@ export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard'
 
   const t0 = ctx.currentTime + 0.01;
   const out = ctx.createGain();
-  out.gain.value = 0.85;
+  out.gain.value = 0.48;
   if (ctx.createStereoPanner) {
     const panner = ctx.createStereoPanner();
     panner.pan.value = clampN(pan, -0.88, 0.88);
@@ -2256,7 +2229,7 @@ export function playChallengerSplashSound(crewType = 'duck') {
     bp.frequency.exponentialRampToValueAtTime(280, t0 + 0.32);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(0.52, t0 + 0.02);
+    g.gain.linearRampToValueAtTime(0.30, t0 + 0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
     s.connect(bp); bp.connect(g); g.connect(master);
     s.start(t0, Math.random() * 0.5); s.stop(t0 + 0.36);
@@ -2266,7 +2239,7 @@ export function playChallengerSplashSound(crewType = 'duck') {
   sub.frequency.setValueAtTime(190, t0 + 0.05);
   sub.frequency.exponentialRampToValueAtTime(42, t0 + 0.38);
   sg.gain.setValueAtTime(0.0001, t0 + 0.05);
-  sg.gain.linearRampToValueAtTime(0.58, t0 + 0.062);
+  sg.gain.linearRampToValueAtTime(0.34, t0 + 0.062);
   sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
   sub.connect(sg); sg.connect(master);
   sub.start(t0 + 0.05); sub.stop(t0 + 0.44);
@@ -2286,7 +2259,7 @@ export function playChallengerSplashSound(crewType = 'duck') {
       lp.frequency.exponentialRampToValueAtTime(1100, t0 + ch.dt + ch.dur);
       o.frequency.setValueAtTime(f, t0 + ch.dt + i * 0.006);
       og.gain.setValueAtTime(0.0001, t0 + ch.dt + i * 0.006);
-      og.gain.linearRampToValueAtTime(0.11, t0 + ch.dt + i * 0.006 + 0.015);
+      og.gain.linearRampToValueAtTime(0.065, t0 + ch.dt + i * 0.006 + 0.015);
       og.gain.exponentialRampToValueAtTime(0.0001, t0 + ch.dt + ch.dur);
       o.connect(lp); lp.connect(og); og.connect(master);
       o.start(t0 + ch.dt + i * 0.006); o.stop(t0 + ch.dt + ch.dur + 0.03);

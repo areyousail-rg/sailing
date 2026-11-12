@@ -969,18 +969,34 @@ export class Boat {
       this.waveF = wf;
       this.waveLoss = Math.max(0, 1 - wf);
       target *= wf;
-      // 波にはたかれた際の水面叩きつけイベント(海に船がたたきつけられる控えめな音 & 適度にしぶきが上がる演出用)
+      // 波が高い時に風上(クローズ〜クローズリーチ)へ走る際、波頭を越えてバウが波にはたかれるイベント(控えめな波叩き音 & しぶき演出用)
       this.waveSlamCD = Math.max(0, (this.waveSlamCD || 0) - dt);
+      this.upwindWaveHit = Math.max(0, (this.upwindWaveHit || 0) - dt * 2.5);
+      this._climbPeak = Math.max(climb, (this._climbPeak ?? climb) - dt * 0.18);
       this._prevClimb = climb;
-      if (this.waveSlamCD <= 0 && Math.abs(this.v) > 0.35) {
+      if (this.waveSlamCD <= 0 && Math.abs(this.v) > 0.45) {
+        const chopH = Math.max(0, SEA.H - (SEA.longAmp || 0));
+        const waveFactor = clamp((chopH - 0.425) / 0.17, 0, 1.0);
+        const upwindFactor = clamp((1.35 - twa) / 0.50, 0, 1.0);
+        const crestDrop = this._climbPeak - climb;
         const drop = prevClimb - climb;
-        if ((prevClimb > 0.21 && drop > 0.15) || (climb > 0.48 && prevClimb <= 0.48)) {
+        if (waveFactor > 0.05 && upwindFactor > 0.12 && this._climbPeak > 0.24 && crestDrop > 0.26 && climb < 0.12) {
+          const spdF = clamp((Math.abs(this.v) - 0.45) / (1.45 * SPEED_SCALE), 0, 1.05);
+          const hit = clamp((0.32 + crestDrop * 0.85) * waveFactor * (0.28 + 0.72 * upwindFactor) * spdF, 0, 1.0);
+          if (hit > 0.08) {
+            this.upwindWaveHit = Math.max(this.upwindWaveHit || 0, hit);
+            this.visualSlam = Math.max(this.visualSlam || 0, hit * 0.82);
+            this._climbPeak = climb;
+            this.waveSlamCD = (1.25 + Math.random() * 1.25) / (0.65 + 0.45 * waveFactor);
+          }
+        } else if ((prevClimb > 0.21 && drop > 0.15) || (climb > 0.52 && prevClimb <= 0.52)) {
           const steepScale = clamp(SEA.steep / 0.85, 0.55, 1.15);
           const slam = clamp((drop * 0.90 + Math.max(0, climb) * 0.52) * steepScale * (0.45 + 0.75 * slowFactor) * (1 - 0.68 * downFactor * speedNorm), 0, 1);
-          if (slam > 0.18) {
+          if (slam > 0.18 && waveFactor > 0.10) {
             this.visualSlam = Math.max(this.visualSlam || 0, slam);
-            if (slam > 0.21) this.waveSlam = slam;
-            this.waveSlamCD = 1.6 + Math.random() * 1.2;
+            if (slam > 0.22 && upwindFactor > 0.15) this.waveSlam = slam * waveFactor;
+            this._climbPeak = climb;
+            this.waveSlamCD = 1.5 + Math.random() * 1.2;
           }
         }
       }
@@ -1171,14 +1187,14 @@ export function resolveCollisions(boats, t) {
           const push = pp + 0.06;
           A.x += (dx / d) * push; A.z += (dz / d) * push;
           if (!A.isPlayer) {
-            // CP艇がマークや運営艇にぶつかったままスタックしないよう、障害物から接線方向(反時計回り優先、4Sのみ時計回り)へ船首を逃がし最低離脱速度を確保する
+            // CP艇がマークや運営艇にぶつかったままスタックしないよう、障害物から接線方向(反時計回り優先、4Sと本部船は時計回り=風上・後方側)へ船首を逃がし最低離脱速度を確保する
             const cdx = A.x - o.x, cdz = A.z - o.z;
             const cd = Math.hypot(cdx, cdz) || 1;
             const nxO = cdx / cd, nzO = cdz / cd;
             const fxA = Math.sin(A.h), fzA = -Math.cos(A.h);
             // 船首が障害物側を向いている場合(内積 < 0.35)、外向き接線方向へ回頭補助
             if (fxA * nxO + fzA * nzO < 0.35) {
-              const ccwSign = o.key === 'gL' ? -1 : 1;
+              const ccwSign = (o.key === 'gL' || o.key === 'com') ? -1 : 1;
               const tx = ccwSign * nzO + nxO * 0.45;
               const tz = -ccwSign * nxO + nzO * 0.45;
               const tanH = Math.atan2(tx, -tz);
