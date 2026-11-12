@@ -463,40 +463,53 @@ export function islandH(x, z) {
 }
 const COAST = 1850; // 湘南海岸(片瀬海岸)までの距離
 const COAST_Z = -COAST;
-const coastD = (x, z) => -z - COAST - 40 * Math.sin(x / 700) - 25 * Math.sin(x / 230 + 1);
+// 片瀬西浜〜鵠沼〜辻堂〜茅ヶ崎〜平塚〜大磯の緩やかな弓なり砂浜＋相模川河口(x≒-8100)の自然な入り込み
+const shonanShoreZ = (x) => {
+  const bow = -110 * Math.pow(clampN((-x - 800) / 8800, 0, 1), 1.45); // 茅ヶ崎・平塚へ向かう緩やかな湾曲后退, 大磯で再び前へ出る
+  const oisoProm = 135 * Math.exp(-((x + 9750) * (x + 9750)) / 1.3e6);
+  const sagamiMouth = -68 * Math.exp(-((x + 8100) * (x + 8100)) / 95000);
+  return -COAST - 34 * Math.sin(x / 760) - 18 * Math.sin(x / 250 + 1) - bow + oisoProm + sagamiMouth;
+};
+const coastD = (x, z) => shonanShoreZ(x) - z;
 function landH(x, z) {
+  if (x < -10550 || x > 11400) return -18;
   const d = coastD(x, z);
   if (d < -40) return -6;
+  const westJoin = smooth(-10500, -9550, x); // 大磯以西は addEnoshimaScenery の西湘・箱根・伊豆メッシュへシームレス接続
+  const eastJoin = 1 - smooth(5200, 10800, x); // 三浦半島東端の裏側ではみ出さないよう収める
   const ramp = smooth(-12, 110, d);
-  // 藤沢・片瀬・鵠沼・辻堂・茅ヶ崎の奥は平坦な湘南平野〜相模野台地(標高4〜20m程度、背後に山脈なし)
-  const plain = smooth(250, 2800, d) * (9 + 7 * noise2(x / 1800, d / 1800));
+  // 藤沢・片瀬・鵠沼・辻堂・茅ヶ崎の奥は平坦な湘南平野〜相模野台地(標高4〜18m程度、藤沢背後に山脈なし)
+  const plain = smooth(240, 2800, d) * (8.5 + 6.5 * noise2(x / 1800, d / 1800));
   // 東側(腰越・七里ヶ浜・鎌倉山 x > 950)のみ、鎌倉へ続く実際のなだらかな緑の丘陵(約45〜95m)を配置し、奥で低く収める
   const eastK = smooth(950, 2600, x) * (1 - 0.55 * smooth(2800, 6500, d));
   const kamakuraHills = eastK * smooth(140, 1350, d) * (42 + 52 * noise2(x / 900, d / 800));
-  return -0.5 + 3.8 * ramp + plain + kamakuraHills;
+  const baseH = -0.5 + 3.8 * ramp + plain + kamakuraHills;
+  return -14 + (baseH + 14) * westJoin * eastJoin;
 }
 function colorLand(x, z, h, out) {
   const d = coastD(x, z);
+  const sagamiRiver = Math.exp(-((x + 8100) * (x + 8100)) / 42000);
   if (h < 0.15) out.setRGB(0.36, 0.34, 0.30); // 波打ち際(濡れた砂)
-  else if (d < 125) { const g = noise2(x / 40, z / 40) * 0.04; out.setRGB(0.54 + g, 0.50 + g, 0.42 + g); } // 湘南の砂浜(片瀬・鵠沼・七里ヶ浜)
+  else if (sagamiRiver > 0.45 && h < 9) out.setRGB(0.20, 0.33, 0.42); // 相模川河口の水面帯
+  else if (d < 125) { const g = noise2(x / 40, z / 40) * 0.04; out.setRGB(0.54 + g, 0.50 + g, 0.42 + g); } // 湘南の砂浜(片瀬・鵠沼・辻堂・茅ヶ崎)
   else if (d < 160) out.setRGB(0.44, 0.45, 0.47); // 防潮堤・国道134号
-  else if (d < 340 && h < 18) {
+  else if (d < 360 && h < 18) {
     // 国道134号沿いの湘南海岸クロマツ防砂林帯（濃い松林の緑）
     const g = noise2(x / 55, z / 55);
-    out.setRGB(0.12 + 0.04 * g, 0.28 + 0.06 * g, 0.14 + 0.03 * g);
+    out.setRGB(0.10 + 0.04 * g, 0.24 + 0.06 * g, 0.12 + 0.03 * g);
   } else {
     const g = noise2(x / 160, z / 160);
     const u = smooth(25, 160, h);
     const distHaze = smooth(1800, 6200, d);
     // 湘南の緑地・鎌倉山の常緑樹色と、藤沢・片瀬・鵠沼・腰越の市街地ブロックを距離霞みへ自然になじませる
-    let r = 0.16 + 0.05 * g, gg = 0.34 + 0.07 * g, b = 0.17 + 0.04 * g;
+    let r = 0.15 + 0.05 * g, gg = 0.31 + 0.07 * g, b = 0.16 + 0.04 * g;
     if (d < 5200 && h < 42) {
       const townNoise = noise2(x / 52, z / 52);
       if (townNoise > 0.36) {
         const bldTone = noise2(x / 18, z / 18);
-        r = 0.55 + 0.09 * bldTone;
-        gg = 0.53 + 0.08 * bldTone;
-        b = 0.50 + 0.07 * bldTone;
+        r = 0.54 + 0.08 * bldTone;
+        gg = 0.52 + 0.07 * bldTone;
+        b = 0.49 + 0.07 * bldTone;
       }
     }
     const r1 = 0.44 + 0.05 * u, g1 = 0.54 + 0.05 * u, b1 = 0.62 + 0.05 * u;
@@ -660,54 +673,197 @@ export function createWorld(scene) {
     }
     surfStrip(enoshimaGroup, pts, 9);
     const cpts = [];
-    for (let x = -14000; x <= 3000; x += 40) cpts.push({ x, z: -(COAST + 64 + 40 * Math.sin(x / 700) + 25 * Math.sin(x / 230 + 1)), ux: 0, uz: 1 });
+    for (let x = -9800; x <= 3000; x += 40) cpts.push({ x, z: shonanShoreZ(x) - 52, ux: 0, uz: 1 });
     surfStrip(enoshimaGroup, cpts, 14);
   }
 
-  // 湘南海岸 (x・zとも昇順にして法線が正しく上向き+Yになり、橋の上が裏面カリングで空色に抜けないようにする)
-  const lx = gridAxis([[-48000, -4000, 550], [-4000, 4000, 75], [4000, 48000, 550]]);
+  // 湘南海岸 (片瀬〜鵠沼〜辻堂〜茅ヶ崎〜平塚〜大磯: x・zとも昇順にして法線が正しく上向き+Yになるようにする)
+  const lx = gridAxis([[-10600, -4500, 135], [-4500, 3800, 65], [3800, 11500, 340]]);
   const lz = [];
   for (let j = 47; j >= 0; j--) lz.push(COAST_Z + 100 - (25 * (Math.pow(1.095, j) - 1)) / 0.095);
   const landGeo = buildGrid(lx, lz, landH, colorLand);
   enoshimaGroup.add(new THREE.Mesh(landGeo, new THREE.MeshLambertMaterial({ vertexColors: true })));
 
-  // 遠景: 三浦半島(東) / 箱根(富士の手前) / 伊豆半島(南西) / 伊豆大島(南の水平線)
-  // (三浦半島は addEnoshimaScenery で実際の海岸線(稲村ヶ崎〜逗子〜葉山〜城ヶ島)に沿って作成)
-  // 箱根・伊豆・大島・富士山は実際の見え方・画角に合わせて横幅と高さを引き締めたリアルなサイズ感にする
-  distantLand(enoshimaGroup, -26500, 1600, 4200, 3200, 740, 0.25);
-  distantLand(enoshimaGroup, -31000, 26000, 5200, 12000, 680, -0.2, 56);
-  distantLand(enoshimaGroup, -6000, 41000, 3100, 3800, 520, 0);
+  // 富士山: 江の島からの実方位(約276.3°・西北西やや西)と地球曲率込みの見かけスケールに忠実な造形
+  // ・懸垂曲線(カテナリー)の優美な左右稜線、平らな山頂火口と左端の最高峰「剣ヶ峰(3776m)」・右端の「白山岳」
+  // ・江の島から左手前(南東斜面)に見える象徴的な「宝永山(2693m)」の出っ張りと「宝永火口」の窪み
+  // ・放射状の沢筋(雪筋)と、高度に応じた大気遠近(裾野は箱根・足柄の奥に霞み、冠雪の山頂は澄んだ空に映える)
+  let fgeo = null;
+  {
+    const nRad = 96, nRing = 56;
+    const rBase = 10500, rTop = 760, hBase = 2475;
+    const vCount = (nRing + 1) * (nRad + 1) + 1;
+    const fPos = new Float32Array(vCount * 3);
+    const fCol = new Float32Array(vCount * 3);
+    const fMeta = new Float32Array(vCount * 2); // [hoeiCraterMask, ridgeRelief]
+    const fIdx = [];
+    const wrapAng = (a, c) => {
+      let d = a - c;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    };
+    let vi = 0;
+    for (let j = 0; j <= nRing; j++) {
+      const t = j / nRing; // 0 = 裾野, 1 = 山頂火口縁
+      const baseR = rTop + (rBase - rTop) * Math.pow(1 - t, 1.76) * (1 - 0.045 * Math.sin(Math.PI * t));
+      for (let i = 0; i <= nRad; i++) {
+        const ang = (i / nRad) * Math.PI * 2 - Math.PI; // -PI..PI (+X=東/手前, +Z=南/江の島から見て左側)
+        let r = baseR;
+        let y = hBase * t;
 
-  // 富士山 (山頂が尖らず、広い平らな火口頂上部と剣ヶ峰のわずかな起伏・優美な裾野を持つリアルなシルエット)
-  const prof = [];
-  const rBase = 23000, rTop = 1680; // 山頂の平らな火口直径(約3.3km相当)を確保して先が尖らないようにする
-  for (let i = 0; i <= 48; i++) {
-    const t = i / 48;
-    const r = rTop + (rBase - rTop) * Math.pow(1 - t, 1.85);
-    prof.push(new THREE.Vector2(r, 3776 * t));
-  }
-  prof.push(new THREE.Vector2(0, 3730)); // 火口底を平らに閉じる
-  const fgeo = new THREE.LatheGeometry(prof, 72);
-  const fpos = fgeo.attributes.position;
-  const fc = new Float32Array(fpos.count * 3);
-  for (let i = 0; i < fpos.count; i++) {
-    let y = fpos.getY(i);
-    const px = fpos.getX(i), pz = fpos.getZ(i);
-    // 山頂火口縁に剣ヶ峰などのごくわずかな凹凸を付与
-    if (y > 3600 && Math.hypot(px, pz) > 500) {
-      const rim = 55 * (noise2(px / 900 + 2.1, pz / 900 - 1.3) - 0.4);
-      y += rim;
-      fpos.setY(i, y);
+        // 1) 山頂火口縁のリアルな起伏: 江の島から見て左端(+Z側)に鋭く聳える剣ヶ峰、右端(-Z側)に白山岳
+        if (t > 0.86) {
+          const wRim = smooth(0.86, 1.0, t);
+          const dKenga = wrapAng(ang, 1.28); // 南〜南西縁(左端) = 剣ヶ峰
+          const dHaku = wrapAng(ang, -1.18); // 北縁(右端) = 白山岳
+          const dIzusan = wrapAng(ang, 0.12); // 東縁(成就岳・伊豆岳)
+          y += wRim * (
+            76 * Math.exp(-(dKenga * dKenga) / 0.14)
+            + 38 * Math.exp(-(dHaku * dHaku) / 0.18)
+            + 20 * Math.exp(-(dIzusan * dIzusan) / 0.22)
+            - 18 * Math.cos(ang * 4.0 + 0.6)
+          );
+        }
+
+        // 2) 南東斜面(江の島から見て左稜線〜左手前)の象徴的な「宝永山」の出っ張りと「宝永火口」の抉れ
+        const dCraterA = wrapAng(ang, 1.06);
+        const dHoeiPeakA = wrapAng(ang, 1.38);
+        const craterElev = Math.exp(-((t - 0.64) * (t - 0.64)) / 0.0085);
+        const craterMask = Math.exp(-(dCraterA * dCraterA) / 0.058) * craterElev;
+        const hoeiShoulder = Math.exp(-(dHoeiPeakA * dHoeiPeakA) / 0.068) * Math.exp(-((t - 0.58) * (t - 0.58)) / 0.0105);
+        r += hoeiShoulder * 540 - craterMask * 235;
+        y += hoeiShoulder * 138 - craterMask * 82;
+
+        // 3) 放射状の沢筋と尾根の微細な凹凸 (太陽光で立体的な山肌の陰影を生む)
+        const gully = (
+          0.52 * Math.cos(ang * 17.0 + 0.8 * Math.sin(t * 5.0))
+          + 0.31 * Math.cos(ang * 31.0 - 1.4 + 0.6 * Math.cos(t * 7.0))
+          + 0.17 * Math.cos(ang * 53.0 + 2.1)
+        );
+        const gullyEnv = smooth(0.12, 0.42, t) * (1 - 0.35 * smooth(0.88, 1.0, t));
+        r += gully * 52 * gullyEnv;
+        y += gully * 14 * gullyEnv;
+
+        const px = r * Math.cos(ang);
+        const pz = r * Math.sin(ang);
+        fPos[vi * 3] = px;
+        fPos[vi * 3 + 1] = y;
+        fPos[vi * 3 + 2] = pz;
+        const sn = smooth(0.60, 0.74, t - gully * 0.04 - craterMask * 0.14);
+        fCol[vi * 3] = 0.24 + sn * 0.74;
+        fCol[vi * 3 + 1] = 0.34 + sn * 0.65;
+        fCol[vi * 3 + 2] = 0.52 + sn * 0.48;
+        fMeta[vi * 2] = craterMask;
+        fMeta[vi * 2 + 1] = gully * gullyEnv;
+        vi++;
+      }
     }
-    const jag = 380 * (noise2(px / 1800, pz / 1800) - 0.5);
-    const snow = smooth(2500, 2800, y + jag);
-    fc[i * 3] = 0.2 + 0.78 * snow; fc[i * 3 + 1] = 0.3 + 0.68 * snow; fc[i * 3 + 2] = 0.34 + 0.62 * snow;
+    // 火口底の中心頂点
+    const centerIdx = vi;
+    fPos[vi * 3] = 0; fPos[vi * 3 + 1] = hBase - 95; fPos[vi * 3 + 2] = 0;
+    fCol[vi * 3] = 0.92; fCol[vi * 3 + 1] = 0.96; fCol[vi * 3 + 2] = 1.0;
+    fMeta[vi * 2] = 0; fMeta[vi * 2 + 1] = 0;
+
+    const stride = nRad + 1;
+    for (let j = 0; j < nRing; j++) {
+      for (let i = 0; i < nRad; i++) {
+        const a = j * stride + i, b = a + 1, c = a + stride, d = c + 1;
+        fIdx.push(a, b, c, b, d, c);
+      }
+    }
+    const topStart = nRing * stride;
+    for (let i = 0; i < nRad; i++) {
+      fIdx.push(topStart + i, topStart + i + 1, centerIdx);
+    }
+
+    fgeo = new THREE.BufferGeometry();
+    fgeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
+    fgeo.setAttribute('color', new THREE.BufferAttribute(fCol, 3));
+    fgeo.setAttribute('aMeta', new THREE.BufferAttribute(fMeta, 2));
+    fgeo.setIndex(fIdx);
+    fgeo.computeVertexNormals();
+
+    const fujiMat = new THREE.ShaderMaterial({
+      uniforms: { uSun: { value: SUN_DIR } },
+      fog: false,
+      vertexShader: `
+        attribute vec2 aMeta;
+        varying vec3 vLPos;
+        varying vec3 vWPos;
+        varying vec3 vWNrm;
+        varying vec2 vMeta;
+        void main() {
+          vLPos = position;
+          vMeta = aMeta;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWPos = wp.xyz;
+          vWNrm = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vLPos;
+        varying vec3 vWPos;
+        varying vec3 vWNrm;
+        varying vec2 vMeta;
+        ${SKY_FN}
+        float fh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float fvn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(fh(i),fh(i+vec2(1,0)),f.x),mix(fh(i+vec2(0,1)),fh(i+vec2(1,1)),f.x),f.y); }
+        void main() {
+          vec3 N = normalize(vWNrm);
+          float ang = atan(vLPos.z, vLPos.x);
+          float hNorm = clamp(vLPos.y / 2520.0, 0.0, 1.05);
+
+          // 沢筋に沿って鋭く切れ込むリアルな雪化粧と雪筋パターン
+          float streak1 = sin(ang * 22.0 + fvn(vec2(ang * 5.5, hNorm * 9.0)) * 2.4);
+          float streak2 = sin(ang * 47.0 - 1.3 + fvn(vec2(ang * 11.0 + 3.1, hNorm * 16.0)) * 2.0);
+          float streak3 = fvn(vec2(ang * 28.0 + 7.0, hNorm * 24.0)) * 2.0 - 1.0;
+          // 谷筋(vMeta.y < 0)に雪が深く残り、尾根筋や宝永火口壁(vMeta.x)は風で岩肌が覗く
+          float gullySnow = -vMeta.y * 0.11 + 0.055 * streak1 + 0.032 * streak2 + 0.025 * streak3;
+          float hoeiBare = vMeta.x * 0.16;
+          float snowLine = 0.665 - gullySnow + hoeiBare;
+          float snow = smoothstep(snowLine - 0.055, snowLine + 0.045, hNorm);
+          // 6〜7合目付近の細い残雪の雪筋ディテール
+          float lowerStreaks = smoothstep(0.46, 0.66, hNorm) * smoothstep(0.32, 0.78, -vMeta.y * 0.9 + 0.45 * streak2 + 0.35 * streak3);
+          snow = clamp(max(snow, lowerStreaks * 0.72 * (1.0 - vMeta.x * 0.8)), 0.0, 1.0);
+
+          // 太陽光ライティング (南東からの陽射しで左手前〜正面が明るく輝き、北西斜面は気品ある青影に締まる)
+          float sunDiff = clamp(dot(N, normalize(uSun)), 0.0, 1.0);
+          float skyAmb = 0.5 + 0.5 * N.y;
+
+          // 火山岩の群青〜藍鼠色 (宝永火口周辺はわずかに赤褐色のスコリア岩肌を帯びる)
+          vec3 rockShadow = vec3(0.20, 0.29, 0.46);
+          vec3 rockLit = mix(vec3(0.34, 0.42, 0.58), vec3(0.43, 0.39, 0.50), clamp(vMeta.x * 1.3, 0.0, 1.0));
+          vec3 rockCol = mix(rockShadow, rockLit, clamp(0.22 + 0.78 * sunDiff, 0.0, 1.0));
+
+          // 冠雪の純白〜青白い陰影
+          vec3 snowShadow = vec3(0.74, 0.84, 0.94);
+          vec3 snowLit = vec3(0.985, 0.992, 1.0);
+          vec3 snowCol = mix(snowShadow, snowLit, clamp(0.28 + 0.76 * sunDiff + 0.12 * skyAmb, 0.0, 1.0));
+
+          vec3 surf = mix(rockCol, snowCol, snow);
+
+          // 高度別・大気遠近法: 裾野は相模湾の湿潤な霞に溶け込み、標高が高い山頂部ほど澄んだ青空にくっきり浮かび上がる
+          vec3 viewVec = vWPos - cameraPosition;
+          float dist = length(viewVec);
+          vec3 viewDir = viewVec / max(dist, 1.0);
+          vec3 skyHaze = mix(vec3(0.741, 0.835, 0.902), skyBase(vec3(viewDir.x, max(viewDir.y, 0.002), viewDir.z)), smoothstep(0.01, 0.065, viewDir.y));
+          float baseFog = 1.0 - exp(-pow(dist * 0.000024, 2.0));
+          float altClear = mix(1.08, 0.50, smoothstep(0.22, 0.88, hNorm));
+          float haze = clamp(baseFog * altClear, 0.26, 0.86);
+          vec3 finalCol = mix(surf, skyHaze, haze);
+          gl_FragColor = vec4(finalCol, 1.0);
+        }
+      `,
+    });
+
+    const fuji = new THREE.Mesh(fgeo, fujiMat);
+    fuji.userData.noBake = true;
+    fuji.position.set(-42680, -2, -4730);
+    enoshimaGroup.add(fuji);
   }
-  fgeo.computeVertexNormals();
-  fgeo.setAttribute('color', new THREE.BufferAttribute(fc, 3));
-  const fuji = new THREE.Mesh(fgeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
-  // 江の島から見た富士山はほぼ真西(方位約278°)、横に広がりすぎない実際のサイズ感(scale 0.45, 0.56, 0.45)で配置
-  fuji.position.set(-41000, -2, -5200); fuji.scale.set(0.45, 0.56, 0.45); enoshimaGroup.add(fuji);
 
   // 江の島の木(画像2枚目準拠: 島全体がこんもりとした緑の森に覆われるよう斜面〜頂上まで広葉樹＆黒松を高密度に配置)
   const treeCount = 960;
@@ -3398,30 +3554,375 @@ function addEnoshimaScenery(grp, surfStrip) {
   sBox(sc, 1250, -1, -(COAST + 10), 9, 4, 150, 0x9ca3af, 0.2);
   sBox(sc, 1180, -1, -(COAST - 60), 90, 4, 9, 0x9ca3af, 0.2);
 
-  // ---- 3) 茅ヶ崎: 烏帽子岩(姥島)と茅ヶ崎ヘッドランド(T字突堤) ----
+  // ---- 3) 湘南西海岸 (片瀬西浜〜鵠沼〜辻堂〜茅ヶ崎〜平塚〜大磯): クロマツ防砂林・烏帽子岩・湘南大橋・大磯港 ----
   {
+    // 独立シード乱数(既存の江の島・八景島オブジェクト配置乱数に影響を与えない)
+    let wSeed = 77321;
+    const wrnd = () => { wSeed = (wSeed * 16807) % 2147483647; return wSeed / 2147483647; };
+
+    // 国道134号沿いに連なる湘南海岸のクロマツ防砂林帯 (片瀬西浜〜鵠沼〜辻堂〜茅ヶ崎〜平塚〜大磯)
+    const pineMax = 540;
+    const pines = new THREE.InstancedMesh(getPineTreeCrownGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), pineMax);
+    const pineTrunks = new THREE.InstancedMesh(getTreeTrunkGeo(), new THREE.MeshLambertMaterial({ color: 0x4e3829, vertexColors: true }), pineMax);
+    const pm4 = new THREE.Matrix4(), pq = new THREE.Quaternion(), peul = new THREE.Euler(), ptc = new THREE.Color();
+    let pn = 0;
+    for (let tries = 0; tries < 3200 && pn < pineMax; tries++) {
+      const px = -9550 + Math.pow(wrnd(), 0.88) * 9300; // 西浜(-250)〜大磯(-9550)
+      if (px > -8280 && px < -7920) continue; // 相模川河口は除外
+      const shoreZ = shonanShoreZ(px);
+      const pz = shoreZ - 155 - wrnd() * 185;
+      const ph = landH(px, pz);
+      if (ph < 1.8 || ph > 18) continue;
+      const ps = 4.6 + wrnd() * 3.8;
+      pq.setFromEuler(peul.set(0, wrnd() * 6.28, 0));
+      pm4.compose(new THREE.Vector3(px, ph + ps * 0.62, pz), pq, new THREE.Vector3(ps * (1.10 + wrnd() * 0.28), ps * (0.72 + wrnd() * 0.20), ps * (1.10 + wrnd() * 0.28)));
+      pines.setMatrixAt(pn, pm4);
+      ptc.setRGB(0.08 + wrnd() * 0.04, 0.19 + wrnd() * 0.07, 0.09 + wrnd() * 0.04);
+      pines.setColorAt(pn, ptc);
+      pm4.compose(new THREE.Vector3(px, ph - 0.2, pz), pq, new THREE.Vector3(ps * 0.45, ps * 0.65, ps * 0.45));
+      pineTrunks.setMatrixAt(pn, pm4);
+      pn++;
+    }
+    pines.count = pn; pineTrunks.count = pn;
+    sc.add(pineTrunks, pines);
+
+    // 茅ヶ崎: 烏帽子岩(姥島)と周囲の岩礁群・白波・茅ヶ崎ヘッドランド(T字突堤)・茅ヶ崎漁港
     const ex = -6450, ez = -1480;
     const rock = new THREE.Mesh(sGeo('eboshi', () => {
-      const prof = [[0, -3], [11, -3], [10, 1], [7.5, 5], [5.5, 9], [3.6, 13], [1.8, 16.5], [0.4, 18.5], [0, 18.8]].map(([r, y]) => new THREE.Vector2(r, y));
+      const prof = [[0, -3], [12, -3], [10.5, 1.2], [8.0, 5.2], [5.8, 9.5], [3.8, 13.5], [1.9, 17.0], [0.45, 19.0], [0, 19.3]].map(([r, y]) => new THREE.Vector2(r, y));
       return new THREE.LatheGeometry(prof, 7);
-    }), sMat(0x47423c));
-    rock.position.set(ex, 0, ez); rock.rotation.set(0.05, 0.4, 0.13); rock.scale.set(1, 1, 0.75); sc.add(rock);
-    for (const [dx, dz, r, h] of [[-26, 10, 9, 3.5], [18, -14, 7, 2.6], [36, 8, 10, 2.2], [-12, -26, 6, 2.8], [52, -6, 5, 1.6], [-44, -8, 7, 1.8]]) sCyl(sc, ex + dx, -2, ez + dz, r * 0.45, r, h + 2, 0x4b463f, 6);
-    const hx = -5600, hz = -(COAST + 40 + 40 * Math.sin(-5600 / 700) + 25 * Math.sin(-5600 / 230 + 1));
-    sBox(sc, hx, -1, hz + 70, 9, 3.4, 150, 0x8f8b84);
-    sBox(sc, hx, -1, hz + 145, 120, 3.4, 12, 0x8f8b84);
+    }), sMat(0x45403a));
+    rock.position.set(ex, 0, ez); rock.rotation.set(0.05, 0.42, 0.12); rock.scale.set(1.08, 1.0, 0.76); sc.add(rock);
+    for (const [dx, dz, r, h] of [[-28, 10, 9.5, 3.6], [19, -14, 7.5, 2.8], [38, 8, 10.5, 2.3], [-14, -26, 6.5, 2.9], [54, -6, 5.5, 1.7], [-46, -8, 7.5, 1.9]]) {
+      sCyl(sc, ex + dx, -2, ez + dz, r * 0.45, r, h + 2, 0x4b463f, 6);
+    }
+    const eboPts = [];
+    for (let k = 0; k <= 28; k++) {
+      const a = (k / 28) * Math.PI * 2;
+      eboPts.push({ x: ex + Math.cos(a) * 46, z: ez + Math.sin(a) * 26, ux: Math.cos(a), uz: Math.sin(a) });
+    }
+    surfStrip(sc, eboPts, 7);
+
+    const hx = -5600, hz = shonanShoreZ(hx);
+    sBox(sc, hx, -1, hz + 65, 9, 3.4, 145, 0x8f8b84);
+    sBox(sc, hx, -1, hz + 138, 122, 3.4, 12, 0x8f8b84);
+    // 平塚・相模川河口の湘南大橋と平塚新港防波堤
+    const sgZ = shonanShoreZ(-8100);
+    sBox(sc, -8100, 7.5, sgZ - 135, 310, 2.2, 13, 0xcbd5e1);
+    for (let p = -1; p <= 1; p++) sBox(sc, -8100 + p * 95, -2, sgZ - 135, 6, 9.5, 11, 0x94a3b8);
+    sBox(sc, -7680, -1, shonanShoreZ(-7680) + 85, 150, 3.8, 10, 0x94a3b8, -0.15);
+    // 大磯港の防波堤と白灯台
+    const oiZ = shonanShoreZ(-9920);
+    sBox(sc, -9920, -1, oiZ + 95, 12, 4.2, 195, 0x9ca3af, 0.22);
+    sBox(sc, -9850, -1, oiZ + 185, 115, 4.2, 11, 0x9ca3af, 0.12);
+    sCyl(sc, -9800, 3, oiZ + 190, 1.5, 2.0, 11, 0xf8fafc, 8);
   }
 
-  // ---- 4) 大磯・平塚: 海岸近くまで迫る高麗山の丘と、湘南平(181m)の紅白テレビ塔群 ----
-  distantLand(sc, -11300, -2850, 2600, 950, 175, 0.12, 24);
-  distantLand(sc, -8900, -3300, 1500, 750, 190, 0.25, 20);
-  for (const [tx, tz, th] of [[-8950, -3330, 58], [-8820, -3270, 48], [-9080, -3380, 40]]) sBanded(sc, tx, 30, tz, 1.4, 6, th + 120, 9, 0xdc2626, 0xf8fafc, 4); // 根元は丘に埋める
+  // ---- 4) 相模湾西岸〜丹沢・大山〜足柄〜箱根〜真鶴半島〜伊豆半島・大室山・天城連山 (連続実地形メッシュ) ----
+  {
+    // 大磯から二宮・国府津・小田原を経て南西へ湾曲し、真鶴半島・湯河原・熱海・伊東・川奈崎・城ヶ崎・稲取・河津へ至る実際の海岸線
+    const WEST_COAST = [
+      [-9150, -1890],   // 平塚・大磯境界 (landGeo とシームレス接続)
+      [-9950, -1810],   // 大磯港・照ヶ崎
+      [-11150, -1460],  // 大磯西・国府本郷
+      [-12400, -860],   // 二宮・梅沢海岸
+      [-13650, -180],   // 二宮・袖ヶ浦
+      [-15200, 620],    // 国府津海岸
+      [-16750, 1620],   // 酒匂川河口
+      [-18050, 2920],   // 小田原・御幸の浜・早川港
+      [-18950, 4650],   // 石橋・米神
+      [-19650, 6650],   // 根府川・江之浦
+      [-20050, 8350],   // 真鶴半島付け根(北側)
+      [-18750, 9750],   // 真鶴半島北岸
+      [-18195, 10610],  // 真鶴岬先端 (三ツ石の手前)
+      [-19250, 10820],  // 真鶴港(南岸)
+      [-21150, 10520],  // 福浦・吉浜(湯河原東)
+      [-22350, 11650],  // 湯河原海岸
+      [-22650, 12650],  // 伊豆山
+      [-22930, 13580],  // 熱海サンビーチ・熱海湾奥
+      [-22120, 14850],  // 錦ヶ浦・曽我浦
+      [-22750, 16850],  // 網代湾
+      [-22080, 18250],  // 宇佐美北岬
+      [-22550, 20150],  // 宇佐美海岸
+      [-21850, 22050],  // 伊東オレンジビーチ・伊東港
+      [-20150, 22620],  // 汐吹崎
+      [-18985, 23360],  // 川奈崎
+      [-19680, 25450],  // 富戸
+      [-19820, 27650],  // 城ヶ崎海岸・門脇埼
+      [-20950, 29850],  // 伊豆高原・八幡野
+      [-22250, 31900],  // 赤沢・大川
+      [-23350, 33850],  // 北川・熱川
+      [-24250, 35350],  // 稲取北
+      [-24450, 36250],  // 稲取岬
+      [-26250, 38300],  // 今井浜・河津
+      [-28500, 41500],  // 白浜・下田方面
+    ];
+    const sdW = makeCoastField(WEST_COAST, [[-34000, 41500], [-34000, -17200], [-9150, -17200]]);
 
-  // ---- 5) 遠景の山並み: 丹沢山地(大山1252m・塔ノ岳・蛭ヶ岳)/ 真鶴半島 / 初島 (横に広がりすぎない実際のサイズ感に調整) ----
-  distantLand(sc, -19500, -12600, 3800, 1600, 920, -0.44, 40);
-  distantLand(sc, -13900, -10900, 1600, 1400, 860, 0.2, 26);
-  distantLand(sc, -19400, 8600, 1200, 600, 100, 0.65, 20);
-  distantLand(sc, -17200, 16600, 700, 480, 48, 0, 14);
+    // 鋭い尾根筋と谷筋を刻むマルチオクターブ・リッジノイズ
+    const ridgeTex = (x, z) => {
+      const n1 = 1 - Math.abs(2 * noise2(x / 1550 + 3.7, z / 1550 - 2.1) - 1);
+      const n2 = 1 - Math.abs(2 * noise2(x / 680 - 5.3, z / 680 + 4.4) - 1);
+      const n3 = noise2(x / 290 + 1.9, z / 290 - 6.2);
+      return 0.56 * n1 + 0.30 * n2 + 0.14 * n3; // 0..1
+    };
+    // 2頂点間を自然な鞍部(サドル)付きで結ぶ山稜セグメント関数
+    const ridgeSeg = (x, z, ax, az, bx, bz, hA, hB, width, sag = 0.12, p = 1.42) => {
+      const dx = bx - ax, dz = bz - az;
+      const L2 = dx * dx + dz * dz;
+      const t = clampN(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+      const px = ax + dx * t - x, pz = az + dz * t - z;
+      const u = Math.sqrt(px * px + pz * pz) / width;
+      if (u >= 1) return 0;
+      const hCrest = (hA + (hB - hA) * t) * (1 - sag * 4 * t * (1 - t));
+      return hCrest * Math.pow(1 - u, p);
+    };
+    // 独立峰・火山ドーム関数 (flatTop > 0 で駒ヶ岳・大室山のような台形/お椀頂上を表現)
+    const peakCone = (x, z, cx, cz, rx, rz, h, p = 1.5, flatTop = 0) => {
+      const u = Math.hypot((x - cx) / rx, (z - cz) / rz);
+      if (u >= 1) return 0;
+      const ue = flatTop > 0 ? Math.max(0, (u - flatTop) / (1 - flatTop)) : u;
+      return h * Math.pow(1 - ue, p);
+    };
+
+    const westH = (x, z) => {
+      const d = sdW(x, z);
+      if (d <= 0) return Math.max(-32, -3.5 + d * 0.08);
+
+      const eastBlend = smooth(-9180, -9850, x);
+      const westBack = smooth(-33800, -30600, x);
+      const rt = ridgeTex(x, z);
+      const rMod = 0.74 + 0.36 * rt;
+
+      // 基本の海岸段丘・平野 (小田原・足柄平野や伊勢原・秦野盆地のベース)
+      let mtn = 0;
+      let plain = smooth(0, 65, d) * 3.2 + smooth(80, 1800, d) * (11 + 8 * noise2(x / 1600, z / 1600));
+
+      // (A) 丹沢山地＆大山 (方位282°〜306°: 富士山の右裾野から西丹沢・表尾根・大山へと連なる重厚な山塊。x > -11900 は平地にして藤沢背後に山を作らない)
+      if (z < -2200 && x < -11800) {
+        const tanzawaEastCut = smooth(-11900, -13350, x);
+        // 大山(1252m): 伊勢原平野から端正な三角錐で立ち上がる象徴的な独立峰シルエット (方位305°)
+        const oyama = peakCone(x, z, -14300, -10250, 2850, 2550, 885, 1.50) * (0.82 + 0.24 * rt);
+        // 表尾根(三ノ塔〜塔ノ岳)〜丹沢主脈(丹沢山〜神奈川県最高峰・蛭ヶ岳1673m)〜主稜(檜洞丸〜丹沢大室山)
+        const r1 = ridgeSeg(x, z, -14300, -10250, -16700, -9650, 760, 845, 2550, 0.16, 1.44);
+        const r2 = ridgeSeg(x, z, -16700, -9650, -18135, -11050, 845, 1055, 2900, 0.09, 1.38);
+        const r3 = ridgeSeg(x, z, -18135, -11050, -19500, -13250, 1055, 1175, 3350, 0.08, 1.38);
+        const r4 = ridgeSeg(x, z, -19500, -13250, -21750, -12750, 1175, 1105, 3350, 0.10, 1.40);
+        const r5 = ridgeSeg(x, z, -21750, -12750, -23700, -14150, 1105, 1065, 3400, 0.10, 1.42);
+        // 西丹沢稜線: 塔ノ岳〜鍋割山(方位297°)〜檜洞丸〜畦ヶ丸(方位294°)〜大野山・不老山(方位283°)〜三国山稜へなだらかに降りて富士山右裾へ繋がる実景スカイライン
+        const w1 = ridgeSeg(x, z, -18135, -11050, -19650, -10250, 1020, 915, 2850, 0.10, 1.40);
+        const w2 = ridgeSeg(x, z, -19650, -10250, -24200, -10750, 915, 845, 3300, 0.10, 1.42);
+        const w3 = ridgeSeg(x, z, -24200, -10750, -25800, -6350, 845, 635, 3500, 0.12, 1.44);
+        // 秦野・松田側の前衛山稜(弘法山・高松山 801m・大野山 723m)
+        const frontT1 = ridgeSeg(x, z, -15200, -7200, -19800, -6400, 310, 565, 2700, 0.12, 1.46);
+        const frontT2 = ridgeSeg(x, z, -19800, -6400, -24400, -5650, 565, 520, 2900, 0.12, 1.46);
+        mtn = Math.max(mtn, oyama, Math.max(r1, r2, r3, r4, r5, w1, w2, w3, frontT1, frontT2) * rMod) * tanzawaEastCut;
+      }
+
+      // (B) 大磯丘陵(高麗山・湘南平)・二宮吾妻山・国府津曽我丘陵・足柄山地(矢倉岳)
+      if (z > -8500 && z < 4500) {
+        // 高麗山〜湘南平(181m): 大磯の海岸すぐ背後に迫るこんもりした常緑樹の丘陵
+        const shonandaira = Math.max(
+          ridgeSeg(x, z, -10150, -2100, -11400, -1980, 114, 122, 920, 0.05, 1.25),
+          peakCone(x, z, -11280, -2010, 720, 580, 124, 1.25, 0.22)
+        ) * (0.88 + 0.16 * rt);
+        // 二宮・吾妻山(136m) & 大磯〜二宮の低丘陵
+        const azuma = peakCone(x, z, -13200, -650, 980, 760, 84, 1.38);
+        const oisoHills = ridgeSeg(x, z, -11600, -2350, -14200, -1850, 95, 115, 1250, 0.10, 1.45);
+        // 国府津・松田の曽我丘陵(不動山・浅間山 320m: 酒匂川・小田原平野の北縁を限る丘陵)
+        const soga = ridgeSeg(x, z, -15550, -1150, -17650, -2450, 178, 210, 1450, 0.08, 1.40) * (0.84 + 0.22 * rt);
+        // 足柄峠〜矢倉岳(870m): 富士山のすぐ右手前の裾野にちょこんと尖るおむすび型の名峰
+        const ashigaraBase = ridgeSeg(x, z, -25600, -8200, -26400, -400, 620, 445, 3600, 0.16, 1.48) * rMod;
+        const yagura = peakCone(x, z, -25320, -3020, 1950, 1750, 565, 1.55) * (0.84 + 0.22 * rt);
+        mtn = Math.max(mtn, shonandaira, azuma, oisoHills, soga, ashigaraBase, yagura);
+      }
+
+      // (C) 箱根連山(金時山・明神ヶ岳・明星ヶ岳・神山・駒ヶ岳・二子山・大観山・十国峠) & 真鶴半島
+      if (z > -2600 && z < 15500) {
+        // 金時山(1212m): 富士山の左手前に鋭く聳える箱根北端の秀峰
+        const kintoki = peakCone(x, z, -27060, 195, 2350, 2050, 805, 1.60) * (0.84 + 0.24 * rt);
+        // 北東外輪山: 明神ヶ岳(1169m)〜明星ヶ岳(924m)〜小田原早川へ降りる長い稜線
+        const myojin = ridgeSeg(x, z, -27060, 195, -24830, 1365, 765, 780, 2800, 0.12, 1.42) * rMod;
+        const myojo = ridgeSeg(x, z, -24830, 1365, -23900, 2950, 780, 605, 2550, 0.10, 1.42) * rMod;
+        const odawaraSpur = ridgeSeg(x, z, -23900, 2950, -20200, 4200, 560, 185, 2200, 0.08, 1.48) * rMod;
+        // 中央火口丘: 箱根最高峰・神山(1438m) と 平頂ドームの箱根駒ヶ岳(1356m)
+        const kamiyama = peakCone(x, z, -26160, 4060, 3200, 2850, 965, 1.40) * (0.84 + 0.22 * rt);
+        const komagatake = peakCone(x, z, -25850, 4620, 2600, 2300, 905, 1.32, 0.24) * (0.88 + 0.16 * rt);
+        // 二子山(1099m): 江の島からもはっきり識別できる丸みを帯びた双耳溶岩ドーム(上二子・下二子)
+        const futago1 = peakCone(x, z, -24780, 5260, 1550, 1250, 725, 1.28, 0.14);
+        const futago2 = peakCone(x, z, -24660, 5920, 1500, 1250, 710, 1.28, 0.14);
+        // 南外輪山: 大観山・鞍掛山(1011m)〜白銀山(根府川奥)〜十国峠(770m)
+        const taikan = ridgeSeg(x, z, -25550, 6350, -25250, 7950, 685, 655, 3100, 0.08, 1.42) * rMod;
+        const shirogane = ridgeSeg(x, z, -25250, 7200, -21200, 7900, 610, 265, 2300, 0.10, 1.45) * rMod;
+        const jukkoku = ridgeSeg(x, z, -25250, 7950, -24990, 11600, 655, 472, 3100, 0.10, 1.42) * rMod;
+        // 真鶴半島: 海へ細長く突き出した標高45〜58mの平坦な照葉樹林台地(お林)
+        let manazuru = 0;
+        if (x > -20400 && z > 8200 && z < 11000) {
+          manazuru = smooth(0, 95, d) * (46 + 10 * smooth(220, 900, d) + 4 * noise2(x / 260, z / 260));
+        }
+        mtn = Math.max(mtn, kintoki, myojin, myojo, odawaraSpur, kamiyama, komagatake, futago1, futago2, taikan, shirogane, jukkoku, manazuru);
+      }
+
+      // (D) 伊豆半島(熱海・玄岳〜宇佐美〜伊東〜川奈・城ヶ崎〜伊豆大室山〜天城連山〜稲取・河津)
+      if (z > 10500) {
+        // 熱海峠・玄岳(798m)〜多賀・宇佐美(巣雲山 581m)〜伊東奥の山並み
+        const kurotake = ridgeSeg(x, z, -24990, 11600, -26195, 14605, 472, 478, 3400, 0.08, 1.40) * rMod;
+        const usamiMtn = ridgeSeg(x, z, -26195, 14605, -25350, 19085, 478, 360, 3400, 0.12, 1.42) * rMod;
+        const itoPass = ridgeSeg(x, z, -25350, 19085, -25200, 25200, 360, 385, 3600, 0.22, 1.45) * rMod;
+        const coastalApron = smooth(30, 2600, d) * (155 + 95 * noise2(x / 1800, z / 1800));
+        // 伊豆・大室山(580m): 伊豆高原にぽっこり浮かぶ美しいお椀型の単成火山スコリア丘
+        const izuOmuro = peakCone(x, z, -21985, 26795, 1550, 1550, 285, 1.26, 0.26);
+        const kogenTerrace = peakCone(x, z, -21600, 26900, 3600, 4200, 125, 1.35);
+        // 天城連山: 遠笠山(1197m)〜万二郎岳(1299m)〜伊豆最高峰・万三郎岳(1406m)〜高根山・稲取〜河津
+        const amagi1 = ridgeSeg(x, z, -25200, 25200, -25855, 27835, 385, 695, 3700, 0.08, 1.38) * rMod;
+        const amagi2 = ridgeSeg(x, z, -25855, 27835, -26020, 29460, 695, 758, 3900, 0.08, 1.36) * rMod;
+        const amagi3 = ridgeSeg(x, z, -26020, 29460, -27215, 29575, 758, 828, 4100, 0.06, 1.36) * rMod;
+        const amagi4 = ridgeSeg(x, z, -27215, 29575, -27040, 33555, 828, 470, 3900, 0.12, 1.40) * rMod;
+        const amagi5 = ridgeSeg(x, z, -27040, 33555, -28200, 40500, 470, 275, 3600, 0.12, 1.45) * rMod;
+        // 川奈崎・城ヶ崎海岸の溶岩海食崖台地
+        const jogasaki = (z > 22400 && z < 30500 && d < 1200) ? smooth(0, 70, d) * 34 : 0;
+        mtn = Math.max(mtn, kurotake, usamiMtn, itoPass, coastalApron, izuOmuro, kogenTerrace, amagi1, amagi2, amagi3, amagi4, amagi5, jogasaki);
+      }
+
+      const coastRise = smooth(0, 130, d);
+      const totalH = plain + mtn * coastRise * westBack;
+      return -12 + (totalH + 12) * eastBlend;
+    };
+
+    const westC = (x, z, h, out) => {
+      if (h < -1.5) { out.setRGB(0.28, 0.32, 0.35); return; }
+      const d = sdW(x, z);
+      const dist = Math.hypot(x, z);
+      const g = noise2(x / 220, z / 220);
+      const gFine = noise2(x / 65, z / 65);
+      // 砂浜区間 (大磯・二宮・国府津・小田原・湯河原・熱海サンビーチ・宇佐美・伊東) と 断崖区間 (真鶴・錦ヶ浦・川奈・城ヶ崎)
+      const rockyCoast = (z > 7800 && z < 11100) || (z > 14200 && z < 16200) || (z > 22400 && z < 30200);
+      if (h < 0.35) {
+        out.setRGB(0.35, 0.34, 0.31);
+        return;
+      }
+      if (d < 85 && !rockyCoast && h < 14) {
+        out.setRGB(0.50 + 0.04 * gFine, 0.46 + 0.04 * gFine, 0.39 + 0.03 * gFine); // 西湘〜伊東の砂浜・礫浜
+        return;
+      }
+      if (d < 95 && rockyCoast && h < 38) {
+        out.setRGB(0.24 + 0.04 * gFine, 0.22 + 0.03 * gFine, 0.20 + 0.03 * gFine); // 真鶴・城ヶ崎の玄武岩海食崖
+        return;
+      }
+      // 小田原・二宮・国府津・熱海・伊東の海沿い低地市街地トーン
+      if (h < 52 && d < 1800 && !rockyCoast && gFine > 0.44) {
+        out.setRGB(0.38 + 0.06 * g, 0.37 + 0.05 * g, 0.36 + 0.05 * g);
+        return;
+      }
+      // 距離に応じた物理ベース常緑樹林〜群青・藍鼠色の重層山岳カラー (FogExp2 と合わさって実際の相模湾の空気遠近を再現)
+      const farT = smooth(11500, 27500, dist);
+      const altT = smooth(120, 920, h);
+      // 近景(高麗山・真鶴): 深い照葉樹・黒松の緑 -> 中遠景(大山・箱根・天城): 気品あるスレート群青〜藍鼠色
+      let r = 0.070 * (1 - farT) + 0.062 * farT + 0.016 * g + 0.012 * altT;
+      let gg = 0.172 * (1 - farT) + 0.112 * farT + 0.024 * g + 0.014 * altT;
+      let b = 0.092 * (1 - farT) + 0.208 * farT + 0.018 * g + 0.026 * altT;
+      // 伊豆・大室山は特徴的なススキ草原の明るい若草〜黄緑色をほんのり帯びさせる
+      const omuroK = Math.exp(-((x + 21985) * (x + 21985) + (z - 26795) * (z - 26795)) / 1.4e6) * smooth(120, 230, h);
+      if (omuroK > 0.02) {
+        r += (0.14 - r) * omuroK * 0.65;
+        gg += (0.24 - gg) * omuroK * 0.65;
+        b += (0.13 - b) * omuroK * 0.65;
+      }
+      out.setRGB(r, gg, b);
+    };
+
+    const wxs = gridAxis([[-33800, -27800, 420], [-27800, -17600, 180], [-17600, -9150, 145]]);
+    const wzs = gridAxis([[-17000, -8800, 230], [-8800, 12600, 165], [12600, 31500, 240], [31500, 41500, 420]]);
+    sc.add(new THREE.Mesh(buildGrid(wxs, wzs, westH, westC), new THREE.MeshLambertMaterial({ vertexColors: true })));
+
+    // 西湘〜真鶴〜熱海〜伊東〜川奈の海岸線に砕ける白波ストリップ
+    const wSurfPts = [];
+    for (let i = 0; i < 25; i++) {
+      const [ax, az] = WEST_COAST[i], [bx, bz] = WEST_COAST[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      // 北東→南西へ進む折れ線の左手側(東・海側)法線 = (bz - az, -(bx - ax)) / L
+      const nx = (bz - az) / L, nz = -(bx - ax) / L;
+      for (let s = 0; s < L; s += 90) {
+        wSurfPts.push({ x: ax + ((bx - ax) * s) / L, z: az + ((bz - az) * s) / L, ux: nx, uz: nz });
+      }
+    }
+    surfStrip(sc, wSurfPts, 13);
+
+    // 湘南平(181m・高麗山西峰): 実際のランドマークである紅白の細身なテレビ鉄塔1基と白い円筒形展望レストハウス
+    {
+      const tx = -11280, tz = -2010, th = westH(tx, tz);
+      // 展望レストハウス
+      sCyl(sc, tx + 42, th - 2, tz + 14, 11, 12, 11, 0xeae6dc, 12);
+      sCyl(sc, tx + 42, th + 9, tz + 14, 7, 9, 4.5, 0x94a3b8, 12);
+      // 湘南平テレビ塔 (巨大な煙突3本ではなく、スレンダーな紅白トラス電波塔1基)
+      sBanded(sc, tx, th - 3, tz, 0.55, 2.4, 38, 7, 0xdc2626, 0xf8fafc, 4);
+      sCyl(sc, tx, th + 22, tz, 2.8, 2.8, 2.2, 0xe2e8f0, 8);
+      sCyl(sc, tx, th + 35, tz, 0.18, 0.45, 9, 0xf8fafc, 6);
+    }
+
+    // 真鶴岬先端の象徴「三ツ石(笠島)」の岩礁
+    for (const [mx, mz, mr, mh] of [[-18075, 10685, 11, 8.5], [-18040, 10712, 9.5, 7.2], [-18010, 10730, 8.0, 6.0]]) {
+      sCyl(sc, mx, -2, mz, mr * 0.45, mr, mh + 2, 0x3b3733, 6);
+    }
+
+    // 小田原・熱海湾・伊東湾の海辺に控えめに佇む白い街並み・温泉リゾートホテル群
+    for (const [cx, cz, count, spread, maxBh] of [
+      [-18280, 2750, 26, 780, 20],  // 小田原市街
+      [-23080, 13620, 24, 560, 28], // 熱海サンビーチ沿いのホテル群
+      [-22020, 22080, 18, 520, 22], // 伊東湾沿いの街並み
+    ]) {
+      for (let i = 0; i < count; i++) {
+        const a = (i * 2.39996) % (Math.PI * 2), r = ((i + 0.5) / count) * spread;
+        const bx = cx - Math.abs(Math.cos(a)) * r * 0.7 - 60;
+        const bz = cz + Math.sin(a) * r;
+        const bh0 = westH(bx, bz);
+        if (bh0 < 2 || bh0 > 75) continue;
+        const bw = 14 + (i % 4) * 5, bh = 10 + (i % 5) * ((maxBh - 10) / 4);
+        sBox(sc, bx, bh0 - 2, bz, bw, bh + 2, bw * 0.85, i % 3 === 0 ? 0xe5e0d5 : 0xd6d9de, 0.35);
+      }
+    }
+  }
+
+  // ---- 5) 初島 (熱海沖・方位約225°) & 伊豆大島・三原山 (南方水平線・方位約187°) ----
+  {
+    // 初島: 相模湾に浮かぶ平坦な台形状の緑の島(最高標高約31m)と白い初島灯台
+    const hx0 = -17620, hz0 = 17340;
+    const hxs = gridAxis([[hx0 - 650, hx0 + 650, 52]]);
+    const hzs = gridAxis([[hz0 - 450, hz0 + 450, 48]]);
+    const hatsuH = (x, z) => {
+      const dx = (x - hx0) / 460, dz = (z - hz0) / 285;
+      const r = Math.hypot(dx * 0.92 + dz * 0.38, -dx * 0.38 + dz * 0.92) + (noise2(x / 180, z / 180) - 0.5) * 0.16;
+      if (r >= 1.0) return -22;
+      // 海面から急な海食崖で立ち上がり、島の上面がテーブル状に平らな初島特有のシルエット
+      return smooth(1.0, 0.76, r) * (20.5 + 2.5 * noise2(x / 140, z / 140)) - 2.0;
+    };
+    const hatsuC = (x, z, h, out) => {
+      if (h < 0.3) out.setRGB(0.32, 0.32, 0.30);
+      else if (h < 7.0) out.setRGB(0.28, 0.27, 0.25);
+      else out.setRGB(0.075, 0.155, 0.145);
+    };
+    sc.add(new THREE.Mesh(buildGrid(hxs, hzs, hatsuH, hatsuC), new THREE.MeshLambertMaterial({ vertexColors: true })));
+    sCyl(sc, hx0 + 240, 18, hz0 - 40, 2.2, 3.0, 14, 0xf8fafc, 8); // 初島灯台
+
+    // 伊豆大島: 南の水平線に広くゆったりと裾野を広げる楯状火山(カルデラ外輪山＋中央の三原山 758m)
+    const ox0 = -5070, oz0 = 39070;
+    const oxs = gridAxis([[ox0 - 5200, ox0 + 5200, 210]]);
+    const ozs = gridAxis([[oz0 - 2900, oz0 + 2900, 190]]);
+    const oshimaH = (x, z) => {
+      const u = (x - ox0) / 4450, v = (z - oz0) / 2250;
+      const r = Math.hypot(u, v) + (noise2(x / 1100, z / 1100) - 0.5) * 0.14;
+      if (r >= 1.0) return -28;
+      // なだらかな楯状火山の裾野＋カルデラ台地＋中央やや南寄りの三原山内輪山ピーク
+      const shield = Math.pow(1 - r, 0.88) * 215;
+      const mihara = 148 * Math.pow(Math.max(0, 1 - Math.hypot((x - (ox0 - 220)) / 1450, (z - (oz0 + 180)) / 1050)), 1.35);
+      return shield + mihara * smooth(0.85, 0.35, r) - 4.0;
+    };
+    const oshimaC = (x, z, h, out) => {
+      if (h < 1.0) out.setRGB(0.28, 0.32, 0.38);
+      else out.setRGB(0.062, 0.108, 0.215);
+    };
+    sc.add(new THREE.Mesh(buildGrid(oxs, ozs, oshimaH, oshimaC), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  }
 
   grp.add(sc);
 }
