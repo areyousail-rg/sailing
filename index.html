@@ -6,24 +6,24 @@
   <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261112b">
+  <link rel="stylesheet" href="style.css?v=20261112c">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261112b",
-      "./js/sim.js": "./js/sim.js?v=20261112b",
-      "./js/review.js": "./js/review.js?v=20261112b",
-      "./js/ai.js": "./js/ai.js?v=20261112b",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261112b",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261112b",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261112b",
-      "./js/crew.js": "./js/crew.js?v=20261112b",
-      "./js/camera.js": "./js/camera.js?v=20261112b",
-      "./js/course.js": "./js/course.js?v=20261112b",
-      "./js/rules.js": "./js/rules.js?v=20261112b",
-      "./js/audio.js": "./js/audio.js?v=20261112b"
+      "./js/world.js": "./js/world.js?v=20261112c",
+      "./js/sim.js": "./js/sim.js?v=20261112c",
+      "./js/review.js": "./js/review.js?v=20261112c",
+      "./js/ai.js": "./js/ai.js?v=20261112c",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261112c",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261112c",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261112c",
+      "./js/crew.js": "./js/crew.js?v=20261112c",
+      "./js/camera.js": "./js/camera.js?v=20261112c",
+      "./js/course.js": "./js/course.js?v=20261112c",
+      "./js/rules.js": "./js/rules.js?v=20261112c",
+      "./js/audio.js": "./js/audio.js?v=20261112c"
     }
   }
   </script>
@@ -349,7 +349,19 @@
   <section id="menu" class="overlay menu menuPractice">
     <div class="card menuCard">
       <div class="menuTitleRow">
-        <h1>スナイプ級</h1>
+        <div class="menuBrand">
+          <span class="menuEmblem" aria-hidden="true">
+            <svg viewBox="0 0 36 36" width="30" height="30" fill="none">
+              <path d="M18 4L28.5 25.5H18V4Z" fill="#f8fafc"/>
+              <path d="M16.2 8.5L8.2 25.5H16.2V8.5Z" fill="#ebb800"/>
+              <path d="M6.5 27.8H29.5L26.2 31.2H9.8L6.5 27.8Z" fill="#38bdf8"/>
+            </svg>
+          </span>
+          <div class="menuTitleText">
+            <h1>スナイプ級ヨットレース</h1>
+            <span class="menuSubTag">SNIPE CLASS REGATTA</span>
+          </div>
+        </div>
         <div id="menuWindHeader" class="menuWindHeader">
           <div class="mwhMain">
             <span class="mwhItem"><small class="mwhSub">現地風向</small><b id="mwhDir" class="mwhVal">200°</b></span>
@@ -389,20 +401,26 @@
       </div>
       <div class="crewPreviewRow">
         <div class="crewRow">
-          <div>
+          <div class="crewSelectGroup">
             <h2>スキッパー</h2>
             <div id="helmChoices" class="choices"></div>
           </div>
-          <div>
+          <div class="crewSelectGroup">
             <h2>クルー</h2>
             <div id="crewChoices" class="choices"></div>
           </div>
           <div class="colors">
-            <label>セールNo <input type="text" id="sailNo" maxlength="5" inputmode="numeric"></label>
+            <label for="sailNo">セールNo
+              <span class="sailNoPlate">
+                <span class="sailNat">JPN</span>
+                <input type="text" id="sailNo" maxlength="5" inputmode="numeric">
+              </span>
+            </label>
           </div>
         </div>
         <div class="pv">
-          <canvas id="preview" width="160" height="112"></canvas>
+          <canvas id="preview" width="220" height="156"></canvas>
+          <span class="pvCaption">CREW PREVIEW</span>
         </div>
       </div>
       <div class="startActions">
@@ -592,6 +610,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261112b"></script>
+  <script type="module" src="js/main.js?v=20261112c"></script>
 </body>
 </html>

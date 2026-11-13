@@ -1,7 +1,7 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE, SUN_DIR } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BOAT_LEN, OBSTACLES, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
 import { Recorder, openReview, serializeReviewSnapshot, deserializeReviewSnapshot, buildFallbackReviewFromRecord } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
@@ -256,6 +256,9 @@ function clearFleet() {
 function makeFleet(onlyPlayer = state.phase === 'menu') {
   clearFleet();
   hTarget = null; hErrT = 0; steerHold.L = 0; steerHold.R = 0;
+  resetCloseHoldLock();
+  globalHailCD = 0;
+  pairHailUntil.clear();
   if (world.setCourseVisible) world.setCourseVisible(state.phase !== 'menu');
   // スタートライン半幅 LINE_HALF = 75 (従来の1.5倍 = 全幅150m) に合わせ、24艇がライン全域にバランスよく散らばるよう配置
   const endTargets = FAVORED === 'pin'
@@ -676,134 +679,220 @@ function updateNearBoatsHUD(b) {
   }
 }
 
-// ---------- 接近時の権利主張コール (動物キャラクターのみ・衝突コース時のみ) ----------
+// ---------- 接近時の権利主張コール (RRS 10 スタボ / RRS 11 風下権利艇 / RRS 18 3艇身ゾーン) ----------
 let globalHailCD = 0;
+const pairHailUntil = new Map();
 const isAnimalCrew = (t) => t === 'cat' || t === 'dog' || t === 'shiba' || t === 'duck' || t === 'tanuki' || t === 'rabbit' || t === 'dolphin';
+const FALLBACK_HAIL_VOICES = ['shiba', 'cat', 'dog', 'duck'];
 
 function getBoatAnimalVoice(b) {
   if (!b) return null;
   if (isAnimalCrew(b.helmType)) return b.helmType;
   if (isAnimalCrew(b.crewType)) return b.crewType;
-  return null;
+  // 人間ペアの艇でもレース中の権利主張コール(動物の鳴き声)がしっかり機能するようフォールバック音色を割り当てる
+  return FALLBACK_HAIL_VOICES[Math.abs(b.id || 0) % FALLBACK_HAIL_VOICES.length];
 }
 
 function clearHailBubbles() {}
 function updateHailBubbles() {}
 
+function evaluatePairHailSituation(a, b, isPreStart) {
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const distW = Math.hypot(dx, dz);
+  if (distW < 1.4 || distW > 28.0) return null;
+
+  // -------------------------------------------------------------------------
+  // 1) RRS 18 (3艇身ルール): マークの3艇身ゾーン(3 * BOAT_LEN = 14.16)に先に入った艇が、
+  //    後方・外側からマーク内側へ割り込もうとする艇(バージング懸念艇)を牽制して「ノー・ルーム！」とコール
+  // -------------------------------------------------------------------------
+  if (!isPreStart && a.started && b.started && !a.ocs && !b.ocs && a.leg === b.leg && a.v > 0.55 && b.v > 0.55 && distW <= 16.8) {
+    const L = LEGS[Math.min(a.leg, LEGS.length - 1)];
+    if (L && (L.type === 'mark' || L.type === 'gate')) {
+      const ZONE_W = BOAT_LEN * 3; // 3艇身 = 14.16 ワールド単位
+      for (const obs of OBSTACLES) {
+        const k = obs.key;
+        if (k !== 'm1' && k !== 'm1a' && k !== 'm2' && k !== 'm3' && k !== 'gL' && k !== 'gR') continue;
+        if (L.type === 'mark' && MARKS[k] !== L.mark) continue;
+        if (L.type === 'gate' && k !== 'gL' && k !== 'gR') continue;
+
+        const dA = Math.hypot(a.x - obs.x, a.z - obs.z);
+        const dB = Math.hypot(b.x - obs.x, b.z - obs.z);
+        const leadBoat = dA <= dB ? a : b;
+        const trailBoat = dA <= dB ? b : a;
+        const dLead = Math.min(dA, dB);
+        const dTrail = Math.max(dA, dB);
+
+        // 先行艇が3艇身ゾーン境界〜内側におり、後続艇がすぐ後ろ(差0.75以上・ゾーン約2倍以内)から迫っているか
+        if (dLead >= 2.0 && dLead <= ZONE_W * 1.18 && dTrail - dLead >= 0.75 && dTrail <= ZONE_W * 1.98) {
+          const toMx = (obs.x - trailBoat.x) / Math.max(0.1, dTrail);
+          const toMz = (obs.z - trailBoat.z) / Math.max(0.1, dTrail);
+          const tvx = Math.sin(trailBoat.h) * trailBoat.v, tvz = -Math.cos(trailBoat.h) * trailBoat.v;
+          const closingToMark = tvx * toMx + tvz * toMz;
+          if (closingToMark > 0.30 * trailBoat.v) {
+            const lhx = Math.sin(leadBoat.h), lhz = -Math.cos(leadBoat.h);
+            const lrx = Math.cos(leadBoat.h), lrz = Math.sin(leadBoat.h);
+            const relTx = trailBoat.x - leadBoat.x, relTz = trailBoat.z - leadBoat.z;
+            const alongLead = relTx * lhx + relTz * lhz;
+            const latLead = relTx * lrx + relTz * lrz;
+            // 左舷回航マーク(gL以外)は左(-lat)がマーク内側、4S(gL)は右(+lat)がマーク内側
+            const insideSign = k === 'gL' ? 1 : -1;
+            const trailInsideOffset = latLead * insideSign;
+            // 後続艇がクリアアスターン(alongLead < -2.4)から迫っているか、イン側〜真後ろの狭い隙間(trailInsideOffset > -2.2)を狙っている場合にコール
+            if (alongLead < -2.4 || (alongLead < 1.2 && trailInsideOffset > -2.2 && Math.abs(latLead) < 7.5)) {
+              return { rowBoat: leadBoat, gwBoat: trailBoat, callKind: 'zone', markKey: k };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 2) RRS 10 (ポート・スターボード): 自分がスターボードタック(tack > 0)で相手がポートタック(tack < 0)の交差接近時、
+  //    ポート艇に避けさせたい(タックまたはダックさせたい)明確な意図がある場面で「スタボ！」とコール
+  // -------------------------------------------------------------------------
+  if (a.tack !== b.tack) {
+    const stbd = a.tack > 0 ? a : b;
+    const port = a.tack > 0 ? b : a;
+    if (stbd.v >= 0.65 && port.v >= 0.65 && distW <= (isPreStart ? 20.5 : 30.0)) {
+      const shx = Math.sin(stbd.h), shz = -Math.cos(stbd.h);
+      const srx = Math.cos(stbd.h), srz = Math.sin(stbd.h);
+      const p2sX = port.x - stbd.x, p2sZ = port.z - stbd.z;
+      const alongStbdW = p2sX * shx + p2sZ * shz;
+      const crossStbdW = p2sX * srx + p2sZ * srz;
+
+      if (alongStbdW >= -1.5 && alongStbdW <= (isPreStart ? 18.5 : 27.5) && crossStbdW >= -26.5 && crossStbdW <= 11.5) {
+        const svx = shx * stbd.v, svz = shz * stbd.v;
+        const pvx = Math.sin(port.h) * port.v, pvz = -Math.cos(port.h) * port.v;
+        const rvx = pvx - svx, rvz = pvz - svz;
+        const rv2 = rvx * rvx + rvz * rvz;
+        if (rv2 > 0.04) {
+          const tCPA = -(p2sX * rvx + p2sZ * rvz) / rv2;
+          const maxT = isPreStart ? 4.2 : 6.2;
+          if (tCPA >= 0.08 && tCPA <= maxT) {
+            const dCPAW = Math.hypot(p2sX + rvx * tCPA, p2sZ + rvz * tCPA);
+            if (dCPAW <= (isPreStart ? 7.5 : 10.8)) {
+              // スタボ艇自身がすでに大きくベアアウェイ(stbd.steer < -0.22)して逃げる軌道か、ポート艇が十分前方(>1.75艇身)をクリア済みでなければコール
+              const phx = Math.sin(port.h), phz = -Math.cos(port.h);
+              const stbdCpaRelX = (stbd.x + svx * tCPA) - (port.x + pvx * tCPA);
+              const stbdCpaRelZ = (stbd.z + svz * tCPA) - (port.z + pvz * tCPA);
+              const alongPortAtCPAW = stbdCpaRelX * phx + stbdCpaRelZ * phz;
+              if (stbd.steer > -0.22 && alongPortAtCPAW > -8.2) {
+                return { rowBoat: stbd, gwBoat: port, callKind: 'starboard', markKey: null };
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // 3) RRS 11 (同一タックのオーバーラップ・風下権利艇): 自分が風下(下)で相手が風上(上)にいる際、
+  //    風上艇に頭を上げさせたい・避けさせたい・もう少し自艇を気持ちよく伸ばさせたい場面でコール
+  // -------------------------------------------------------------------------
+  if (distW <= (isPreStart ? 11.5 : 13.0)) {
+    const wf = a.windFrom ?? W0;
+    const dwx = -Math.sin(wf), dwz = Math.cos(wf); // 風下方向単位ベクトル
+    const leeA = a.x * dwx + a.z * dwz;
+    const leeB = b.x * dwx + b.z * dwz;
+    const windGapW = Math.abs(leeA - leeB);
+    if (windGapW >= 0.95 && windGapW <= (isPreStart ? 7.4 : 8.6)) {
+      const leeBoat = leeA >= leeB ? a : b;
+      const windBoat = leeA >= leeB ? b : a;
+      if (leeBoat.v > 0.35 || isPreStart) {
+        const lhx = Math.sin(leeBoat.h), lhz = -Math.cos(leeBoat.h);
+        const relWx = windBoat.x - leeBoat.x, relWz = windBoat.z - leeBoat.z;
+        const alongLeeW = relWx * lhx + relWz * lhz;
+        // 同タックで前後オーバーラップ範囲内(|alongLeeW| < 約1.08艇身)
+        if (Math.abs(alongLeeW) < BOAT_LEN * 1.08) {
+          const wvx = Math.sin(windBoat.h) * windBoat.v, wvz = -Math.cos(windBoat.h) * windBoat.v;
+          const lvx = lhx * leeBoat.v, lvz = lhz * leeBoat.v;
+          const leeClosingSpeed = (wvx - lvx) * dwx + (wvz - lvz) * dwz; // +なら風上艇が風下艇へ被せてきている
+          const leeTurnUp = leeBoat.steer * (leeBoat.tack || 1); // +なら風下艇がラフしている
+
+          const closeSqueeze = windGapW < 4.8 && leeClosingSpeed > -0.10;
+          const windSaggingDown = leeClosingSpeed > 0.08 && windGapW < 8.0;
+          const upwindExtend = leeBoat.twa < 1.18 && windBoat.twa < 1.28 && windGapW < 6.6 && alongLeeW > -3.8 && alongLeeW < 3.8 && leeTurnUp >= -0.05;
+          const activeLuff = leeTurnUp > 0.045 && windGapW < 7.8;
+
+          if (closeSqueeze || windSaggingDown || upwindExtend || activeLuff) {
+            return { rowBoat: leeBoat, gwBoat: windBoat, callKind: 'leeward', markKey: null };
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function checkRightOfWayHails(dt) {
-  if (!player || state.ff || state.phase !== 'race' || cfg.bgmMode === 'off') return;
+  if (!player || state.ff || (state.phase !== 'race' && state.phase !== 'practice') || cfg.bgmMode === 'off') return;
   if (globalHailCD > 0) globalHailCD -= dt;
   for (const b of boats) {
     if (b.hailCD > 0) b.hailCD -= dt;
   }
   if (globalHailCD > 0) return;
 
-  const isPreStart = state.t < 0;
+  const isPreStart = state.phase === 'race' && state.t < 0;
   const n = boats.length;
-  for (let i = 0; i < n; i++) {
-    const a = boats[i];
-    if (a.dsq || a.finished || a.penalty) continue;
-    for (let j = i + 1; j < n; j++) {
-      const b = boats[j];
-      if (b.dsq || b.finished || b.penalty) continue;
-      const dx = b.x - a.x, dz = b.z - a.z;
-      const distM = Math.hypot(dx, dz) / 1.5;
-      if (distM > (isPreStart ? 7.2 : 11.0) || distM < 1.1) continue;
-
-      // 自艇が絡む接近、または自艇の近く(18m以内)で発生した接近のみ対象
-      const involvesPlayer = a === player || b === player;
-      const dPlayer = involvesPlayer ? distM : Math.min(Math.hypot(a.x - player.x, a.z - player.z), Math.hypot(b.x - player.x, b.z - player.z)) / 1.5;
-      if (!involvesPlayer && dPlayer > 18) continue;
-
-      // 最接近時間(tCPA)と最接近距離(dCPA)から「このままいくと明らかに衝突する軌道」か判定
-      const avx = Math.sin(a.h) * a.v, avz = -Math.cos(a.h) * a.v;
-      const bvx = Math.sin(b.h) * b.v, bvz = -Math.cos(b.h) * b.v;
-      const rvx = bvx - avx, rvz = bvz - avz;
-      const rv2 = rvx * rvx + rvz * rvz;
-      if (rv2 < 0.08) continue;
-      const tCPA = -(dx * rvx + dz * rvz) / rv2;
-      const maxT = isPreStart ? 2.0 : 3.4;
-      if (tCPA < 0.12 || tCPA > maxT) continue;
-      const cpaX = dx + rvx * tCPA, cpaZ = dz + rvz * tCPA;
-      const dCPA = Math.hypot(cpaX, cpaZ) / 1.5;
-      if (dCPA > (isPreStart ? 2.3 : 3.2)) continue;
-
-      let rowBoat = null, gwBoat = null, callKind = null;
-      if (a.tack !== b.tack) {
-        // ルール10: ポート・スターボード (tack > 0 がスターボード艇)
-        const stbd = a.tack > 0 ? a : b;
-        const port = a.tack > 0 ? b : a;
-        if (stbd.v < 0.9 || port.v < 0.9) continue;
-
-        // スタボ艇の座標系でポート艇が前方〜斜め前にいて進路が交差しているか確認
-        const shx = Math.sin(stbd.h), shz = -Math.cos(stbd.h);
-        const srx = Math.cos(stbd.h), srz = Math.sin(stbd.h);
-        const p2sX = port.x - stbd.x, p2sZ = port.z - stbd.z;
-        const alongStbd = (p2sX * shx + p2sZ * shz) / 1.5;
-        const crossStbd = (p2sX * srx + p2sZ * srz) / 1.5;
-        if (alongStbd < 1.2 || alongStbd > 9.5 || Math.abs(crossStbd) > 6.5) continue;
-
-        // 1) スタボ艇自身がすでにベアしてポート艇の後ろを通ろうとしている場合はコールしない
-        if (stbd.steer > 0.10) continue;
-        const phx = Math.sin(port.h), phz = -Math.cos(port.h);
-        const stbdCpaRelX = (stbd.x + Math.sin(stbd.h) * stbd.v * tCPA) - (port.x + Math.sin(port.h) * port.v * tCPA);
-        const stbdCpaRelZ = (stbd.z - Math.cos(stbd.h) * stbd.v * tCPA) - (port.z - Math.cos(port.h) * port.v * tCPA);
-        const alongPortAtCPA = (stbdCpaRelX * phx + stbdCpaRelZ * phz) / 1.5;
-        // 最接近時にスタボ艇がポート艇の船尾側(後ろ)を通る軌道ならコールしない
-        if (alongPortAtCPA < -0.9) continue;
-
-        // 2) ポート艇にタックさせた結果、ポート艇が自艇の風下前(リーバウ)に入って自艇がバックウインドを浴びる不利な位置関係ならコールしない
-        // スタボタック(tack=+1)は -c かつ +a 方向へ走るため、相手が自分より少し左(-c側: dlC = stbd.c - port.c > 0)かつ少し風上〜前方(da = port.a - stbd.a)でタックするとバックウインドになる
-        const dlC = stbd.c - port.c;
-        const da = port.a - stbd.a;
-        const wouldGetBackwinded = dlC > 0.3 && dlC < 5.8 && da > -1.2 && da < 7.2;
-        if (wouldGetBackwinded && crossStbd < -0.6) continue;
-
-        rowBoat = stbd;
-        gwBoat = port;
-        callKind = 'starboard';
-      } else {
-        // ルール11: 同一タックのオーバーラップ (風下艇が権利艇)
-        const wf = a.windFrom ?? W0;
-        const dwx = -Math.sin(wf), dwz = Math.cos(wf); // 風下ベクトル
-        const rwx = Math.cos(wf), rwz = Math.sin(wf);
-        const hx = Math.sin(a.h), hz = -Math.cos(a.h);
-        const along = (dx * hx + dz * hz) / 1.5;
-        const cross = Math.abs(dx * rwx + dz * rwz) / 1.5;
-        if (Math.abs(along) < 4.2 && cross < 5.2) {
-          const leeA = a.x * dwx + a.z * dwz;
-          const leeB = b.x * dwx + b.z * dwz;
-          const leeGap = Math.abs(leeA - leeB) / 1.5;
-          if (leeGap > 0.9 && leeGap < 4.8) {
-            const leeBoat = leeA > leeB ? a : b;
-            const windBoat = leeA > leeB ? b : a;
-            // 風上艇が風下へ流れている/落としている、または風下艇と横方向に接近してぶつかりそうなときのみコール
-            const wvx = Math.sin(windBoat.h) * windBoat.v, wvz = -Math.cos(windBoat.h) * windBoat.v;
-            const lvx = Math.sin(leeBoat.h) * leeBoat.v, lvz = -Math.cos(leeBoat.h) * leeBoat.v;
-            const leeClosingSpeed = ((wvx - lvx) * dwx + (wvz - lvz) * dwz);
-            if (leeClosingSpeed > 0.16 && dCPA < 2.6) {
-              rowBoat = leeBoat;
-              gwBoat = windBoat;
-              callKind = 'leeward';
-            }
-          }
+  // 自艇が絡むペアを最優先で判定し、その後に自艇周囲(約22m以内)のCP同士のコールを判定する
+  const candidatePairs = [];
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < n; i++) {
+      const a = boats[i];
+      if (a.dsq || a.finished || a.penalty) continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = boats[j];
+        if (b.dsq || b.finished || b.penalty) continue;
+        const involvesPlayer = a === player || b === player;
+        if ((pass === 0) !== involvesPlayer) continue;
+        if (!involvesPlayer) {
+          const dPlayerW = Math.min(Math.hypot(a.x - player.x, a.z - player.z), Math.hypot(b.x - player.x, b.z - player.z));
+          if (dPlayerW > 34.0) continue;
         }
-      }
-
-      const animalVoice = getBoatAnimalVoice(rowBoat);
-      if (rowBoat && gwBoat && callKind && animalVoice && rowBoat.hailCD <= 0) {
-        if (!involvesPlayer && rng() < 0.65) continue;
-        rowBoat.hailCD = (involvesPlayer ? 8.5 : 12.0) + rng() * 3.5;
-        globalHailCD = involvesPlayer ? 3.2 : 4.8;
-
-        const rx = Math.cos(player.h), rz = Math.sin(player.h);
-        const pdx = rowBoat.x - player.x, pdz = rowBoat.z - player.z;
-        const pDist = Math.hypot(pdx, pdz) || 1;
-        const pan = rowBoat === player ? 0 : clamp(((pdx * rx + pdz * rz) / pDist) * 0.85, -0.88, 0.88);
-        playRightOfWayHail(animalVoice, callKind, pan);
-        return;
+        candidatePairs.push([a, b, involvesPlayer]);
       }
     }
+  }
+
+  for (let k = 0; k < candidatePairs.length; k++) {
+    const [a, b, involvesPlayer] = candidatePairs[k];
+    const hit = evaluatePairHailSituation(a, b, isPreStart);
+    if (!hit) continue;
+    const { rowBoat, gwBoat, callKind, markKey } = hit;
+    if (rowBoat.hailCD > 0) continue;
+
+    const pairKey = `${Math.min(a.id, b.id)}_${Math.max(a.id, b.id)}_${callKind}`;
+    const blockedUntil = pairHailUntil.get(pairKey);
+    if (blockedUntil !== undefined && state.t < blockedUntil) continue;
+
+    const animalVoice = getBoatAnimalVoice(rowBoat);
+    if (!animalVoice) continue;
+
+    rowBoat.hailCD = (involvesPlayer ? 4.4 : 8.5) + rng() * 1.8;
+    globalHailCD = involvesPlayer ? 1.45 : 2.8;
+    pairHailUntil.set(pairKey, state.t + (involvesPlayer ? 7.2 : 11.5));
+
+    // コールを受けた非権利艇(CP艇)が反応できるようフラグを付与
+    if (callKind === 'starboard') {
+      gwBoat.hailedStbdUntil = state.t + 2.8;
+    } else if (callKind === 'leeward') {
+      gwBoat.hailedLeewardUntil = state.t + 2.6;
+    } else if (callKind === 'zone') {
+      gwBoat.hailedNoBargeUntil = state.t + 3.0;
+      gwBoat.hailedMarkKey = markKey;
+    }
+
+    const rx = Math.cos(player.h), rz = Math.sin(player.h);
+    const pdx = rowBoat.x - player.x, pdz = rowBoat.z - player.z;
+    const pDist = Math.hypot(pdx, pdz) || 1;
+    const pan = rowBoat === player ? 0 : clamp(((pdx * rx + pdz * rz) / pDist) * 0.85, -0.88, 0.88);
+    window.__lastHail = { t: state.t, kind: callKind, voice: animalVoice, rowId: rowBoat.id, gwId: gwBoat.id, markKey };
+    playRightOfWayHail(animalVoice, callKind, pan);
+    return;
   }
 }
 
@@ -1758,25 +1847,159 @@ function tryManeuver(kind) {
   if (!player.startManeuver(kind) && player.pole && !player.maneuver) toast('ランチャーを下ろしてからタックしてください', 'warn', 2500);
 }
 // 舵: 矢印を短く押すと針路が1°ずつ変わる。押し続けると徐々に速く回頭(タック/ジャイブも舵で風をまたぐ)
+// クローズホールド(対風角30°〜50°)走行中は、風の振れに対して同じ対風角を保つよう自動追従操舵を行う(手動操舵時は即座に手動優先)
 let hTarget = null, hErrT = 0;
 const steerHold = { L: 0, R: 0 };
+const closeHoldLock = {
+  active: false,
+  twa: 0,
+  tack: 1,
+  prevWind: null,
+  anchorWind: 0,
+  windRate: 0,
+  manualSettleT: 0,
+  autoDir: 0,
+  holdT: 0,
+};
+
+function syncSteerButtonsUI(manualL, manualR, autoDir) {
+  if (state.phase === 'orientation') return;
+  const btnL = $('tLeft'), btnR = $('tRight');
+  if (btnL) {
+    const isAutoL = !manualL && !manualR && autoDir < 0;
+    const isOnL = manualL || isAutoL;
+    if (btnL.classList.contains('on') !== isOnL) btnL.classList.toggle('on', isOnL);
+    if (btnL.classList.contains('autoSteer') !== isAutoL) btnL.classList.toggle('autoSteer', isAutoL);
+  }
+  if (btnR) {
+    const isAutoR = !manualL && !manualR && autoDir > 0;
+    const isOnR = manualR || isAutoR;
+    if (btnR.classList.contains('on') !== isOnR) btnR.classList.toggle('on', isOnR);
+    if (btnR.classList.contains('autoSteer') !== isAutoR) btnR.classList.toggle('autoSteer', isAutoR);
+  }
+}
+
+function resetCloseHoldLock() {
+  closeHoldLock.active = false;
+  closeHoldLock.twa = 0;
+  closeHoldLock.tack = 1;
+  closeHoldLock.prevWind = null;
+  closeHoldLock.anchorWind = 0;
+  closeHoldLock.windRate = 0;
+  closeHoldLock.manualSettleT = 0;
+  closeHoldLock.autoDir = 0;
+  closeHoldLock.holdT = 0;
+  syncSteerButtonsUI(false, false, 0);
+}
+
 function playerControl(dt) {
   const b = player, DEG = Math.PI / 180;
+  const CLOSE_MIN = 30 * DEG, CLOSE_MAX = 50 * DEG;
   const L = keys.has('ArrowLeft') || keys.has('KeyA'), R = keys.has('ArrowRight') || keys.has('KeyD');
-  if (hTarget === null || b.maneuver) hTarget = b.h;
-  else if (b.aeroClimb && !L && !R) hTarget = wrap(hTarget + b.aeroClimb); // リーバウ・別タック後方通過リフト時の自然な風上のぼせを目標針路にも反映
-  for (const [on, k, s] of [[L, 'L', -1], [R, 'R', 1]]) {
-    if (on) {
-      if (steerHold[k] === 0) hTarget = wrap(hTarget + s * DEG); // タップ = 1°
-      steerHold[k] += dt;
-      if (steerHold[k] > 0.25) hTarget = wrap(hTarget + s * Math.min(60, 20 + (steerHold[k] - 0.25) * 60) * DEG * dt);
-    } else steerHold[k] = 0;
+  const canAutoClose = (state.phase === 'race' || state.phase === 'practice')
+    && !b.maneuver && !b.tacking && !b.penalty && !b.pole && !b.capsized && !b.finished && !b.dsq;
+
+  const curWind = Number.isFinite(b.windFrom) ? b.windFrom : W0;
+  const dWind = closeHoldLock.prevWind !== null ? wrap(curWind - closeHoldLock.prevWind) : 0;
+  closeHoldLock.prevWind = curWind;
+  const instWindRate = dt > 1e-4 ? dWind / dt : 0;
+  closeHoldLock.windRate += (instWindRate - closeHoldLock.windRate) * (1 - Math.exp(-dt * 9.0));
+  if (closeHoldLock.manualSettleT > 0) closeHoldLock.manualSettleT = Math.max(0, closeHoldLock.manualSettleT - dt);
+
+  if (hTarget === null || b.maneuver || Math.abs(wrap(hTarget - b.h)) > 0.28) {
+    hTarget = b.h;
+    closeHoldLock.active = false;
+    closeHoldLock.autoDir = 0;
+    closeHoldLock.holdT = 0;
+  } else if (b.aeroClimb && !L && !R && !closeHoldLock.active) {
+    hTarget = wrap(hTarget + b.aeroClimb); // リーバウ・別タック後方通過リフト時の自然な風上のぼせを目標針路にも反映
   }
+
+  if (L || R) {
+    steerHold.L = L ? steerHold.L : 0;
+    steerHold.R = R ? steerHold.R : 0;
+    for (const [on, k, s] of [[L, 'L', -1], [R, 'R', 1]]) {
+      if (on) {
+        if (steerHold[k] === 0) hTarget = wrap(hTarget + s * DEG); // タップ = 1°
+        steerHold[k] += dt;
+        if (steerHold[k] > 0.25) hTarget = wrap(hTarget + s * Math.min(60, 20 + (steerHold[k] - 0.25) * 60) * DEG * dt);
+      }
+    }
+    closeHoldLock.autoDir = 0;
+    closeHoldLock.holdT = 0;
+    closeHoldLock.manualSettleT = 0.42;
+    if (canAutoClose) {
+      const tgtRel = wrap(curWind - hTarget);
+      const tgtTwa = Math.abs(tgtRel);
+      const actualTwa = Math.abs(wrap(curWind - b.h));
+      if (tgtTwa >= CLOSE_MIN && tgtTwa <= CLOSE_MAX && actualTwa >= CLOSE_MIN - 2 * DEG && actualTwa <= CLOSE_MAX + 2 * DEG) {
+        closeHoldLock.active = true;
+        closeHoldLock.twa = tgtTwa;
+        closeHoldLock.tack = tgtRel >= 0 ? 1 : -1;
+        closeHoldLock.anchorWind = curWind;
+      } else {
+        closeHoldLock.active = false;
+      }
+    } else {
+      closeHoldLock.active = false;
+    }
+  } else {
+    steerHold.L = 0;
+    steerHold.R = 0;
+    if (!canAutoClose) {
+      closeHoldLock.active = false;
+      closeHoldLock.autoDir = 0;
+      closeHoldLock.holdT = 0;
+    } else {
+      if (!closeHoldLock.active) {
+        // 手動操作後に30°〜50°のクローズホールドへ収まったら現在の対風角をロック
+        if (b.twa >= CLOSE_MIN && b.twa <= CLOSE_MAX && Math.abs(wrap(hTarget - b.h)) < 0.06) {
+          closeHoldLock.active = true;
+          closeHoldLock.twa = b.twa;
+          closeHoldLock.tack = b.tack || (wrap(curWind - b.h) >= 0 ? 1 : -1);
+          closeHoldLock.anchorWind = curWind;
+          closeHoldLock.manualSettleT = 0.25;
+        }
+      }
+      if (closeHoldLock.active) {
+        const desH = wrap(curWind - closeHoldLock.tack * closeHoldLock.twa);
+        const windErr = wrap(desH - b.h);
+        // 衝突やブローチ等で反対タックや大きく外れた角度へ飛ばされた場合はロック解除
+        if ((b.tack !== closeHoldLock.tack && b.twa > 12 * DEG) || Math.abs(windErr) > 38 * DEG) {
+          closeHoldLock.active = false;
+          closeHoldLock.autoDir = 0;
+          closeHoldLock.holdT = 0;
+        } else {
+          hTarget = wrap(b.h + clamp(windErr, -0.12, 0.12));
+          if (closeHoldLock.manualSettleT > 0 && Math.abs(wrap(curWind - closeHoldLock.anchorWind)) > 0.20 * DEG) {
+            closeHoldLock.manualSettleT = 0;
+          }
+          const activelyFollowingShift = closeHoldLock.manualSettleT <= 0
+            && (Math.abs(windErr) > 0.20 * DEG || Math.abs(closeHoldLock.windRate) > 0.14 * DEG);
+          if (activelyFollowingShift) {
+            const dir = Math.abs(windErr) > 0.16 * DEG ? Math.sign(windErr) : Math.sign(closeHoldLock.windRate);
+            if (dir !== 0) {
+              closeHoldLock.autoDir = dir;
+              closeHoldLock.holdT = 0.24;
+            }
+          } else if (closeHoldLock.holdT > 0) {
+            closeHoldLock.holdT = Math.max(0, closeHoldLock.holdT - dt);
+            if (closeHoldLock.holdT <= 0) closeHoldLock.autoDir = 0;
+          } else {
+            closeHoldLock.autoDir = 0;
+          }
+        }
+      }
+    }
+  }
+
   let err = wrap(hTarget - b.h);
   if (Math.abs(err) > 0.12) { hTarget = wrap(b.h + Math.sign(err) * 0.12); err = wrap(hTarget - b.h); } // 目標針路の先行を約7°に制限(舵の慣性を抑える)
   // ランチャー制限などで目標針路へ向けない状態が続いたら目標を現在の針路に合わせる
-  if (!L && !R && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
+  if (!L && !R && !closeHoldLock.active && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
   if (!b.maneuver) b.steer = clamp(err * 10, -1, 1);
+  syncSteerButtonsUI(L, R, closeHoldLock.active && closeHoldLock.holdT > 0 ? closeHoldLock.autoDir : 0);
+
   const up = keys.has('ArrowUp') || keys.has('KeyW'), dn = keys.has('ArrowDown') || keys.has('KeyS');
   b.pullingSheet = up;
   b.easingSheet = dn;
@@ -2532,8 +2755,8 @@ function initTouch() {
   const hold = (id, code) => {
     const el = $(id);
     if (!el) return;
-    const on = (e) => { keys.add(code); el.classList.add('on'); e.preventDefault(); };
-    const off = () => { keys.delete(code); el.classList.remove('on'); };
+    const on = (e) => { keys.add(code); el.classList.add('on'); el.classList.remove('autoSteer'); e.preventDefault(); };
+    const off = () => { keys.delete(code); el.classList.remove('on', 'autoSteer'); };
     el.addEventListener('pointerdown', on);
     for (const n of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(n, off);
   };
@@ -3011,7 +3234,17 @@ function initMenu() {
   });
   setTimeout(hideLoading, 400);
 
-  window.__game = { state, get boats() { return boats; }, get player() { return player; }, simStep, cam };
+  window.__game = {
+    state,
+    get boats() { return boats; },
+    get player() { return player; },
+    simStep,
+    cam,
+    world,
+    closeHoldLock,
+    checkRightOfWayHails,
+    resetHailCooldowns: () => { globalHailCD = 0; pairHailUntil.clear(); for (const b of boats) b.hailCD = 0; },
+  };
   if (q.has('auto')) {
     startRace();
     const skip = parseFloat(q.get('skip') || '0');

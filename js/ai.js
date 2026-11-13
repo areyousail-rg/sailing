@@ -1780,6 +1780,30 @@ export class AI {
     }
     const av = prestart ? this.avoid(t, heading) : this.avoid(t, heading);
     if (av !== null && av !== undefined) heading = av;
+    // 権利艇からコールを受けた際のCP艇の応答:
+    // ・RRS 11(風下艇からの「上せ！」コール): 風上避航艇として3〜4°頭を風上へ上げてルームを与える
+    // ・RRS 18(3艇身ゾーン先入艇からの「ノー・ルーム！」コール): マーク内側への強引な割り込み(バージング)を控えて外・後方へ逃がす
+    if (b.hailedLeewardUntil && t < b.hailedLeewardUntil && !b.maneuver && !b.pole) {
+      const W = b.windFrom;
+      const curRel = wrap(W - heading);
+      const minLuffTwa = prestart ? 0.42 : 0.56;
+      if (Math.abs(curRel) > minLuffTwa) {
+        heading = wrap(heading + (b.tack || 1) * Math.min(0.068, Math.abs(curRel) - minLuffTwa));
+      }
+    }
+    if (b.hailedNoBargeUntil && t < b.hailedNoBargeUntil && !prestart && !b.maneuver && b.hailedMarkKey && MARKS[b.hailedMarkKey]) {
+      const mw = toWorld(MARKS[b.hailedMarkKey].a, MARKS[b.hailedMarkKey].c);
+      const dMark = Math.hypot(mw.x - b.x, mw.z - b.z);
+      if (dMark > 2.2 && dMark < 22.0) {
+        const isRightRound = b.hailedMarkKey === 'gL';
+        const outSign = isRightRound ? -1 : 1; // 左舷回航マーク(m1等)は右外側(+1)、4S(gL)は左外側(-1)へ少し膨らませてバージングを防ぐ
+        const candH = wrap(heading + outSign * 0.082);
+        const candTwa = Math.abs(wrap(b.windFrom - candH));
+        if (candTwa > 0.58 && (!b.pole || candTwa > POLE_MIN)) {
+          heading = candH;
+        }
+      }
+    }
     heading = this.avoidMarks(heading, prestart);
 
     // クローズホールド走行中の角度安定ガード:
