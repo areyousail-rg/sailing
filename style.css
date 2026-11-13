@@ -593,7 +593,7 @@ body.menuOpen .menuPractice{padding-top:10px}
   box-shadow:0 0 0 1px rgba(56,189,248,.38),inset 0 4px 10px rgba(0,0,0,.74);
 }
 .tgrp.left button.autoSteer::after{
-  content:"AUTO舵";
+  content:"Auto";
   position:absolute;
   bottom:6px;
   left:50%;

@@ -8,7 +8,7 @@ import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew, animatePreviewFigure } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
 import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, setFixedStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
-import { initAudio, isAudioRunning, isBgmPlaying, unlockAudioNow, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
+import { initAudio, isAudioRunning, isBgmPlaying, unlockAudioNow, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, prewarmBgm, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
@@ -424,7 +424,7 @@ function updateLeaders(sorted) {
   const top = sorted.slice(0, 8);
   if (!top.includes(player)) top.push(player);
   for (const b of top) {
-    const st = b.dsq ? 'DSQ' : (b.dnf && !b.finished) || b.late ? 'DNF' : b.finished ? fmtMs(b.finishTime) : b.ocs ? 'OCS' : b.penalty ? 'PEN' : '';
+    const st = b.dsq ? 'DSQ' : (b.dnf && !b.finished) || b.late ? 'DNF' : b.finished ? fmtMs(b.finishTime) : b.penalty ? 'PEN' : '';
     rows.push(`<li class="${b.isPlayer ? 'me' : ''}"><span class="pos">${b.dsq ? '−' : b.rank}</span><span class="sw" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="nm">${nameOf(b)}</span><span class="st">${st}</span></li>`);
   }
   hud.leaders.innerHTML = rows.join('');
@@ -964,7 +964,7 @@ function updateHUD(sorted) {
     const cw = !b.penalty.clearWater ? ' [クリアウオーター確保中]' : '';
     hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に${turns}ターンせよ (${pct}%)${cw}`;
   } else hud.pen.style.display = 'none';
-  hud.ocs.style.display = !isPrac && !isOrient && b.ocs && t >= 0 && !b.finished && !b.dsq ? 'block' : 'none';
+  if (hud.ocs) hud.ocs.style.display = 'none';
   hud.cam.textContent = 'CAM  ' + CAM_MODES[cam.mode] + ' [C]';
   if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== nx) hud.tCam.textContent = nx; }
   if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
@@ -1071,7 +1071,9 @@ function handleCollision(e) {
 function startRace() {
   initAudio();
   clearHailBubbles();
+  resetCloseHoldLock();
   playBgm(cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima');
+  prewarmBgm([cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima', 'result']);
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   // レートON時はレース開始時にトラペゾイドなら100、上マークフィニッシュなら50を引く
@@ -1820,16 +1822,12 @@ function atGun() {
       if (b.a <= lineA(b.c)) b.a = lineA(b.c) + 0.5;
       b.ocs = true;
       anyOcs = true;
-      if (b.isPlayer) toast('OCS(リコール)! 本部船にX旗掲揚・ラインの下へ戻って再スタートしてください', 'bad', 7000);
     }
   }
   if (anyOcs) {
-    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗を掲揚し、追加のホーン1回(スタート号砲と合わせて明確に計2回)を鳴らす
+    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗を掲揚し、追加のホーン1回(スタート号砲と合わせて明確に計2回)を鳴らす(文字通知は出さない)
     if ((state.phase === 'race' || state.phase === 'orientation') && !state.paused && !state.ff) {
       signalHorn('recall');
-    }
-    if (!player || !player.ocs) {
-      toast('個別リコール: 本部船にX旗掲揚 (ホーン2回)', 'warn', 4500);
     }
   }
 }
@@ -1895,8 +1893,12 @@ function resetCloseHoldLock() {
 function playerControl(dt) {
   const b = player, DEG = Math.PI / 180;
   const CLOSE_MIN = 30 * DEG, CLOSE_MAX = 50 * DEG;
-  const L = keys.has('ArrowLeft') || keys.has('KeyA'), R = keys.has('ArrowRight') || keys.has('KeyD');
-  const canAutoClose = (state.phase === 'race' || state.phase === 'practice')
+  const L = keys.has('ArrowLeft') || keys.has('ArrowLeft_Touch') || keys.has('KeyA'), R = keys.has('ArrowRight') || keys.has('ArrowRight_Touch') || keys.has('KeyD');
+  const isUpwindAutoLeg = state.phase === 'race'
+    && state.t >= 0
+    && !b.ocs
+    && (COURSE_MODE === 'upwind' ? b.leg === 0 : (b.leg === 0 || b.leg === 3));
+  const canAutoClose = isUpwindAutoLeg
     && !b.maneuver && !b.tacking && !b.penalty && !b.pole && !b.capsized && !b.finished && !b.dsq;
 
   const curWind = Number.isFinite(b.windFrom) ? b.windFrom : W0;
@@ -2085,7 +2087,7 @@ function simStep(dt) {
       }
     }
     if (!b.dsq) handleProgress(b, updateProgress(b, t));
-    if (b.ocs && t >= 0 && b.a < lineA(b.c) - 2) { b.ocs = false; if (b.isPlayer) toast('OCS解消 再スタート!', 'good', 3000); }
+    if (b.ocs && t >= 0 && b.a < lineA(b.c) - 2) { b.ocs = false; }
     if (b.penaltyDone) { b.penaltyDone = false; if (b.isPlayer && !state.ff) toast('ペナルティ消化', 'good', 3000); }
   }
   if (recorder) recorder.step(dt, t, boats, progressOf, lineA);
@@ -2651,7 +2653,7 @@ function loop() {
     world.update(time, camera, dt, (state.phase === 'race' || state.phase === 'orientation') ? state.t : time, player, boats);
     const isReviewOpen = !!document.getElementById('review');
     const active = (state.phase === 'race' || state.phase === 'menu' || state.phase === 'orientation') && !state.paused && !state.resultShown && !isReviewOpen;
-    if (active) setWind(clamp(Math.abs(player.v) / 6, 0, 1));
+    if (active && state.phase !== 'menu') setWind(clamp(Math.abs(player.v) / 6, 0, 1));
     updateSailingAudio(dt, player, active);
     setCameraAudio(cam.mode === COCKPIT);
     updateNearbyBoatSound(player, boats, active);
@@ -2959,6 +2961,7 @@ function buildVenueChoices() {
     btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
     btn.onclick = () => {
       cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet();
+      prewarmBgm([v.id === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima', v.id === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima']);
       cam.inited = false; cam.yaw = 0; cam.pitch = 0;
       if (player) cam.update(0, performance.now() / 1000, player, boats);
       buildVenueChoices();
@@ -3154,8 +3157,16 @@ function initMenu() {
   };
   initPreview();
   setBgmVoiceEnabled(cfg.bgmMode !== 'off');
-  // ブラウザの自動再生制限で初期状態がsuspendedだった場合のフォールバック（実ユーザー操作イベントのみを監視し、runningになるまで解除しない）
-  const unlockEvents = ['pointerdown', 'mousedown', 'touchstart', 'touchend', 'keydown', 'click'];
+  prewarmBgm([
+    'menu',
+    cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima',
+    cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima',
+  ]);
+  if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
+    playBgm('menu');
+  }
+  // ブラウザの自動再生制限で初期状態がsuspendedだった場合のフォールバック（captureフェーズで画面上のどこに触れても即座にアンロック）
+  const unlockEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const unlockMenuBgm = () => {
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       unlockAudioNow().then((ok) => {
@@ -3164,12 +3175,14 @@ function initMenu() {
         }
       });
       playBgm('menu');
+    } else {
+      unlockAudioNow();
     }
-    if (isAudioRunning()) {
-      unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm));
+    if (isAudioRunning() && (state.phase !== 'menu' || cfg.bgmMode === 'off' || isBgmPlaying())) {
+      unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm, true));
     }
   };
-  unlockEvents.forEach((ev) => window.addEventListener(ev, unlockMenuBgm, { passive: true }));
+  unlockEvents.forEach((ev) => window.addEventListener(ev, unlockMenuBgm, { capture: true, passive: true }));
 }
 
 (async function boot() {
@@ -3229,10 +3242,10 @@ function initMenu() {
     const ld = $('loading');
     if (ld) ld.classList.add('hidden');
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
+      playBgm('menu');
       unlockAudioNow().then((ok) => {
         if (ok && state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
       });
-      playBgm('menu');
     }
   };
 

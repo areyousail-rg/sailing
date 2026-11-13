@@ -6,24 +6,25 @@
   <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261113c">
+  <meta http-equiv="Permissions-Policy" content="autoplay=*">
+  <link rel="stylesheet" href="style.css?v=20261113d">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261113c",
-      "./js/sim.js": "./js/sim.js?v=20261113c",
-      "./js/review.js": "./js/review.js?v=20261113c",
-      "./js/ai.js": "./js/ai.js?v=20261113c",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261113c",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261113c",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261113c",
-      "./js/crew.js": "./js/crew.js?v=20261113c",
-      "./js/camera.js": "./js/camera.js?v=20261113c",
-      "./js/course.js": "./js/course.js?v=20261113c",
-      "./js/rules.js": "./js/rules.js?v=20261113c",
-      "./js/audio.js": "./js/audio.js?v=20261113c"
+      "./js/world.js": "./js/world.js?v=20261113d",
+      "./js/sim.js": "./js/sim.js?v=20261113d",
+      "./js/review.js": "./js/review.js?v=20261113d",
+      "./js/ai.js": "./js/ai.js?v=20261113d",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261113d",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261113d",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261113d",
+      "./js/crew.js": "./js/crew.js?v=20261113d",
+      "./js/camera.js": "./js/camera.js?v=20261113d",
+      "./js/course.js": "./js/course.js?v=20261113d",
+      "./js/rules.js": "./js/rules.js?v=20261113d",
+      "./js/audio.js": "./js/audio.js?v=20261113d"
     }
   }
   </script>
@@ -40,6 +41,31 @@
   <script>
   // 読み込み進捗 & 実ゲーム3D画面と親和性の高い高精細ドット絵(八景島エリア / 江の島エリア + 白FRPスナイプ JPN 31804)
   (function () {
+    // ページ到達0ms時点で同期的にAudioContextを生成・起動し、ナビゲーション遷移/MEI自動再生権およびローディング中の接触を確実に捕捉
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC && !window.__earlyAudioCtx) {
+        var eac;
+        try { eac = new AC({ latencyHint: 'balanced' }); } catch (e0) { eac = new AC(); }
+        window.__earlyAudioCtx = eac;
+        if (eac.state !== 'running') eac.resume().catch(function () {});
+        var earlyUnlock = function () {
+          if (!eac || eac.state === 'closed') return;
+          if (eac.state !== 'running') {
+            try {
+              var sb = eac.createBuffer(1, 1, eac.sampleRate || 44100);
+              var bs = eac.createBufferSource();
+              bs.buffer = sb; bs.connect(eac.destination); bs.start(0);
+            } catch (e1) {}
+            eac.resume().catch(function () {});
+          }
+        };
+        ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'].forEach(function (ev) {
+          window.addEventListener(ev, earlyUnlock, { capture: true, passive: true });
+        });
+      }
+    } catch (e) {}
+
     var cv = document.getElementById('loadingPixelCanvas');
     if (cv && cv.getContext) {
       var ctx = cv.getContext('2d');
@@ -520,7 +546,7 @@
     <div id="markPointer" class="markPointer hidden"><span id="mpArrow" class="mpArrow">▲</span><span id="mpText">1</span></div>
     <div id="nearBoats" class="nearBoats"></div>
     <div id="penBadge" class="badge bad" style="display:none"></div>
-    <div id="ocsBadge" class="badge bad" style="display:none">OCS ― ラインの下へ戻れ</div>
+    <div id="ocsBadge" class="badge bad" style="display:none"></div>
     <div id="blkBadge" class="blkGauge" style="display:none">
       <span id="blkTxt" class="blkTxt">ブランケット 0%</span>
       <div class="blkTrack"><div id="blkFill" class="blkFill"></div></div>
@@ -841,6 +867,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261113c"></script>
+  <script type="module" src="js/main.js?v=20261113d"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// リアルなヨットオーディオ(WebAudio)
+// リアルなヨットオーディオ(WebAudio + オフライン事前レンダリングBGMエンジン)
 //  - 号砲/1分前ホーン: エアホーン(倍音・息継ぎ・残響)
 //  - 船が水を切る音: 船体を流れる水の「シャー」+ バウウェーブの低いうねり + 気泡のポコポコ + 波打ち(スラップ)
 //  - セールのシバー: 連続的なバタバタ音 + タック時のパンッ
@@ -9,13 +9,40 @@ let chineGain = null, chineFilter = null;
 let shiverGain = null, shiverLfo = null;
 let nearGain = null, nearFilter = null, nearPan = null;
 let camMul = 1, tBubble = 0, tSlap = 0, tSlice = 0, tGurgle = 0, tShiver = 0, wPhase = 0;
-let bgmMode = null, bgmTimer = null, bgmBus = null;
+let bgmMode = null, bgmSource = null, bgmBus = null, bgmReqSeq = 0;
 let bgmVoiceEnabled = true;
+let _activeDroplets = 0;
+const MAX_ACTIVE_DROPLETS = 6;
+
+const BGM_SR = 32000;
+const bgmBufferCache = new Map();
+const bgmQuickCache = new Map();
+const bgmQuickWaiters = new Map();
+const bgmRenderPromises = new Map();
+let bgmStartCtxTime = 0;
+let bgmIsQuick = false;
+let bgmNoiseSamples = null;
+let menuHtmlAudio = null;
+let menuWavUrl = null;
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
 
 const MASTER_GAIN = 0.48;
+
+// AudioParamの毎フレーム過剰スケジュール(タイムライン肥大化によるブツブツ音)を防ぐスムージングヘルパー
+function setSmoothTarget(param, target, now, tc, eps = 0.0012) {
+  if (!param || !Number.isFinite(target)) return;
+  const prev = param._lastTgt;
+  const prevAt = param._lastAt ?? -99;
+  const diff = prev === undefined ? Infinity : Math.abs(target - prev);
+  if (diff <= eps) return;
+  const relJump = Math.abs(target) > 1e-4 ? diff / Math.abs(target) : diff;
+  if (now - prevAt < 0.045 && relJump < 0.22 && target !== 0) return;
+  param._lastTgt = target;
+  param._lastAt = now;
+  param.setTargetAtTime(target, now, tc);
+}
 
 function softClip(k) {
   const n = 1024, c = new Float32Array(n);
@@ -24,7 +51,7 @@ function softClip(k) {
 }
 // 通常域(|x| <= 0.64)は完全リニア(無歪み)のまま通し、突発的な大音量重畳時のみ ±0.90 未満へ滑らかに収めるブリックウォール・ソフトリミッター
 function makeMasterLimiterCurve() {
-  const n = 8192, c = new Float32Array(n);
+  const n = 4096, c = new Float32Array(n);
   const knee = 0.64, ceil = 0.90, span = ceil - knee;
   for (let i = 0; i < n; i++) {
     const s = (i / (n - 1)) * 2 - 1;
@@ -38,18 +65,25 @@ function makeMasterLimiterCurve() {
   }
   return c;
 }
-function makeImpulse(sec, decay) {
-  const sr = ctx.sampleRate || 44100;
-  const len = Math.floor(sr * sec), buf = ctx.createBuffer(2, len, sr);
+function makeImpulseOn(targetCtx, sec, decay, seed = 1337) {
+  const sr = targetCtx.sampleRate || 44100;
+  const len = Math.floor(sr * sec), buf = targetCtx.createBuffer(2, len, sr);
   const hpAlpha = Math.exp((-2 * Math.PI * 165) / sr);
   const lpAlpha = 1 - Math.exp((-2 * Math.PI * 4200) / sr);
   const fadeIn = Math.max(1, Math.floor(sr * 0.012));
+  let s = seed >>> 0;
+  const rnd = () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
     let prevIn = 0, hp = 0, lp = 0, peak = 1e-6;
     for (let i = 0; i < len; i++) {
       const env = Math.pow(1 - i / len, decay) * Math.min(1, i / fadeIn);
-      const raw = (Math.random() * 2 - 1) * env;
+      const raw = (rnd() * 2 - 1) * env;
       hp = hpAlpha * (hp + raw - prevIn);
       prevIn = raw;
       lp += lpAlpha * (hp - lp);
@@ -62,40 +96,208 @@ function makeImpulse(sec, decay) {
   }
   return buf;
 }
+
+// ループ境界でのブツッというクリックノイズを完全排除したシームレス白色ノイズ・ブラウンノイズ生成
+function makeSeamlessWhiteNoise(targetCtx, sec = 2.0, seed = 20261113) {
+  const sr = targetCtx.sampleRate || 44100;
+  const len = Math.floor(sr * sec);
+  const fade = Math.min(2048, Math.floor(len * 0.1));
+  const raw = new Float32Array(len + fade);
+  let s = seed >>> 0;
+  for (let i = 0; i < raw.length; i++) {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    raw[i] = (((t ^ (t >>> 14)) >>> 0) / 4294967296) * 2 - 1;
+  }
+  const buf = targetCtx.createBuffer(1, len, sr);
+  const out = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) out[i] = raw[i];
+  for (let i = 0; i < fade; i++) {
+    const u = i / fade;
+    const wA = Math.sin(u * Math.PI * 0.5);
+    const wB = Math.cos(u * Math.PI * 0.5);
+    out[i] = raw[i] * wA + raw[len + i] * wB;
+  }
+  return buf;
+}
+
+function makeSeamlessBrownNoise(targetCtx, sec = 3.0) {
+  const sr = targetCtx.sampleRate || 44100;
+  const len = Math.floor(sr * sec);
+  const fade = Math.min(4096, Math.floor(len * 0.12));
+  const raw = new Float32Array(len + fade);
+  let last = 0;
+  // ウォームアップしてから記録し、DCオフセットと振幅過大を抑える
+  for (let i = 0; i < 2048; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+  }
+  for (let i = 0; i < raw.length; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    raw[i] = clampN(last * 3.1, -0.92, 0.92);
+  }
+  const buf = targetCtx.createBuffer(1, len, sr);
+  const out = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) out[i] = raw[i];
+  for (let i = 0; i < fade; i++) {
+    const u = i / fade;
+    const w = 0.5 - 0.5 * Math.cos(u * Math.PI);
+    out[i] = raw[len + i] * (1 - w) + raw[i] * w;
+  }
+  return buf;
+}
+
 function loopSource(buf, rate = 1) {
   const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start(); return s;
+}
+
+// AudioBufferをインメモリ16bitステレオWAV Blob URLへ高速エンコード (スタート画面の<audio autoplay>用)
+function encodeAudioBufferToWavUrl(audioBuf) {
+  const numCh = audioBuf.numberOfChannels;
+  const sr = audioBuf.sampleRate;
+  const len = audioBuf.length;
+  const ch0 = audioBuf.getChannelData(0);
+  const ch1 = numCh > 1 ? audioBuf.getChannelData(1) : ch0;
+  const dataBytes = len * 2 * 2;
+  const ab = new ArrayBuffer(44 + dataBytes);
+  const dv = new DataView(ab);
+  const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  dv.setUint32(4, 36 + dataBytes, true);
+  writeStr(8, 'WAVEfmt ');
+  dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true);
+  dv.setUint16(22, 2, true);
+  dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * 4, true);
+  dv.setUint16(32, 4, true);
+  dv.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  dv.setUint32(40, dataBytes, true);
+  const pcm = new Int16Array(ab, 44, len * 2);
+  for (let i = 0, p = 0; i < len; i++) {
+    const l = ch0[i] < -1 ? -1 : ch0[i] > 1 ? 1 : ch0[i];
+    const r = ch1[i] < -1 ? -1 : ch1[i] > 1 ? 1 : ch1[i];
+    pcm[p++] = (l * 32767) | 0;
+    pcm[p++] = (r * 32767) | 0;
+  }
+  return URL.createObjectURL(new Blob([ab], { type: 'audio/wav' }));
+}
+
+function ensureMenuHtmlAudio() {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
+  if (!menuHtmlAudio) {
+    const a = document.createElement('audio');
+    a.preload = 'auto';
+    a.loop = true;
+    a.autoplay = true;
+    a.playsInline = true;
+    a.setAttribute('playsinline', '');
+    a.setAttribute('webkit-playsinline', '');
+    a.style.display = 'none';
+    a.volume = MASTER_GAIN;
+    a.muted = muted || !bgmVoiceEnabled;
+    if (document.body) document.body.appendChild(a);
+    menuHtmlAudio = a;
+  }
+  if (menuWavUrl && menuHtmlAudio.src !== menuWavUrl) {
+    menuHtmlAudio.src = menuWavUrl;
+  }
+  return menuHtmlAudio;
+}
+
+function stopMenuHtmlAudio() {
+  if (!menuHtmlAudio) return;
+  try {
+    menuHtmlAudio.autoplay = false;
+    if (!menuHtmlAudio.paused) menuHtmlAudio.pause();
+    menuHtmlAudio.currentTime = 0;
+  } catch (e) {}
+}
+
+function syncMenuHtmlAudioPlayback() {
+  if (bgmMode !== 'menu' || !bgmVoiceEnabled || muted) {
+    stopMenuHtmlAudio();
+    return;
+  }
+  if (!menuWavUrl) return;
+  const a = ensureMenuHtmlAudio();
+  if (!a) return;
+  a.autoplay = true;
+  a.muted = false;
+  // WebAudioが既にrunningで再生中なら、フェージング干渉を防ぎつつChrome MEI(自動再生学習)獲得のため極小音量で並走、未runningなら実音量で鳴らす
+  if (ctx && ctx.state === 'running' && bgmSource) {
+    a.volume = 0.004;
+  } else {
+    a.volume = MASTER_GAIN;
+  }
+  if (a.paused) {
+    a.play().catch(() => {});
+  }
 }
 
 let unlockListenersBound = false;
 function ensureAudioUnlockListeners() {
   if (unlockListenersBound || typeof window === 'undefined') return;
   unlockListenersBound = true;
-  const events = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click'];
-  const tryUnlock = () => {
-    unlockAudioNow().then((ok) => {
-      if (ok || (ctx && ctx.state === 'running')) {
-        events.forEach((ev) => {
-          window.removeEventListener(ev, tryUnlock, true);
-          document.removeEventListener(ev, tryUnlock, true);
-        });
-      }
-    });
+  const gestureEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
+  const tryUnlockSync = () => {
+    initAudio();
+    if (ctx && ctx.state !== 'running') {
+      try {
+        const sb = ctx.createBuffer(1, 1, ctx.sampleRate || 44100);
+        const src = ctx.createBufferSource();
+        src.buffer = sb;
+        src.connect(ctx.destination);
+        src.start(0);
+      } catch (e) {}
+      ctx.resume().then(() => {
+        if (bgmMode && bgmVoiceEnabled && !bgmSource) {
+          const cur = bgmMode;
+          playBgm(cur);
+        } else if (bgmMode === 'menu') {
+          syncMenuHtmlAudioPlayback();
+        }
+      }).catch(() => {});
+    }
+    if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
+      syncMenuHtmlAudioPlayback();
+    }
   };
-  events.forEach((ev) => {
-    window.addEventListener(ev, tryUnlock, { capture: true, passive: true });
-    document.addEventListener(ev, tryUnlock, { capture: true, passive: true });
+  gestureEvents.forEach((ev) => {
+    window.addEventListener(ev, tryUnlockSync, { capture: true, passive: true });
+    document.addEventListener(ev, tryUnlockSync, { capture: true, passive: true });
+  });
+  // ページ表示・フォーカス復帰・MEI自動再生許可環境向けに非ボタン操作時も自動再開を試行
+  ['pageshow', 'focus', 'visibilitychange', 'pointermove'].forEach((ev) => {
+    window.addEventListener(ev, () => {
+      if (document.visibilityState === 'hidden') return;
+      if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+      if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) syncMenuHtmlAudioPlayback();
+    }, { passive: true });
   });
 }
 ensureAudioUnlockListeners();
 
 export function isAudioRunning() {
-  return !!(ctx && ctx.state === 'running');
+  return !!(
+    (ctx && ctx.state === 'running') ||
+    (bgmMode === 'menu' && menuHtmlAudio && !menuHtmlAudio.paused && !menuHtmlAudio.muted)
+  );
 }
 export function isBgmPlaying() {
-  return !!(ctx && ctx.state === 'running' && bgmTimer && bgmVoiceEnabled);
+  if (!bgmVoiceEnabled || muted || !bgmMode) return false;
+  if (ctx && ctx.state === 'running' && bgmSource) return true;
+  if (bgmMode === 'menu' && menuHtmlAudio && !menuHtmlAudio.paused) return true;
+  return false;
 }
 export function unlockAudioNow() {
   initAudio();
+  if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
+    syncMenuHtmlAudioPlayback();
+  }
   if (!ctx) return Promise.resolve(false);
   try {
     const sb = ctx.createBuffer(1, 1, ctx.sampleRate || 44100);
@@ -112,11 +314,20 @@ export function initAudio() {
   ensureAudioUnlockListeners();
   if (ctx) { if (ctx.state !== 'running') ctx.resume().catch(() => {}); return; }
   try {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const early = typeof window !== 'undefined' ? window.__earlyAudioCtx : null;
+    if (early && early.state !== 'closed') {
+      ctx = early;
+    } else {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      try {
+        ctx = new AC({ latencyHint: 'balanced' });
+      } catch (e) {
+        ctx = new AC();
+      }
+    }
     ctx.onstatechange = () => {
-      if (ctx && ctx.state === 'running' && bgmMode && !bgmTimer && bgmVoiceEnabled) {
+      if (ctx && ctx.state === 'running' && bgmMode && !bgmSource && bgmVoiceEnabled) {
         const curMode = bgmMode;
-        bgmMode = null;
         playBgm(curMode);
       }
     };
@@ -124,27 +335,24 @@ export function initAudio() {
     const dcBlock = ctx.createBiquadFilter();
     dcBlock.type = 'highpass'; dcBlock.frequency.value = 28; dcBlock.Q.value = 0.707;
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.002; comp.release.value = 0.18;
+    comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.18;
     const limiterPad = ctx.createGain();
     limiterPad.gain.value = 0.5;
     const limiter = ctx.createWaveShaper();
     limiter.curve = makeMasterLimiterCurve();
-    limiter.oversample = '4x';
+    limiter.oversample = 'none'; // 4xオーバーサンプリングによるモバイルCPU過負荷・音途切れを解消
     master = ctx.createGain(); master.gain.value = muted ? 0 : MASTER_GAIN;
     master.connect(dcBlock); dcBlock.connect(comp); comp.connect(limiterPad); limiterPad.connect(limiter); limiter.connect(ctx.destination);
-    // 開けた水面の自然な残響(過大レベルによる音割れを防ぐ帯域制限＆正規化インパルス)
-    const conv = ctx.createConvolver(); conv.buffer = makeImpulse(2.0, 3.4);
+    // 効果音(エアホーン等)用の軽量・自然な水面残響 (BGM残響はオフラインレンダリング済みのためリアルタイム負荷を大幅削減)
+    const conv = ctx.createConvolver(); conv.buffer = makeImpulseOn(ctx, 0.85, 3.6, 9001);
     fx = ctx.createGain(); fx.gain.value = 1; fx.connect(conv);
-    const wet = ctx.createGain(); wet.gain.value = 0.24; conv.connect(wet); wet.connect(master);
+    const wet = ctx.createGain(); wet.gain.value = 0.22; conv.connect(wet); wet.connect(master);
 
-    // ノイズ素材: 白色 / ブラウン(風・水流用)
-    const sr = ctx.sampleRate;
-    noiseBuf = ctx.createBuffer(1, sr * 2, sr);
-    const wn = noiseBuf.getChannelData(0); for (let i = 0; i < wn.length; i++) wn[i] = Math.random() * 2 - 1;
-    const brown = ctx.createBuffer(1, sr * 3, sr), bd = brown.getChannelData(0);
-    let last = 0; for (let i = 0; i < bd.length; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; bd[i] = last * 3.5; }
+    // ノイズ素材: 境界クロスフェード済みシームレス白色 / ブラウンノイズ(ループ折り返しクリックを完全防止)
+    noiseBuf = makeSeamlessWhiteNoise(ctx, 2.0, 20261113);
+    const brown = makeSeamlessBrownNoise(ctx, 3.0);
 
-    // 風(初期値は0にしてロード中のホワイトノイズ鳴動を防止、レース・スタート画面遷移時に目標値へ)
+    // 風(初期値は0にしてロード中のホワイトノイズ鳴動を防止、レース遷移時に目標値へ)
     const wsrc = loopSource(brown);
     const wlp = ctx.createBiquadFilter(); wlp.type = 'lowpass'; wlp.frequency.value = 720;
     windGain = ctx.createGain(); windGain.gain.value = 0;
@@ -154,7 +362,7 @@ export function initAudio() {
     wsrc.connect(wlp); wlp.connect(windGain); windGain.connect(master);
 
     // 艇の音バス(カメラがドローンの時は小さく、艇内では大きく)
-    boatBus = ctx.createGain(); boatBus.gain.value = 1; boatBus.connect(master);
+    boatBus = ctx.createGain(); boatBus.gain.value = 0; boatBus.connect(master);
 
     // 1) 船体を流れる水のシャー(高域スプレー＆水切り) — 波との出会いに合わせてフィルタと音量が有機的に変化
     const hsrc = loopSource(noiseBuf, 0.92);
@@ -199,29 +407,32 @@ export function initAudio() {
 }
 
 export function setWind(speedNorm) {
-  if (windGain && ctx) {
-    windGain.gain.setTargetAtTime(0.08 + 0.16 * speedNorm, ctx.currentTime, 0.3);
-    if (windGain._gust) windGain._gust.gain.setTargetAtTime(0.04, ctx.currentTime, 0.3);
+  if (windGain && ctx && ctx.state === 'running') {
+    const isSilentBgm = bgmMode === 'result' || bgmMode === 'review' || bgmMode === 'menu';
+    if (isSilentBgm) return;
+    const now = ctx.currentTime;
+    setSmoothTarget(windGain.gain, 0.08 + 0.16 * speedNorm, now, 0.3, 0.003);
+    if (windGain._gust) setSmoothTarget(windGain._gust.gain, 0.04, now, 0.3, 0.002);
   }
 }
 export function setCameraAudio(cockpit) { camMul = cockpit ? 1.0 : 0.45; }
-export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : MASTER_GAIN; return muted; }
+export function toggleMute() {
+  muted = !muted;
+  if (master) master.gain.value = muted ? 0 : MASTER_GAIN;
+  if (menuHtmlAudio) {
+    menuHtmlAudio.muted = muted || !bgmVoiceEnabled;
+    if (muted) stopMenuHtmlAudio();
+    else if (bgmMode === 'menu') syncMenuHtmlAudioPlayback();
+  }
+  return muted;
+}
 export function isBgmVoiceEnabled() { return bgmVoiceEnabled; }
 export function setBgmVoiceEnabled(on) {
   bgmVoiceEnabled = !!on;
   if (!bgmVoiceEnabled) {
-    if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
-    if (bgmBus && ctx) {
-      const oldBus = bgmBus;
-      bgmBus = null;
-      if (oldBus._cleanup) oldBus._cleanup(0.05, 220);
-      else {
-        try {
-          oldBus.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.05);
-          setTimeout(() => { try { oldBus.disconnect(); } catch (e) {} }, 200);
-        } catch (e) {}
-      }
-    }
+    bgmReqSeq++;
+    stopMenuHtmlAudio();
+    fadeOutActiveBgmSource(0.05, 200);
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
   } else if (bgmMode) {
     const m = bgmMode;
@@ -233,9 +444,12 @@ export function setBgmVoiceEnabled(on) {
 // ---- 艇の連続音＆多彩な水切りバリエーション(毎フレーム) ----
 // 1) 気泡・水滴のポコポコ/ピチャッ (単発〜2連で音程・音色をランダム変化)
 function bubble(sp) {
+  if (_activeDroplets >= MAX_ACTIVE_DROPLETS) return;
   const t = ctx.currentTime;
   const count = Math.random() < 0.42 ? 2 : 1;
   for (let i = 0; i < count; i++) {
+    if (_activeDroplets >= MAX_ACTIVE_DROPLETS) break;
+    _activeDroplets++;
     const dt0 = i * (0.025 + Math.random() * 0.035);
     const o = ctx.createOscillator(), g = ctx.createGain();
     const f = 220 + Math.random() * 880;
@@ -247,6 +461,7 @@ function bubble(sp) {
     g.gain.setValueAtTime(0.0001, t + dt0);
     g.gain.linearRampToValueAtTime(amp, t + dt0 + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dt0 + dur + 0.015);
+    o.onended = () => { _activeDroplets = Math.max(0, _activeDroplets - 1); try { g.disconnect(); } catch (e) {} };
     o.connect(g); g.connect(boatBus);
     o.start(t + dt0); o.stop(t + dt0 + dur + 0.025);
   }
@@ -254,6 +469,8 @@ function bubble(sp) {
 
 // 2) バウが波頭を切り裂く「ザシュッ / シュワァーッ」という水切りスウィッシュ音
 function bowSlice(sp, heel, upwind) {
+  if (_activeDroplets >= MAX_ACTIVE_DROPLETS) return;
+  _activeDroplets++;
   const t = ctx.currentTime;
   const dur = (upwind ? 0.28 : 0.44) + Math.random() * 0.26;
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
@@ -272,15 +489,19 @@ function bowSlice(sp, heel, upwind) {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + dur * 0.22);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
+  s.onended = () => { _activeDroplets = Math.max(0, _activeDroplets - 1); try { g.disconnect(); bp.disconnect(); } catch (e) {} };
   s.connect(bp); bp.connect(g); g.connect(boatBus);
   s.start(t, Math.random() * 1.3); s.stop(t + dur + 0.06);
 }
 
 // 3) チャイン・スターン渦の「チャプッ / シュルル / コポッ」という水流の揺らぎ
 function wakeGurgle(sp, heel) {
+  if (_activeDroplets >= MAX_ACTIVE_DROPLETS) return;
   const t = ctx.currentTime;
   const pulses = 2 + ((Math.random() * 2) | 0);
   for (let i = 0; i < pulses; i++) {
+    if (_activeDroplets >= MAX_ACTIVE_DROPLETS) break;
+    _activeDroplets++;
     const t0 = t + i * (0.055 + Math.random() * 0.05);
     const dur = 0.09 + Math.random() * 0.09;
     const s = ctx.createBufferSource(); s.buffer = noiseBuf;
@@ -296,6 +517,7 @@ function wakeGurgle(sp, heel) {
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.linearRampToValueAtTime(vol, t0 + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.02);
+    s.onended = () => { _activeDroplets = Math.max(0, _activeDroplets - 1); try { g.disconnect(); bp.disconnect(); } catch (e) {} };
     s.connect(bp); bp.connect(g); g.connect(boatBus);
     s.start(t0, Math.random() * 1.2); s.stop(t0 + dur + 0.03);
   }
@@ -303,6 +525,8 @@ function wakeGurgle(sp, heel) {
 
 // 4) ハルが細かいさざ波に触れる控えめなリップルスラップ
 function waveSlap(sp, heel) {
+  if (_activeDroplets >= MAX_ACTIVE_DROPLETS) return;
+  _activeDroplets++;
   const t = ctx.currentTime;
   const variant = Math.random();
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
@@ -321,6 +545,7 @@ function waveSlap(sp, heel) {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.012);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
+  s.onended = () => { _activeDroplets = Math.max(0, _activeDroplets - 1); try { g.disconnect(); f.disconnect(); } catch (e) {} };
   s.connect(f); f.connect(g); g.connect(boatBus);
   s.start(t, Math.random() * 1.0); s.stop(t + dur + 0.06);
 
@@ -333,6 +558,7 @@ function waveSlap(sp, heel) {
   og.gain.setValueAtTime(0.0001, t);
   og.gain.linearRampToValueAtTime((0.038 + Math.random() * 0.03) * sp, t + 0.01);
   og.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.onended = () => { try { og.disconnect(); } catch (e) {} };
   o.connect(og); og.connect(boatBus); o.start(t); o.stop(t + 0.25);
 }
 
@@ -352,6 +578,7 @@ function hullWaveSlam(slam) {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.009);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.23);
+  s.onended = () => { try { g.disconnect(); bp.disconnect(); } catch (e) {} };
   s.connect(bp); bp.connect(g); g.connect(boatBus);
   s.start(t, Math.random() * 1.1); s.stop(t + 0.26);
 
@@ -366,6 +593,7 @@ function hullWaveSlam(slam) {
   og.gain.setValueAtTime(0.0001, t);
   og.gain.linearRampToValueAtTime(thudVol, t + 0.007);
   og.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  o.onended = () => { try { og.disconnect(); lp.disconnect(); } catch (e) {} };
   o.connect(lp); lp.connect(og); og.connect(boatBus);
   o.start(t); o.stop(t + 0.20);
 }
@@ -377,7 +605,8 @@ let _lastSailFlogAt = -99;
 
 // シバー時の「バサバサッ」というセールクロスの連続はためきパルス (0度風位でもうるさくならないよう控えめな布音のみにする)
 function shiverFlap(lv) {
-  if (!ctx || !noiseBuf || !boatBus) return;
+  if (!ctx || !noiseBuf || !boatBus || _activeDroplets >= MAX_ACTIVE_DROPLETS) return;
+  _activeDroplets++;
   const t = ctx.currentTime;
   const dur = 0.065 + Math.random() * 0.04;
   const s = ctx.createBufferSource(); s.buffer = noiseBuf;
@@ -391,27 +620,31 @@ function shiverFlap(lv) {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(peak, t + 0.014);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.onended = () => { _activeDroplets = Math.max(0, _activeDroplets - 1); try { g.disconnect(); bp.disconnect(); } catch (e) {} };
   s.connect(bp); bp.connect(g); g.connect(boatBus);
   s.start(t, Math.random() * 1.2); s.stop(t + dur + 0.02);
 }
 
 // active=false(一時停止/メニュー/リザルト/振り返り)で無音。レース中BGM('race_enoshima'/'race_hakkeijima')は帆走音と同時に鳴らす。
 export function updateSailingAudio(dt, b, active = true) {
-  if (!ctx || !hissGain) return;
+  if (!ctx || !hissGain || ctx.state !== 'running') return;
   const now = ctx.currentTime;
   const isSilentBgm = bgmMode === 'result' || bgmMode === 'review' || bgmMode === 'menu';
   if (!active || isSilentBgm) {
-    boatBus.gain.setTargetAtTime(0, now, 0.05);
-    hissGain.gain.setTargetAtTime(0, now, 0.04);
-    rushGain.gain.setTargetAtTime(0, now, 0.04);
-    if (chineGain) chineGain.gain.setTargetAtTime(0, now, 0.04);
-    shiverGain.gain.setTargetAtTime(0, now, 0.02);
-    shiverGain._amp.gain.setTargetAtTime(0, now, 0.02);
-    if (nearGain) nearGain.gain.setTargetAtTime(0, now, 0.05);
-    if (windGain && isSilentBgm) windGain.gain.setTargetAtTime(0.015, now, 0.12);
+    setSmoothTarget(boatBus.gain, 0, now, 0.05);
+    setSmoothTarget(hissGain.gain, 0, now, 0.04);
+    setSmoothTarget(rushGain.gain, 0, now, 0.04);
+    if (chineGain) setSmoothTarget(chineGain.gain, 0, now, 0.04);
+    setSmoothTarget(shiverGain.gain, 0, now, 0.02);
+    setSmoothTarget(shiverGain._amp.gain, 0, now, 0.02);
+    if (nearGain) setSmoothTarget(nearGain.gain, 0, now, 0.05);
+    if (windGain) {
+      setSmoothTarget(windGain.gain, 0, now, 0.12);
+      if (windGain._gust) setSmoothTarget(windGain._gust.gain, 0, now, 0.12);
+    }
     return;
   }
-  boatBus.gain.setTargetAtTime(camMul, now, 0.20);
+  setSmoothTarget(boatBus.gain, camMul, now, 0.20, 0.005);
   const v = b ? Math.abs(b.v) : 0;
   const sp = clamp01(v / 8);
   const heel = b ? Math.min(0.4, Math.abs(b.heel)) : 0;
@@ -426,26 +659,26 @@ export function updateSailingAudio(dt, b, active = true) {
   const waveMod3 = Math.sin(wPhase * 0.47 + 2.1);
   const dynWave = clampN(0.5 + 0.28 * waveMod1 + 0.18 * waveMod2 + 0.12 * waveMod3, 0.1, 1.15);
 
-  // 連続水流音のゲインとフィルタ周波数を波のうねり・ヒール・艇速で絶えず表情付けする
-  hissGain.gain.setTargetAtTime((0.006 + 0.20 * Math.pow(sp, 1.35)) * (1 + heel * 2.0) * (0.72 + 0.50 * dynWave), now, 0.08);
+  // 連続水流音のゲインとフィルタ周波数を波のうねり・ヒール・艇速で表情付け (スロットリング付きで歪み防止)
+  setSmoothTarget(hissGain.gain, (0.006 + 0.20 * Math.pow(sp, 1.35)) * (1 + heel * 2.0) * (0.72 + 0.50 * dynWave), now, 0.08, 0.003);
   if (hissHP && hissLP) {
-    hissHP.frequency.setTargetAtTime(1050 + sp * 480 - heel * 500 + waveMod2 * 220, now, 0.10);
-    hissLP.frequency.setTargetAtTime(3800 + sp * 3600 + dynWave * 1600, now, 0.10);
+    setSmoothTarget(hissHP.frequency, 1050 + sp * 480 - heel * 500 + waveMod2 * 220, now, 0.10, 12);
+    setSmoothTarget(hissLP.frequency, 3800 + sp * 3600 + dynWave * 1600, now, 0.10, 30);
   }
-  rushGain.gain.setTargetAtTime((0.012 + 0.20 * sp) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12);
-  rushFilter.frequency.setTargetAtTime(260 + sp * 780 + waveMod1 * 140 + heel * 260, now, 0.12);
+  setSmoothTarget(rushGain.gain, (0.012 + 0.20 * sp) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12, 0.003);
+  setSmoothTarget(rushFilter.frequency, 260 + sp * 780 + waveMod1 * 140 + heel * 260, now, 0.12, 10);
 
   if (chineGain && chineFilter) {
-    chineGain.gain.setTargetAtTime(sp * (0.032 + 0.10 * heel + 0.04 * Math.abs(waveMod2)), now, 0.10);
-    chineFilter.frequency.setTargetAtTime(580 + sp * 620 + waveMod3 * 240, now, 0.10);
+    setSmoothTarget(chineGain.gain, sp * (0.032 + 0.10 * heel + 0.04 * Math.abs(waveMod2)), now, 0.10, 0.002);
+    setSmoothTarget(chineFilter.frequency, 580 + sp * 620 + waveMod3 * 240, now, 0.10, 12);
   }
 
   // シバー: セールの「バサッ」音(shiverFlap)は元の音量・反応に戻し、0度付近での連続ノイズ(ザーっという音)のみ抑える
   const luff = active && b ? clamp01(b.luff) : 0;
   const lv = luff > 0.08 ? luff : 0;
   const zeroHissScale = twa < 0.18 ? 0.35 + 0.65 * clamp01(twa / 0.18) : 1.0;
-  shiverGain.gain.setTargetAtTime(lv * 0.042 * zeroHissScale, now, 0.06);
-  shiverGain._amp.gain.setTargetAtTime(lv * 0.035 * zeroHissScale, now, 0.06);
+  setSmoothTarget(shiverGain.gain, lv * 0.042 * zeroHissScale, now, 0.06, 0.002);
+  setSmoothTarget(shiverGain._amp.gain, lv * 0.035 * zeroHissScale, now, 0.06, 0.002);
   tShiver -= dt;
   if (tShiver <= 0) {
     tShiver = 0.11 + Math.random() * 0.07;
@@ -490,24 +723,27 @@ export function updateSailingAudio(dt, b, active = true) {
 
 // 他艇が近づくと波切り音が大きく。player の進行方向に対する左右へ定位。
 export function updateNearbyBoatSound(player, boats, active = true) {
-  if (!ctx || !nearGain || !player) return;
+  if (!ctx || !nearGain || !player || ctx.state !== 'running') return;
+  const isSilentBgm = bgmMode === 'result' || bgmMode === 'review' || bgmMode === 'menu';
   let best = null, bd = 1e9;
-  for (const b of boats) {
-    if (b === player) continue;
-    const d = Math.hypot(b.x - player.x, b.z - player.z);
-    if (d < bd) { bd = d; best = b; }
+  if (active && !isSilentBgm) {
+    for (const b of boats) {
+      if (b === player) continue;
+      const d = Math.hypot(b.x - player.x, b.z - player.z);
+      if (d < bd) { bd = d; best = b; }
+    }
   }
   const now = ctx.currentTime;
-  if (active && best && bd < 40) {
+  if (active && !isSilentBgm && best && bd < 40) {
     const prox = 1 - bd / 40;
     const fwd = clamp01(best.v / 6) * 0.7 + 0.3;
-    nearGain.gain.setTargetAtTime(Math.pow(prox, 1.4) * 0.5 * fwd * camMul, now, 0.1);
-    nearFilter.frequency.setTargetAtTime(800 + prox * 1100, now, 0.1);
+    setSmoothTarget(nearGain.gain, Math.pow(prox, 1.4) * 0.5 * fwd * camMul, now, 0.1, 0.003);
+    setSmoothTarget(nearFilter.frequency, 800 + prox * 1100, now, 0.1, 14);
     if (nearPan) {
       const rx = Math.cos(player.h), rz = Math.sin(player.h);
-      nearPan.pan.setTargetAtTime(clampN(((best.x - player.x) * rx + (best.z - player.z) * rz) / (bd || 1), -1, 1), now, 0.1);
+      setSmoothTarget(nearPan.pan, clampN(((best.x - player.x) * rx + (best.z - player.z) * rz) / (bd || 1), -1, 1), now, 0.1, 0.03);
     }
-  } else nearGain.gain.setTargetAtTime(0, now, 0.15);
+  } else setSmoothTarget(nearGain.gain, 0, now, 0.15, 0.001);
 }
 
 // ---- エアホーン ----
@@ -803,24 +1039,24 @@ export function orientStepSfx(accent = false) {
 
 // ---- リザルト画面BGM ('result') ＆ 振り返り画面BGM ('review') ----
 function silenceSailingNow() {
-  if (!ctx) return;
+  if (!ctx || ctx.state !== 'running') return;
   const now = ctx.currentTime;
-  if (boatBus) boatBus.gain.setTargetAtTime(0, now, 0.03);
-  if (hissGain) hissGain.gain.setTargetAtTime(0, now, 0.03);
-  if (rushGain) rushGain.gain.setTargetAtTime(0, now, 0.03);
-  if (chineGain) chineGain.gain.setTargetAtTime(0, now, 0.03);
+  if (boatBus) setSmoothTarget(boatBus.gain, 0, now, 0.03);
+  if (hissGain) setSmoothTarget(hissGain.gain, 0, now, 0.03);
+  if (rushGain) setSmoothTarget(rushGain.gain, 0, now, 0.03);
+  if (chineGain) setSmoothTarget(chineGain.gain, 0, now, 0.03);
   if (shiverGain) {
-    shiverGain.gain.setTargetAtTime(0, now, 0.015);
-    if (shiverGain._amp) shiverGain._amp.gain.setTargetAtTime(0, now, 0.015);
+    setSmoothTarget(shiverGain.gain, 0, now, 0.015);
+    if (shiverGain._amp) setSmoothTarget(shiverGain._amp.gain, 0, now, 0.015);
   }
-  if (nearGain) nearGain.gain.setTargetAtTime(0, now, 0.03);
+  if (nearGain) setSmoothTarget(nearGain.gain, 0, now, 0.03);
   if (windGain) {
-    windGain.gain.setTargetAtTime(0.012, now, 0.10);
-    if (windGain._gust) windGain._gust.gain.setTargetAtTime(0.004, now, 0.10);
+    setSmoothTarget(windGain.gain, 0, now, 0.10);
+    if (windGain._gust) setSmoothTarget(windGain._gust.gain, 0, now, 0.10);
   }
 }
 
-// ---- スタジオ品質マルチトラックBGMエンジン (サンプル精度16分音符ルックアヘッド・FMエレピ/ストリングス/ホーン/ギター/リード/スタジオドラム) ----
+// ---- スタジオ品質マルチトラックBGMエンジン (OfflineAudioContextによるシームレス事前レンダリング方式: 音途切れ・ブツブツ音ゼロ) ----
 const NOTE_SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 function noteMidi(tok) {
   const m = /^([A-G])([#b]?)(-?\d)$/.exec(tok);
@@ -852,136 +1088,302 @@ function heldSteps(seq, idx) {
   return n;
 }
 
+const BGM_SPECS = {
+  menu:                { bpm: 114, swing: 0.14, totalSteps: 256 },
+  orientation:         { bpm: 140, swing: 0.00, totalSteps: 256 },
+  prestart_hakkeijima: { bpm: 130, swing: 0.04, totalSteps: 256 },
+  prestart_enoshima:   { bpm: 126, swing: 0.04, totalSteps: 256 },
+  race_enoshima:       { bpm: 104, swing: 0.11, totalSteps: 512 },
+  race_hakkeijima:     { bpm: 108, swing: 0.13, totalSteps: 512 },
+  result:              { bpm: 122, swing: 0.05, totalSteps: 256 },
+  review:              { bpm:  96, swing: 0.16, totalSteps: 256 },
+};
+
+function fadeOutActiveBgmSource(tc = 0.07, ms = 280) {
+  const oldSrc = bgmSource;
+  const oldBus = bgmBus;
+  bgmSource = null;
+  bgmBus = null;
+  if (!oldBus && !oldSrc) return;
+  try {
+    if (oldBus && ctx && ctx.state === 'running') {
+      const now = ctx.currentTime;
+      oldBus.gain.cancelScheduledValues(now);
+      oldBus.gain.setTargetAtTime(0.0001, now, tc);
+    }
+    setTimeout(() => {
+      try { if (oldSrc) oldSrc.stop(); } catch (e) {}
+      try { if (oldSrc) oldSrc.disconnect(); } catch (e) {}
+      try { if (oldBus) oldBus.disconnect(); } catch (e) {}
+    }, ms);
+  } catch (e) {
+    try { if (oldSrc) oldSrc.stop(); } catch (_) {}
+  }
+}
+
 export function stopBgm() {
   bgmMode = null;
-  if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
-  if (bgmBus && ctx) {
-    const oldBus = bgmBus;
-    bgmBus = null;
-    if (oldBus._cleanup) oldBus._cleanup(0.08, 360);
-    else {
-      try {
-        oldBus.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.08);
-        setTimeout(() => { try { oldBus.disconnect(); } catch (e) {} }, 350);
-      } catch (e) {}
+  bgmReqSeq++;
+  stopMenuHtmlAudio();
+  fadeOutActiveBgmSource(0.07, 280);
+}
+
+export function prewarmBgm(modes = ['menu']) {
+  if (typeof window === 'undefined') return;
+  const list = Array.isArray(modes) ? modes.slice() : [modes];
+  const next = () => {
+    const m = list.shift();
+    if (!m) return;
+    if (bgmBufferCache.has(m)) {
+      if (list.length > 0) setTimeout(next, 60);
+      return;
     }
+    renderBgmBuffer(m)
+      .catch(() => {})
+      .finally(() => {
+        if (list.length > 0) setTimeout(next, 320);
+      });
+  };
+  next();
+}
+
+function mountBgmBufferSource(buf, mode, isQuick) {
+  if (!ctx || ctx.state !== 'running' || !buf) return false;
+  let startOffset = 0;
+  if (!isQuick && bgmIsQuick && bgmSource && bgmMode === mode) {
+    // クイック4小節バッファ再生中からフル長バッファへ位相一致でシームレス昇格
+    startOffset = Math.max(0, (ctx.currentTime - bgmStartCtxTime) % buf.duration);
+  } else if (mode === 'menu' && menuHtmlAudio && !menuHtmlAudio.paused && menuHtmlAudio.volume > 0.05) {
+    startOffset = (menuHtmlAudio.currentTime || 0) % buf.duration;
   }
+  fadeOutActiveBgmSource(isQuick ? 0.05 : 0.08, isQuick ? 200 : 280);
+  const bus = ctx.createGain();
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const now = ctx.currentTime;
+  bus.gain.setValueAtTime(startOffset > 0 ? 0.88 : 0.001, now);
+  bus.gain.linearRampToValueAtTime(1.0, now + (startOffset > 0 ? 0.08 : 0.20));
+  src.connect(bus);
+  bus.connect(master);
+  src.start(now, startOffset);
+  bgmSource = src;
+  bgmBus = bus;
+  bgmIsQuick = !!isQuick;
+  bgmStartCtxTime = now - startOffset;
+  if (mode === 'menu') syncMenuHtmlAudioPlayback();
+  return true;
 }
 
 export function playBgm(mode = 'result') {
   initAudio();
   const isSilentSailing = mode === 'result' || mode === 'review' || mode === 'menu';
   if (isSilentSailing) silenceSailingNow();
+  if (mode !== 'menu') stopMenuHtmlAudio();
   if (!bgmVoiceEnabled) {
-    if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
+    fadeOutActiveBgmSource(0.05, 200);
     bgmMode = mode;
     return;
   }
-  if (!ctx) { bgmMode = mode; return; }
-  if (ctx.state !== 'running') {
-    bgmMode = mode;
-    ctx.resume().then(() => {
-      if (ctx && ctx.state === 'running' && bgmMode === mode && !bgmTimer && bgmVoiceEnabled) {
-        bgmMode = null;
-        playBgm(mode);
-      }
-    }).catch(() => {});
+  if (bgmMode === mode && bgmSource && !bgmIsQuick && ctx && ctx.state === 'running') {
+    if (mode === 'menu') syncMenuHtmlAudioPlayback();
     return;
   }
-  if (bgmMode === mode && bgmTimer) return;
-  stopBgm();
+  const prevMode = bgmMode;
   bgmMode = mode;
+  if (prevMode && prevMode !== mode) {
+    bgmIsQuick = false;
+    fadeOutActiveBgmSource(0.07, 260);
+  }
+  const reqId = ++bgmReqSeq;
 
-  // --- スタジオBGMマスターバス + ステレオ・ピンポンディレイ + ホールリバーブセンド ---
-  const outBus = ctx.createGain();
-  outBus.gain.setValueAtTime(0.0008, ctx.currentTime);
-  const targetGain = mode === 'result' ? 0.46
-    : mode === 'review' ? 0.42
-    : mode === 'menu' ? 0.40
-    : mode === 'orientation' ? 0.38
-    : mode.startsWith('prestart') ? 0.29
-    : 0.27;
-  outBus.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.32);
-  outBus.connect(master);
+  const tryStartWithBuf = (buf, isQuick) => {
+    if (!buf || bgmReqSeq !== reqId || bgmMode !== mode || !bgmVoiceEnabled) return;
+    if (mode === 'menu' && !menuWavUrl) {
+      menuWavUrl = encodeAudioBufferToWavUrl(buf);
+    }
+    if (!ctx || ctx.state !== 'running') {
+      if (mode === 'menu' && !muted) syncMenuHtmlAudioPlayback();
+      if (ctx) {
+        ctx.resume().then(() => {
+          if (ctx && ctx.state === 'running' && bgmMode === mode && !bgmSource && bgmVoiceEnabled) {
+            playBgm(mode);
+          }
+        }).catch(() => {});
+      }
+      return;
+    }
+    if (isQuick && bgmSource && prevMode === mode) return;
+    if (!isQuick && bgmSource && !bgmIsQuick && prevMode === mode) {
+      if (mode === 'menu') syncMenuHtmlAudioPlayback();
+      return;
+    }
+    mountBgmBufferSource(buf, mode, isQuick);
+  };
 
-  const inBus = ctx.createGain();
-  inBus.gain.value = 1.0;
-  const lowShelf = ctx.createBiquadFilter();
-  lowShelf.type = 'lowshelf'; lowShelf.frequency.value = 115; lowShelf.gain.value = 1.4;
-  const airShelf = ctx.createBiquadFilter();
-  airShelf.type = 'highshelf'; airShelf.frequency.value = 7200; airShelf.gain.value = 1.2;
-  // レース・スタート前は信号ホーン帯域(約415Hz)をわずかにすっきりさせ、効果音との分離を極上にする
-  const hornDip = ctx.createBiquadFilter();
-  hornDip.type = 'peaking'; hornDip.frequency.value = 415; hornDip.Q.value = 1.6;
-  hornDip.gain.value = (mode.startsWith('race') || mode.startsWith('prestart')) ? -2.4 : 0.0;
-  inBus.connect(lowShelf); lowShelf.connect(hornDip); hornDip.connect(airShelf); airShelf.connect(outBus);
-
-  const revSend = ctx.createGain();
-  revSend.gain.value = mode === 'review' ? 0.24 : mode === 'menu' ? 0.20 : mode === 'result' ? 0.20 : 0.16;
-  airShelf.connect(revSend);
-  if (fx) revSend.connect(fx);
-
-  // ステレオ・ピンポンディレイ (リード・エレピ・ベル・ブラスに立体的な奥行きと広がりを付与)
-  const dlySend = ctx.createGain();
-  dlySend.gain.value = 0.18;
-  const dlyHP = ctx.createBiquadFilter(); dlyHP.type = 'highpass'; dlyHP.frequency.value = 420;
-  const dlyLP = ctx.createBiquadFilter(); dlyLP.type = 'lowpass'; dlyLP.frequency.value = 3900;
-  const dlyL = ctx.createDelay(1.0), dlyR = ctx.createDelay(1.0);
-  dlyL.delayTime.value = 0.34; dlyR.delayTime.value = 0.46;
-  const fbL = ctx.createGain(), fbR = ctx.createGain();
-  fbL.gain.value = 0.27; fbR.gain.value = 0.25;
-  const panL = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-  const panR = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-  if (panL && panR) { panL.pan.value = -0.72; panR.pan.value = 0.72; }
-  dlySend.connect(dlyHP); dlyHP.connect(dlyLP);
-  dlyLP.connect(dlyL);
-  dlyL.connect(fbL); fbL.connect(dlyR);
-  dlyR.connect(fbR); fbR.connect(dlyL);
-  if (panL && panR) {
-    dlyL.connect(panL); panL.connect(outBus);
-    dlyR.connect(panR); panR.connect(outBus);
+  if (bgmBufferCache.has(mode)) {
+    tryStartWithBuf(bgmBufferCache.get(mode), false);
+    return;
+  }
+  if (bgmQuickCache.has(mode)) {
+    tryStartWithBuf(bgmQuickCache.get(mode), true);
   } else {
-    dlyL.connect(outBus); dlyR.connect(outBus);
+    let waiters = bgmQuickWaiters.get(mode);
+    if (!waiters) { waiters = []; bgmQuickWaiters.set(mode, waiters); }
+    waiters.push((qBuf) => tryStartWithBuf(qBuf, true));
   }
 
-  let cleaned = false;
-  outBus._cleanup = (tc = 0.08, ms = 350) => {
-    if (cleaned) return;
-    cleaned = true;
-    try {
-      const now = ctx ? ctx.currentTime : 0;
-      outBus.gain.cancelScheduledValues(now);
-      outBus.gain.setTargetAtTime(0.0001, now, tc);
-      revSend.gain.setTargetAtTime(0.0001, now, tc);
-      fbL.gain.setValueAtTime(0, now + 0.02);
-      fbR.gain.setValueAtTime(0, now + 0.02);
-      setTimeout(() => {
-        try { fbL.disconnect(); fbR.disconnect(); dlyL.disconnect(); dlyR.disconnect(); } catch (e) {}
-        try { revSend.disconnect(); outBus.disconnect(); } catch (e) {}
-      }, ms);
-    } catch (e) {}
-  };
-  bgmBus = outBus;
+  renderBgmBuffer(mode).then((fullBuf) => {
+    tryStartWithBuf(fullBuf, false);
+  }).catch((e) => {
+    console.warn('BGM render failed:', e);
+  });
+}
 
-  const isAlive = () => !!(ctx && ctx.state === 'running' && bgmBus === outBus && bgmVoiceEnabled && !cleaned);
-  const routePan = (node, panVal = 0, sendDelay = 0, sendRev = 0) => {
-    if (panVal !== 0 && ctx.createStereoPanner) {
-      const p = ctx.createStereoPanner();
-      p.pan.value = clampN(panVal, -0.95, 0.95);
-      node.connect(p);
-      p.connect(inBus);
-    } else {
-      node.connect(inBus);
+function getSharedBgmNoise() {
+  if (!bgmNoiseSamples) {
+    const len = Math.floor(BGM_SR * 1.5);
+    bgmNoiseSamples = new Float32Array(len);
+    let s = 77123 >>> 0;
+    for (let i = 0; i < len; i++) {
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      bgmNoiseSamples[i] = (((t ^ (t >>> 14)) >>> 0) / 4294967296) * 2 - 1;
     }
-    if (sendDelay > 0.001) {
-      const ds = ctx.createGain(); ds.gain.value = sendDelay;
-      node.connect(ds); ds.connect(dlySend);
-    }
-    if (sendRev > 0.001 && fx) {
-      const rs = ctx.createGain(); rs.gain.value = sendRev;
-      node.connect(rs); rs.connect(fx);
-    }
-  };
+  }
+  return bgmNoiseSamples;
+}
+
+function renderBgmBuffer(mode) {
+  if (bgmBufferCache.has(mode)) return Promise.resolve(bgmBufferCache.get(mode));
+  if (bgmRenderPromises.has(mode)) return bgmRenderPromises.get(mode);
+  const spec = BGM_SPECS[mode];
+  if (!spec) return Promise.resolve(null);
+  const OfflineAC = typeof window !== 'undefined' ? (window.OfflineAudioContext || window.webkitOfflineAudioContext) : null;
+  if (!OfflineAC) return Promise.resolve(null);
+
+  const p = new Promise((resolve) => {
+    try {
+      const SLICE_STEPS = 32;
+      const numSlices = Math.ceil(spec.totalSteps / SLICE_STEPS);
+      const sliceBins = Array.from({ length: numSlices }, () => []);
+      const stepSec = 60 / spec.bpm / 4;
+      const padSec = 0.005;
+      const loopDur = spec.totalSteps * stepSec;
+      const tailDur = 1.55;
+      const padFrames = Math.round(BGM_SR * padSec);
+      const sliceSpanFrames = Math.round(BGM_SR * SLICE_STEPS * stepSec);
+      const loopFrames = Math.round(BGM_SR * loopDur);
+      const tailFrames = Math.round(BGM_SR * tailDur);
+      const sharedNoise = getSharedBgmNoise();
+
+      const createSliceSynth = (octx, mode, stepSec) => {
+        const ctx = octx;
+        const noiseBuf = octx.createBuffer(1, sharedNoise.length, BGM_SR);
+        noiseBuf.getChannelData(0).set(sharedNoise);
+
+        // 高速・高品位ステレオFDNホールリバーブ (64,000タップFIR Convolverを排除し1スライス約30msでレンダリング)
+        const fx = octx.createGain();
+        fx.gain.value = 1.0;
+        const ap1 = octx.createBiquadFilter(); ap1.type = 'allpass'; ap1.frequency.value = 340; ap1.Q.value = 0.7;
+        const ap2 = octx.createBiquadFilter(); ap2.type = 'allpass'; ap2.frequency.value = 1150; ap2.Q.value = 0.7;
+        fx.connect(ap1); ap1.connect(ap2);
+        const fxWet = octx.createGain();
+        fxWet.gain.value = 0.21;
+        fxWet.connect(octx.destination);
+        [0.0297, 0.0371, 0.0411, 0.0437].forEach((dt, idx) => {
+          const d = octx.createDelay(0.1); d.delayTime.value = dt;
+          const lp = octx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3900;
+          const fb = octx.createGain(); fb.gain.value = 0.76;
+          ap2.connect(d); d.connect(lp); lp.connect(fb); fb.connect(d);
+          if (octx.createStereoPanner) {
+            const pn = octx.createStereoPanner();
+            pn.pan.value = idx % 2 === 0 ? -0.68 : 0.68;
+            lp.connect(pn); pn.connect(fxWet);
+          } else {
+            lp.connect(fxWet);
+          }
+        });
+
+        const outBus = octx.createGain();
+        const targetGain = mode === 'result' ? 0.46
+          : mode === 'review' ? 0.42
+          : mode === 'menu' ? 0.40
+          : mode === 'orientation' ? 0.38
+          : mode.startsWith('prestart') ? 0.29
+          : 0.27;
+        outBus.gain.value = targetGain;
+        outBus.connect(octx.destination);
+
+        const inBus = octx.createGain();
+        inBus.gain.value = 1.0;
+        const lowShelf = octx.createBiquadFilter();
+        lowShelf.type = 'lowshelf'; lowShelf.frequency.value = 115; lowShelf.gain.value = 1.4;
+        const airShelf = octx.createBiquadFilter();
+        airShelf.type = 'highshelf'; airShelf.frequency.value = 7200; airShelf.gain.value = 1.2;
+        const hornDip = octx.createBiquadFilter();
+        hornDip.type = 'peaking'; hornDip.frequency.value = 415; hornDip.Q.value = 1.6;
+        hornDip.gain.value = (mode.startsWith('race') || mode.startsWith('prestart')) ? -2.4 : 0.0;
+        inBus.connect(lowShelf); lowShelf.connect(hornDip); hornDip.connect(airShelf); airShelf.connect(outBus);
+
+        const revSend = octx.createGain();
+        revSend.gain.value = mode === 'review' ? 0.24 : mode === 'menu' ? 0.20 : mode === 'result' ? 0.20 : 0.16;
+        airShelf.connect(revSend);
+        revSend.connect(fx);
+
+        // ステレオ・ピンポンディレイ
+        const dlySend = octx.createGain();
+        dlySend.gain.value = 0.18;
+        const dlyHP = octx.createBiquadFilter(); dlyHP.type = 'highpass'; dlyHP.frequency.value = 420;
+        const dlyLP = octx.createBiquadFilter(); dlyLP.type = 'lowpass'; dlyLP.frequency.value = 3900;
+        const dlyL = octx.createDelay(1.0), dlyR = octx.createDelay(1.0);
+        dlyL.delayTime.value = clampN(stepSec * 3, 0.12, 0.85);
+        dlyR.delayTime.value = clampN(stepSec * 4, 0.16, 0.95);
+        const fbL = octx.createGain(), fbR = octx.createGain();
+        fbL.gain.value = 0.27; fbR.gain.value = 0.25;
+        const panL = octx.createStereoPanner ? octx.createStereoPanner() : null;
+        const panR = octx.createStereoPanner ? octx.createStereoPanner() : null;
+        if (panL && panR) { panL.pan.value = -0.72; panR.pan.value = 0.72; }
+        dlySend.connect(dlyHP); dlyHP.connect(dlyLP);
+        dlyLP.connect(dlyL);
+        dlyL.connect(fbL); fbL.connect(dlyR);
+        dlyR.connect(fbR); fbR.connect(dlyL);
+        if (panL && panR) {
+          dlyL.connect(panL); panL.connect(outBus);
+          dlyR.connect(panR); panR.connect(outBus);
+        } else {
+          dlyL.connect(outBus); dlyR.connect(outBus);
+        }
+
+        const isAlive = () => true;
+        const panBusPool = new Map();
+        const routePan = (node, panVal = 0, sendDelay = 0, sendRev = 0) => {
+          const key = `${Math.round(panVal * 100)}_${Math.round(sendDelay * 100)}_${Math.round(sendRev * 100)}`;
+          let shared = panBusPool.get(key);
+          if (!shared) {
+            shared = octx.createGain();
+            shared.gain.value = 1.0;
+            if (panVal !== 0 && octx.createStereoPanner) {
+              const pn = octx.createStereoPanner();
+              pn.pan.value = clampN(panVal, -0.95, 0.95);
+              shared.connect(pn);
+              pn.connect(inBus);
+            } else {
+              shared.connect(inBus);
+            }
+            if (sendDelay > 0.001) {
+              const ds = octx.createGain(); ds.gain.value = sendDelay;
+              shared.connect(ds); ds.connect(dlySend);
+            }
+            if (sendRev > 0.001) {
+              const rs = octx.createGain(); rs.gain.value = sendRev;
+              shared.connect(rs); rs.connect(fx);
+            }
+            panBusPool.set(key, shared);
+          }
+          node.connect(shared);
+        };
 
   // 1) スタジオ・キックドラム (重厚なローエンドの胴鳴り＋ビーターのアタッククリック)
   const playKick = (t0, vel = 1.0) => {
@@ -1123,7 +1525,7 @@ export function playBgm(mode = 'result') {
     g.gain.setValueAtTime(amp * 0.84, t0 + Math.min(0.04, d * 0.35));
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.025);
     sub.connect(g);
-    body.connect(bodyGain); bodyGain.connect(lp); lp.connect(g);
+    body.connect(bodyGain); body.connect(lp); lp.connect(g);
     g.connect(inBus);
     sub.start(t0); body.start(t0);
     sub.stop(t0 + d + 0.04); body.stop(t0 + d + 0.04);
@@ -1326,27 +1728,34 @@ export function playBgm(mode = 'result') {
     o1.stop(t0 + d + 0.055); o2.stop(t0 + d + 0.055);
   };
 
-  // --- サンプル精度 16分音符ルックアヘッド・スケジューラ ---
+    return { playKick, playSnare, playTom, playHat, playCrash, playEPiano, playBass, playStrings, playBrass, playGuitar, playBell, playLead };
+  };
+
+  // --- 2小節(32ステップ)単位の軽量スライス分配コレクタ (全ステップを0.3msで事前バケット化) ---
+  let curBin = sliceBins[0];
+  let curSliceStartSec = 0;
+  const playKick    = (t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playKick(lt, ...a)); };
+  const playSnare   = (t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playSnare(lt, ...a)); };
+  const playTom     = (t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playTom(lt, ...a)); };
+  const playHat     = (t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playHat(lt, ...a)); };
+  const playCrash   = (t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playCrash(lt, ...a)); };
+  const playEPiano  = (ns, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playEPiano(ns, lt, ...a)); };
+  const playBass    = (f, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playBass(f, lt, ...a)); };
+  const playStrings = (ns, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playStrings(ns, lt, ...a)); };
+  const playBrass   = (ns, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playBrass(ns, lt, ...a)); };
+  const playGuitar  = (ns, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playGuitar(ns, lt, ...a)); };
+  const playBell    = (f, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playBell(f, lt, ...a)); };
+  const playLead    = (f, p, t0, ...a) => { const lt = t0 - curSliceStartSec, b = curBin; b.push((ops) => ops.playLead(f, p, lt, ...a)); };
+
   const startSequencer = (bpm, swing, totalSteps, renderStep) => {
-    const stepSec = 60 / bpm / 4; // 16分音符1ステップの秒数
-    dlyL.delayTime.value = clampN(stepSec * 3, 0.12, 0.85); // 付点8分ディレイ
-    dlyR.delayTime.value = clampN(stepSec * 4, 0.16, 0.95); // 4分ディレイ
-    let step = 0;
-    let nextTime = ctx.currentTime + 0.035;
-    const sched = () => {
-      if (!isAlive() || bgmMode !== mode) return;
-      const now = ctx.currentTime;
-      if (nextTime < now - 0.24) nextTime = now + 0.025; // バックグラウンドタブ復帰時のバースト防止
-      while (nextTime < now + 0.165) {
-        const s = step % totalSteps;
-        const swOffset = (s % 2 === 1) ? stepSec * swing : 0;
-        renderStep(s, nextTime + swOffset, stepSec, step);
-        nextTime += stepSec;
-        step++;
-      }
-    };
-    sched();
-    bgmTimer = setInterval(sched, 42);
+    const stSec = 60 / bpm / 4;
+    for (let s = 0; s < totalSteps; s++) {
+      const si = Math.min(numSlices - 1, Math.floor(s / SLICE_STEPS));
+      curBin = sliceBins[si];
+      curSliceStartSec = si * SLICE_STEPS * stSec;
+      const swOffset = (s % 2 === 1) ? stSec * swing : 0;
+      renderStep(s, padSec + s * stSec + swOffset, stSec, s);
+    }
   };
 
   if (mode === 'menu') {
@@ -1930,6 +2339,129 @@ export function playBgm(mode = 'result') {
       if (sub % 2 === 0 || sub === 15) playHat(t0, sub % 4 === 0 ? 0.52 : 0.30, sub === 14, 0.22);
     });
   }
+
+      (async () => {
+        try {
+          const accumL = new Float32Array(loopFrames);
+          const accumR = new Float32Array(loopFrames);
+          const fadeStart = Math.floor(tailFrames * 0.80);
+
+          for (let si = 0; si < numSlices; si++) {
+            const sliceBaseFrame = Math.round(BGM_SR * si * SLICE_STEPS * stepSec);
+            const sliceLenFrames = padFrames + sliceSpanFrames + tailFrames;
+            const sctx = new OfflineAC(2, sliceLenFrames, BGM_SR);
+            const ops = createSliceSynth(sctx, mode, stepSec);
+            const fns = sliceBins[si];
+            for (let k = 0; k < fns.length; k++) fns[k](ops);
+
+            const rendered = await sctx.startRendering();
+            const rL = rendered.getChannelData(0);
+            const rR = rendered.getChannelData(1);
+            const copySpan = sliceSpanFrames + tailFrames;
+            for (let i = 0; i < copySpan; i++) {
+              let w = 1.0;
+              if (i >= sliceSpanFrames + fadeStart) {
+                const u = (i - (sliceSpanFrames + fadeStart)) / Math.max(1, tailFrames - fadeStart);
+                w = 0.5 + 0.5 * Math.cos(u * Math.PI);
+              }
+              const dstIdx = (sliceBaseFrame + i) % loopFrames;
+              accumL[dstIdx] += rL[padFrames + i] * w;
+              accumR[dstIdx] += rR[padFrames + i] * w;
+            }
+
+            // 最初の2小節(si===0, 約35ms)完了時点で即座にクイック再生バッファを生成し、待ち時間ゼロで再生開始
+            if (si === 0 && numSlices > 1) {
+              const qFrames = Math.min(loopFrames, sliceSpanFrames);
+              const qBuf = sctx.createBuffer(2, qFrames, BGM_SR);
+              const qL = qBuf.getChannelData(0);
+              const qR = qBuf.getChannelData(1);
+              let qPeak = 1e-6;
+              const qTail = Math.min(tailFrames, qFrames);
+              for (let i = 0; i < qFrames; i++) {
+                qL[i] = accumL[i];
+                qR[i] = accumR[i];
+              }
+              for (let i = 0; i < qTail; i++) {
+                const tailSrc = (qFrames + i) % loopFrames;
+                qL[i] += accumL[tailSrc];
+                qR[i] += accumR[tailSrc];
+              }
+              for (let i = 0; i < qFrames; i++) {
+                const m = Math.max(Math.abs(qL[i]), Math.abs(qR[i]));
+                if (m > qPeak) qPeak = m;
+              }
+              if (qPeak > 0.88) {
+                const sc = 0.88 / qPeak;
+                for (let i = 0; i < qFrames; i++) { qL[i] *= sc; qR[i] *= sc; }
+              }
+              bgmQuickCache.set(mode, qBuf);
+              if (mode === 'menu' && !menuWavUrl) {
+                menuWavUrl = encodeAudioBufferToWavUrl(qBuf);
+              }
+              const waiters = bgmQuickWaiters.get(mode);
+              if (waiters) {
+                bgmQuickWaiters.delete(mode);
+                waiters.forEach((cb) => { try { cb(qBuf); } catch (e) {} });
+              }
+            }
+
+            if (si < numSlices - 1) {
+              const yieldMs = (bgmMode !== mode && bgmQuickWaiters.size > 0) ? 90 : 0;
+              await new Promise((r) => setTimeout(r, yieldMs));
+            }
+          }
+
+          const finalCtx = new OfflineAC(2, 1, BGM_SR);
+          const loopBuf = finalCtx.createBuffer(2, loopFrames, BGM_SR);
+          const dstL = loopBuf.getChannelData(0);
+          const dstR = loopBuf.getChannelData(1);
+          let peak = 1e-6;
+          for (let i = 0; i < loopFrames; i++) {
+            const l = accumL[i], r = accumR[i];
+            dstL[i] = l;
+            dstR[i] = r;
+            const m = Math.max(Math.abs(l), Math.abs(r));
+            if (m > peak) peak = m;
+          }
+          if (peak > 0.88) {
+            const scale = 0.88 / peak;
+            for (let i = 0; i < loopFrames; i++) {
+              dstL[i] *= scale;
+              dstR[i] *= scale;
+            }
+          }
+
+          bgmBufferCache.set(mode, loopBuf);
+          bgmQuickCache.delete(mode);
+          bgmRenderPromises.delete(mode);
+          if (mode === 'menu') {
+            const oldUrl = menuWavUrl;
+            menuWavUrl = encodeAudioBufferToWavUrl(loopBuf);
+            if (oldUrl && oldUrl !== menuWavUrl) {
+              setTimeout(() => { try { URL.revokeObjectURL(oldUrl); } catch (e) {} }, 5000);
+            }
+            if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) syncMenuHtmlAudioPlayback();
+          }
+          resolve(loopBuf);
+        } catch (err) {
+          console.warn('Sliced BGM render error:', err);
+          bgmRenderPromises.delete(mode);
+          resolve(bgmQuickCache.get(mode) || null);
+        }
+      })();
+    } catch (err) {
+      console.warn('BGM setup error:', err);
+      bgmRenderPromises.delete(mode);
+      resolve(null);
+    }
+  });
+  bgmRenderPromises.set(mode, p);
+  return p;
+}
+
+// モジュール読み込み直後(ローディング画面中)にスタート画面BGMを最優先で先行レンダリング
+if (typeof window !== 'undefined') {
+  setTimeout(() => { prewarmBgm(['menu']); }, 0);
 }
 
 // ---- 接近時の権利主張コール (動物キャラクターのみ鳴き声を鳴らし、人間は声を出さない) ----
