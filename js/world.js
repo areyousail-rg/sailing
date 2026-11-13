@@ -1992,35 +1992,35 @@ export function createWorld(scene) {
 
     // 3) 下段: 大型化した有利サイド・タクティカルポッド
     if (showPreStartFav) {
-      const bx = 86, by = 206, bw = 1108, bh = 188;
+      const bx = 48, by = 204, bw = 1184, bh = 206;
       const cy = by + bh * 0.5;
       ctx.save();
       ctx.shadowColor = 'rgba(2, 8, 20, 0.72)';
       ctx.shadowBlur = 18;
       ctx.shadowOffsetY = 6;
-      drawChamferPlate(ctx, bx, by, bw, bh, 24);
+      drawChamferPlate(ctx, bx, by, bw, bh, 26);
       const podGrad = ctx.createLinearGradient(bx, by, bx, by + bh);
       podGrad.addColorStop(0.0, 'rgba(10, 22, 40, 0.96)');
       podGrad.addColorStop(1.0, 'rgba(5, 12, 24, 0.97)');
       ctx.fillStyle = podGrad;
       ctx.fill();
-      ctx.strokeStyle = isEven ? 'rgba(125, 211, 252, 0.72)' : 'rgba(251, 191, 36, 0.92)';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = isEven ? 'rgba(125, 211, 252, 0.75)' : 'rgba(251, 191, 36, 0.94)';
+      ctx.lineWidth = 4.5;
       ctx.stroke();
       ctx.restore();
 
       ctx.save();
       ctx.textBaseline = 'middle';
-      const fontSide = '900 66px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
-      const fontYuri = '900 70px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
-      const fontDeg = '900 76px "Outfit", "Arial Black", sans-serif';
+      const fontSide = '900 78px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      const fontYuri = '900 82px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      const fontDeg = '900 88px "Outfit", "Arial Black", sans-serif';
 
       if (isEven) {
         // EVEN 有利なし [ 0° ]
         const labelStr = 'EVEN  有利なし';
         ctx.font = fontYuri;
         const tw = ctx.measureText(labelStr).width;
-        const pillW = 196, pillH = 122, gap = 34;
+        const pillW = 216, pillH = 140, gap = 36;
         const totW = tw + gap + pillW;
         const startX = 640 - totW / 2;
 
@@ -2029,26 +2029,26 @@ export function createWorld(scene) {
         ctx.fillText(labelStr, startX, cy + 2);
 
         const pillX = startX + tw + gap;
-        drawChamferPlate(ctx, pillX, cy - pillH / 2, pillW, pillH, 16);
+        drawChamferPlate(ctx, pillX, cy - pillH / 2, pillW, pillH, 18);
         ctx.fillStyle = '#0ea5e9';
         ctx.fill();
         ctx.fillStyle = '#04111f';
         ctx.font = fontDeg;
         ctx.textAlign = 'center';
-        ctx.fillText('0°', pillX + pillW / 2, cy + 3);
+        ctx.fillText('0°', pillX + pillW / 2, cy + 4);
       } else if (!isCom) {
         // アウター(左)有利: ← アウターサイド 有利 [ X° ]
         const sideStr = 'アウターサイド';
         const yuriStr = '有利';
         const degStr = `${skewDeg}°`;
-        const arrowW = 68, gap1 = 24, gap2 = 26, gap3 = 30;
+        const arrowW = 78, gap1 = 22, gap2 = 24, gap3 = 26;
         ctx.font = fontSide;
         const sideW = ctx.measureText(sideStr).width;
         ctx.font = fontYuri;
         const yuriW = ctx.measureText(yuriStr).width;
         ctx.font = fontDeg;
-        const pillW = Math.max(204, Math.ceil(ctx.measureText(degStr).width + 64));
-        const pillH = 124;
+        const pillW = Math.max(220, Math.ceil(ctx.measureText(degStr).width + 62));
+        const pillH = 140;
         const totW = arrowW + gap1 + sideW + gap2 + yuriW + gap3 + pillW;
         let curX = 640 - totW / 2;
 
@@ -2070,7 +2070,7 @@ export function createWorld(scene) {
         curX += yuriW + gap3;
         ctx.restore();
 
-        drawChamferPlate(ctx, curX, cy - pillH / 2, pillW, pillH, 16);
+        drawChamferPlate(ctx, curX, cy - pillH / 2, pillW, pillH, 18);
         ctx.fillStyle = '#fbbf24';
         ctx.fill();
         ctx.fillStyle = '#08111d';
@@ -2082,14 +2082,14 @@ export function createWorld(scene) {
         const sideStr = '本部船サイド';
         const yuriStr = '有利';
         const degStr = `${skewDeg}°`;
-        const arrowW = 68, gap1 = 26, gap2 = 30, gap3 = 26;
+        const arrowW = 78, gap1 = 24, gap2 = 26, gap3 = 24;
         ctx.font = fontSide;
         const sideW = ctx.measureText(sideStr).width;
         ctx.font = fontYuri;
         const yuriW = ctx.measureText(yuriStr).width;
         ctx.font = fontDeg;
-        const pillW = Math.max(204, Math.ceil(ctx.measureText(degStr).width + 64));
-        const pillH = 124;
+        const pillW = Math.max(220, Math.ceil(ctx.measureText(degStr).width + 62));
+        const pillH = 140;
         const totW = sideW + gap1 + yuriW + gap2 + pillW + gap3 + arrowW;
         let curX = 640 - totW / 2;
 
@@ -2108,7 +2108,7 @@ export function createWorld(scene) {
         curX += yuriW + gap2;
         ctx.restore();
 
-        drawChamferPlate(ctx, curX, cy - pillH / 2, pillW, pillH, 16);
+        drawChamferPlate(ctx, curX, cy - pillH / 2, pillW, pillH, 18);
         ctx.fillStyle = '#fbbf24';
         ctx.fill();
         ctx.fillStyle = '#08111d';
@@ -2944,7 +2944,7 @@ export function createWorld(scene) {
       // 2) START LINE / FINISH ラベル: 遠くからでもしっかり大きく読めつつ、接近時も洗練されたバランスを保つよう距離比例スケールを調整
       if (startLabel) {
         const dStart = Math.hypot(startLabel.position.x - cx, startLabel.position.z - cz);
-        const sw = clampN(7.4 + dStart * 0.33, 12.6, 78.0);
+        const sw = clampN(7.8 + dStart * 0.35, 13.2, 84.0);
         const sh = sw * (440 / 1280);
         startLabel.scale.set(sw, sh, 1);
         startLabel.position.y = 2.5 + sh * 0.56;
