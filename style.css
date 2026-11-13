@@ -163,7 +163,6 @@ body.touch #miniLog div{font-size:.6rem}
 /* ---------- オーバーレイ / ローディング ---------- */
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10}
 #loading{background:radial-gradient(circle at 50% 38%,#132a46 0%,#081019 74%);flex-direction:column;gap:12px;z-index:30;transition:opacity .32s ease}
-#loading.readyToStart{cursor:pointer}
 .spinner{display:none}
 .loadingAnimeWrap{width:min(440px,90vw);border-radius:8px;overflow:hidden;border:1.5px solid rgba(148,197,238,.38);border-top:2.5px solid var(--accent);box-shadow:0 16px 42px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.06);background:#081624;position:relative}
 .loadingPixelCanvas{display:block;width:100%;height:auto;aspect-ratio:16/10;image-rendering:pixelated;image-rendering:crisp-edges}
@@ -172,26 +171,6 @@ body.touch #miniLog div{font-size:.6rem}
 #loading p span{color:var(--accent)}
 .loadBar{width:min(300px,74vw);height:5px;background:rgba(148,184,218,.18);border-radius:3px;overflow:hidden}
 #loadFill{height:100%;width:0;background:linear-gradient(90deg,#38bdf8 0%,var(--accent) 100%);transition:width .12s ease-out}
-.loadStartBtn{
-  margin-top:2px;
-  padding:11px 28px;
-  border-radius:999px;
-  border:1.5px solid #fde047;
-  background:linear-gradient(180deg,#facc15 0%,#eab308 52%,#ca8a04 100%);
-  color:#08111d;
-  font-weight:900;
-  font-size:.94rem;
-  letter-spacing:.08em;
-  box-shadow:0 8px 24px rgba(234,179,8,.38),inset 0 1px 0 rgba(255,255,255,.65);
-  cursor:pointer;
-  animation:loadBtnPulse 1.6s ease-in-out infinite;
-}
-.loadStartBtn:hover{filter:brightness(1.06);transform:translateY(-1px)}
-.loadStartBtn:active{transform:translateY(1px)}
-@keyframes loadBtnPulse{
-  0%,100%{box-shadow:0 6px 20px rgba(234,179,8,.32),0 0 0 0 rgba(250,204,21,.36)}
-  50%{box-shadow:0 10px 28px rgba(234,179,8,.52),0 0 0 7px rgba(250,204,21,0)}
-}
 
 /* ---------- メニュー / カード ---------- */
 .menu{background:rgba(8,12,16,.76);overflow:auto}
@@ -202,44 +181,44 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 .lead{color:var(--mute);margin:6px 0 0;font-size:.86rem;line-height:1.6}
 .card h2{font-size:.66rem;font-weight:700;letter-spacing:.06em;color:var(--mute);margin:0 0 4px}
 
-/* スタート画面 = ゲームタイトル＆エントリーUI (HUD・リザルトと統一した海洋レーシングゲームデザイン) */
-.menuPractice{background:radial-gradient(circle at 50% 18%,rgba(14,32,54,.24) 0%,rgba(5,10,18,.42) 100%);pointer-events:none;z-index:4;align-items:center;padding:18px 0}
+/* スタート画面 = ゲームタイトル＆エントリーUI (画面下半分をオープンに空けてヨットの操船練習ができるレイアウト) */
+.menuPractice{background:transparent;pointer-events:none;z-index:4;align-items:flex-start;padding:10px 0 0}
 .menuCard{
   pointer-events:auto;
   width:min(736px,94vw);
-  padding:0 0 13px;
+  padding:0 0 9px;
   background:
     radial-gradient(120% 90% at 12% 0%,rgba(56,189,248,.11) 0%,transparent 54%),
     radial-gradient(95% 75% at 92% 100%,rgba(235,184,0,.09) 0%,transparent 56%),
-    linear-gradient(180deg,rgba(13,22,34,.92) 0%,rgba(9,15,24,.95) 100%);
+    linear-gradient(180deg,rgba(13,22,34,.90) 0%,rgba(9,15,24,.93) 100%);
   backdrop-filter:blur(8px);
   -webkit-backdrop-filter:blur(8px);
   border:1px solid rgba(148,184,218,.28);
   border-top:3px solid var(--accent);
   border-radius:8px;
-  max-height:calc(100vh - 36px);
+  max-height:calc(100vh - 205px);
   overflow-y:auto;
   margin:0 auto;
   display:flex;
   flex-direction:column;
-  gap:10px;
-  box-shadow:0 18px 46px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.08);
+  gap:6px;
+  box-shadow:0 14px 36px rgba(0,0,0,.54),inset 0 1px 0 rgba(255,255,255,.08);
 }
-.menuCard > *:not(.menuTitleRow){margin-left:18px;margin-right:18px}
+.menuCard > *:not(.menuTitleRow){margin-left:14px;margin-right:14px}
 .menuTitleRow{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:12px;
+  gap:10px;
   flex-wrap:wrap;
-  padding:11px 18px;
+  padding:7px 14px;
   border-bottom:1px solid rgba(148,184,218,.2);
   background:linear-gradient(90deg,rgba(16,30,48,.92) 0%,rgba(12,21,33,.82) 100%);
 }
-.menuBrand{display:flex;align-items:center;gap:11px;flex-shrink:0}
+.menuBrand{display:flex;align-items:center;gap:9px;flex-shrink:0}
 .menuEmblem{
-  width:40px;
-  height:40px;
+  width:34px;
+  height:34px;
   border-radius:7px;
   background:radial-gradient(circle at 35% 28%,#1d3b5c 0%,#0b1624 78%);
   border:1px solid rgba(235,184,0,.55);
@@ -251,7 +230,7 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 }
 .menuTitleText{display:flex;flex-direction:column;gap:2px}
 .menuTitleRow h1{
-  font-size:1.24rem;
+  font-size:1.14rem;
   font-weight:800;
   letter-spacing:.05em;
   line-height:1.12;
@@ -261,7 +240,7 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 .menuTitleRow h1::before{display:none}
 .menuSubTag{
   font-family:var(--f-num);
-  font-size:.6rem;
+  font-size:.55rem;
   font-weight:800;
   letter-spacing:.18em;
   color:var(--accent);
@@ -271,81 +250,81 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 .mwhMain{
   display:flex;
   align-items:baseline;
-  gap:8px;
+  gap:7px;
   flex-wrap:wrap;
   background:rgba(7,12,19,.84);
-  padding:5px 12px;
+  padding:4px 10px;
   border-radius:5px;
   border:1px solid rgba(148,184,218,.24);
   box-shadow:inset 0 2px 5px rgba(0,0,0,.48);
 }
 .mwhItem{display:inline-flex;align-items:baseline;gap:5px}
-.mwhSub{font-size:.64rem;font-weight:700;color:#93a8bd;letter-spacing:.05em}
-.mwhVal{font-family:var(--f-num);font-size:1.2rem;font-weight:800;color:#fff;letter-spacing:.03em;font-variant-numeric:tabular-nums;line-height:1.1}
-.mwhVal small{font-size:.74rem;font-weight:700;color:var(--accent);margin-left:2px}
-.mwhSep{color:#354a60;font-weight:700;font-size:.95rem}
-.mwhMax{font-family:var(--f-num);font-size:.8rem;font-weight:700;color:#bfd0e0;margin-left:3px;font-variant-numeric:tabular-nums}
-.mwhFlag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:.74rem;font-weight:800;letter-spacing:.04em;line-height:1.1;align-self:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.mwhSub{font-size:.62rem;font-weight:700;color:#93a8bd;letter-spacing:.05em}
+.mwhVal{font-family:var(--f-num);font-size:1.12rem;font-weight:800;color:#fff;letter-spacing:.03em;font-variant-numeric:tabular-nums;line-height:1.1}
+.mwhVal small{font-size:.72rem;font-weight:700;color:var(--accent);margin-left:2px}
+.mwhSep{color:#354a60;font-weight:700;font-size:.9rem}
+.mwhMax{font-family:var(--f-num);font-size:.76rem;font-weight:700;color:#bfd0e0;margin-left:3px;font-variant-numeric:tabular-nums}
+.mwhFlag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:.72rem;font-weight:800;letter-spacing:.04em;line-height:1.1;align-self:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .mwhFlag.hidden{display:none!important}
 .mwhFlag.yellow{background:#f5c400;color:#11161c;border:1px solid #ffe066}
 .mwhFlag.red{background:#e02424;color:#fff;border:1px solid #ff7b7b;animation:pulseRedFlag 1.4s ease-in-out infinite}
 @keyframes pulseRedFlag{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
 .mwhPresets{display:inline-flex;gap:3px;padding:2px;background:rgba(7,12,19,.84);border-radius:5px;border:1px solid rgba(148,184,218,.24)}
-.mwhBtn{padding:4px 9px;font-size:.66rem;font-weight:800;background:transparent;color:#93a8bd;border:none;border-radius:3px;cursor:pointer;line-height:1.2;transition:background .14s ease,color .14s ease}
+.mwhBtn{padding:3px 8px;font-size:.64rem;font-weight:800;background:transparent;color:#93a8bd;border:none;border-radius:3px;cursor:pointer;line-height:1.2;transition:background .14s ease,color .14s ease}
 .mwhBtn:hover{color:#f1f5f9;background:rgba(255,255,255,.06)}
 .mwhBtn.sel{background:linear-gradient(180deg,#243950 0%,#19293b 100%);color:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.45),inset 0 -2px 0 var(--accent)}
 
-.menuTopRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.menuTopRow3{grid-template-columns:1.48fr .78fr .74fr;gap:10px}
+.menuTopRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.menuTopRow3{grid-template-columns:1.48fr .78fr .74fr;gap:8px}
 .menuGroup{
   display:flex;
   flex-direction:column;
-  gap:5px;
+  gap:4px;
   min-width:0;
   background:rgba(15,25,38,.62);
   border:1px solid rgba(148,184,218,.16);
   border-radius:6px;
-  padding:7px 9px 8px;
+  padding:5px 8px 6px;
 }
 .menuCard h2{
   display:flex;
   align-items:center;
-  gap:6px;
-  font-size:.67rem;
+  gap:5px;
+  font-size:.63rem;
   font-weight:800;
   letter-spacing:.08em;
   color:#b8cadc;
   margin:0;
-  line-height:1.2;
+  line-height:1.15;
 }
 .menuCard h2::before{
   content:"";
   width:3px;
-  height:11px;
+  height:10px;
   border-radius:1.5px;
   background:var(--accent);
   flex-shrink:0;
 }
 
 /* 選択肢: ゲームらしい立体感・押下感のあるタクティカル選択ボタン */
-.choices{display:flex;flex-wrap:wrap;gap:5px}
+.choices{display:flex;flex-wrap:wrap;gap:4px}
 .choice{
   position:relative;
   display:flex;
   align-items:center;
   justify-content:center;
   gap:5px;
-  min-width:56px;
-  padding:6px 10px;
+  min-width:52px;
+  padding:5px 9px;
   margin:0;
   background:linear-gradient(180deg,#1a2838 0%,#121d2a 100%);
   border:1px solid #2e4257;
   border-radius:5px;
   color:#9db0c3;
   cursor:pointer;
-  font-size:.74rem;
+  font-size:.71rem;
   font-weight:700;
-  line-height:1.2;
+  line-height:1.15;
   box-shadow:0 2px 0 rgba(4,9,15,.72);
   transition:transform .1s ease,background .14s ease,border-color .14s ease,color .14s ease,box-shadow .1s ease;
 }
@@ -367,31 +346,31 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 }
 .choice.locked{opacity:.48;color:#6c7a88;background:#0d141d;border-style:dashed;box-shadow:none;cursor:not-allowed}
 .choice.locked:hover{background:#111a25;color:#8b99a7;border-color:#2e4257}
-.choice .lockTag{font-size:.6rem;font-family:var(--f-num);color:#eab308;margin-left:2px;font-weight:800}
-.choice .ic{font-size:.95rem;line-height:1}
+.choice .lockTag{font-size:.58rem;font-family:var(--f-num);color:#eab308;margin-left:2px;font-weight:800}
+.choice .ic{font-size:.9rem;line-height:1}
 .choice .ic:empty{display:none}
 .choice .lb{font-size:inherit;white-space:nowrap}
-.venueChoices{display:grid;grid-template-columns:1fr 1fr;gap:5px}
-.venueChoices .choice{width:auto;min-width:0;padding:7px 6px}
-.venueChoices .choice .lb{font-size:.73rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.venueChoices{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.venueChoices .choice{width:auto;min-width:0;padding:5px 6px}
+.venueChoices .choice .lb{font-size:.71rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #rateChoices .choice .lb,
 #penaltyChoices .choice .lb,
-#bgmChoices .choice .lb{font-size:.65rem}
+#bgmChoices .choice .lb{font-size:.63rem}
 
 .crewPreviewRow{
   display:flex;
   align-items:stretch;
   justify-content:space-between;
-  gap:12px;
+  gap:10px;
   background:rgba(15,25,38,.62);
   border:1px solid rgba(148,184,218,.16);
   border-radius:6px;
-  padding:8px 10px;
+  padding:5px 9px;
 }
-.crewRow{display:flex;flex-wrap:wrap;gap:9px 12px;align-items:flex-end;flex:1}
-.crewSelectGroup{display:flex;flex-direction:column;gap:5px}
+.crewRow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:flex-end;flex:1}
+.crewSelectGroup{display:flex;flex-direction:column;gap:4px}
 .colors{display:flex;align-items:flex-end}
-.colors label{display:flex;flex-direction:column;gap:5px;font-size:.66rem;font-weight:800;letter-spacing:.06em;color:#b8cadc}
+.colors label{display:flex;flex-direction:column;gap:4px;font-size:.63rem;font-weight:800;letter-spacing:.06em;color:#b8cadc}
 .sailNoPlate{
   display:inline-flex;
   align-items:center;
@@ -402,23 +381,23 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
   box-shadow:inset 0 2px 4px rgba(0,0,0,.55);
 }
 .sailNat{
-  padding:6px 7px;
+  padding:5px 7px;
   background:#162638;
   color:#7dd3fc;
   font-family:var(--f-num);
-  font-size:.72rem;
+  font-size:.68rem;
   font-weight:800;
   letter-spacing:.08em;
   border-right:1px solid #2c4054;
   line-height:1;
 }
 .colors input[type=text]{
-  width:68px;
-  padding:5px 8px;
+  width:64px;
+  padding:4px 7px;
   border:none;
   background:transparent;
   color:#f8fafc;
-  font:800 .92rem/1.1 var(--f-num);
+  font:800 .88rem/1.1 var(--f-num);
   letter-spacing:.06em;
   font-variant-numeric:tabular-nums;
 }
@@ -434,15 +413,15 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
   background:radial-gradient(circle at 50% 38%,#1c3b5c 0%,#09131f 78%);
   border:1px solid rgba(148,184,218,.3);
   border-radius:6px;
-  padding:3px 4px 14px;
+  padding:2px 4px 11px;
   box-shadow:inset 0 0 18px rgba(0,0,0,.55),0 4px 12px rgba(0,0,0,.35);
 }
-#preview{width:150px;height:106px;display:block;border-radius:4px;background:transparent;border:none}
+#preview{width:124px;height:82px;display:block;border-radius:4px;background:transparent;border:none}
 .pvCaption{
   position:absolute;
-  bottom:3px;
+  bottom:2px;
   font-family:var(--f-num);
-  font-size:.5rem;
+  font-size:.46rem;
   font-weight:800;
   letter-spacing:.16em;
   color:#8aa4be;
@@ -452,10 +431,10 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 
 /* ボタン & レーススタートボタン内レート表示 */
 .cta{
-  margin-top:12px;
+  margin-top:10px;
   width:100%;
-  padding:11px 16px;
-  font-size:.98rem;
+  padding:9px 14px;
+  font-size:.96rem;
   font-weight:800;
   letter-spacing:.08em;
   color:#0c1218;
@@ -468,16 +447,16 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 }
 .cta:hover{filter:brightness(1.06)}
 .cta:active{transform:translateY(3px);box-shadow:0 1px 0 #8c6700,0 3px 8px rgba(0,0,0,.45)}
-.startActions{display:flex;gap:9px;margin-top:2px;align-items:stretch}
+.startActions{display:flex;gap:8px;margin-top:1px;align-items:stretch}
 .startActions .cta{margin-top:0;flex:2.15}
-.startRaceBtn{display:inline-flex;align-items:center;justify-content:center;gap:11px;padding:11px 16px;font-size:1.08rem;letter-spacing:.08em}
+.startRaceBtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:9px 14px;font-size:1.02rem;letter-spacing:.08em}
 .startRaceBtn .smashSub{display:none!important}
 .startBtnLabel{white-space:nowrap;text-shadow:0 1px 0 rgba(255,255,255,.35)}
 .menuRateBadge{
   display:inline-flex;
   align-items:baseline;
   gap:5px;
-  padding:3px 10px;
+  padding:2px 9px;
   background:#0b1420;
   border:1px solid rgba(255,255,255,.26);
   border-radius:4px;
@@ -485,12 +464,12 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
   flex-shrink:0;
 }
 .menuRateBadge.hidden{display:none!important}
-.menuRateBadge .mrbLabel{font-size:.56rem;font-weight:800;letter-spacing:.12em;color:var(--accent);line-height:1}
-.menuRateBadge b{font-family:var(--f-num);font-size:1.02rem;font-weight:800;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.menuRateBadge .mrbLabel{font-size:.54rem;font-weight:800;letter-spacing:.12em;color:var(--accent);line-height:1}
+.menuRateBadge b{font-family:var(--f-num);font-size:.98rem;font-weight:800;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .btnPractice{
   flex:.95;
-  padding:10px 11px;
-  font-size:.82rem;
+  padding:8px 10px;
+  font-size:.8rem;
   font-weight:800;
   letter-spacing:.05em;
   color:#e6eff8;
@@ -504,7 +483,7 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 }
 .btnPractice:hover{background:linear-gradient(180deg,#253b54 0%,#192a3d 100%);border-color:#537494;color:#fff}
 .btnPractice:active{transform:translateY(3px);box-shadow:0 1px 0 #081018}
-.weatherInfoBottom{font-size:.63rem;color:#93a8bd;font-variant-numeric:tabular-nums;padding:6px 2px 0;border-top:1px solid rgba(148,184,218,.16);line-height:1.45;white-space:normal;overflow:visible;word-break:break-word}
+.weatherInfoBottom{font-size:.6rem;color:#93a8bd;font-variant-numeric:tabular-nums;padding:4px 2px 0;border-top:1px solid rgba(148,184,218,.16);line-height:1.35;white-space:normal;overflow:visible;word-break:break-word}
 .weatherInfoBottom:empty{display:none}
 
 /* 戦績モーダル */
@@ -551,7 +530,7 @@ tr.me td{background:var(--bg-3);font-weight:700}
 tr.me td:first-child{box-shadow:inset 3px 0 0 var(--accent);color:var(--accent)}
 #resultTitle{font-family:var(--f-num);font-size:2rem;margin-top:4px;text-shadow:0 2px 6px rgba(0,0,0,.75)}
 
-/* スタート画面(menuOpen)表示中: 計器・操船タッチボタン等をすべて非表示にして統一感のあるタイトル画面に見せる */
+/* スタート画面(menuOpen)表示中: 計器類は隠しつつ、画面下半分のヨット＆操船タッチボタン(#touch)は練習できるよう表示 */
 #tAuto,
 #autoLbl{display:none!important}
 body.menuOpen #boardPanel,
@@ -565,9 +544,10 @@ body.menuOpen #miniLog,
 body.menuOpen #blkBadge,
 body.menuOpen #timerPanel,
 body.menuOpen #instr,
-body.menuOpen .camLabel,
-body.menuOpen #touch{display:none!important}
-body.menuOpen .menuPractice{padding-top:16px}
+body.menuOpen .camLabel{display:none!important}
+body.menuOpen #touch{display:block!important}
+body.menuOpen .tgrp.mid{top:auto;bottom:120px}
+body.menuOpen .menuPractice{padding-top:10px}
 
 /* ---------- タッチ操作 & 自動操舵(AUTO舵)押下ビジュアル ---------- */
 #touch{position:fixed;inset:0;pointer-events:none;z-index:5}
@@ -664,7 +644,7 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
 
 @media(max-height:480px){.card{padding:10px 14px}h1{font-size:1.2rem}.lead{margin-bottom:4px}#preview{width:110px;height:78px}.cta{margin-top:6px;padding:8px}.startRaceBtn{padding:9px 12px}}
 
-/* スマホ縦画面: 上部パネルが重ならないよう2段に整列し、スタート画面も1画面に美しく収める */
+/* スマホ縦画面: 上部パネルが重ならないよう2段に整列し、スタート画面も下部にヨット＆操船ボタンを残して1画面に収める */
 @media(orientation:portrait) and (max-width:600px){
   html{font-size:12px}
   body.touch .top-left{top:6px;left:6px;padding:3px 8px;min-width:0;max-width:52vw;border-left-width:2px}
@@ -698,47 +678,47 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   body.touch #bigCount{font-size:3.8rem;top:40%}
   .tgrp.left{left:8px;bottom:10px;gap:8px}.tgrp.left button{width:84px;height:80px;font-size:1.7rem}
   .tgrp.left button.autoSteer::after{bottom:4px;font-size:.5rem;padding:1px 4px}
-  .tgrp.mid{left:8px;top:auto;bottom:98px;flex-direction:row}.tgrp.mid button{width:auto;min-width:52px;height:34px;padding:0 8px;font-size:.64rem}
+  .tgrp.mid,body.menuOpen .tgrp.mid{left:8px;top:auto;bottom:98px;flex-direction:row}.tgrp.mid button{width:auto;min-width:52px;height:34px;padding:0 8px;font-size:.64rem}
   .tgrp.right{right:8px;bottom:10px;width:150px;gap:6px}.tgrp.right button{width:72px;height:48px;font-size:.66rem}
-  body.menuOpen .menuPractice{padding:8px 0}
-  .menuCard{padding:0 0 9px;gap:6px;max-height:calc(100vh - 16px);overflow-y:auto;width:95vw}
-  .menuCard > *:not(.menuTitleRow){margin-left:9px;margin-right:9px}
-  .menuTitleRow{padding:7px 10px;gap:6px;flex-direction:column;align-items:stretch}
-  .menuEmblem{width:30px;height:30px}
-  .menuEmblem svg{width:22px;height:22px}
-  .menuTitleRow h1{font-size:1.08rem}
-  .menuSubTag{font-size:.5rem;letter-spacing:.14em}
-  .menuWindHeader{justify-content:space-between;width:100%;gap:6px}
-  .mwhMain{padding:3px 8px;gap:5px;flex:1;min-width:0}
-  .mwhVal{font-size:1rem}
-  .mwhMax{font-size:.7rem}
-  .menuCard h2{font-size:.56rem}
-  .menuGroup{padding:5px 7px 6px;gap:4px}
-  .menuTopRow{gap:6px}
-  .menuTopRow3{grid-template-columns:1fr 1fr;gap:6px}
+  body.menuOpen .menuPractice{padding:6px 0 0}
+  .menuCard{padding:0 0 7px;gap:4px;max-height:calc(100vh - 210px);overflow-y:auto;width:95vw}
+  .menuCard > *:not(.menuTitleRow){margin-left:8px;margin-right:8px}
+  .menuTitleRow{padding:5px 9px;gap:5px;flex-direction:column;align-items:stretch}
+  .menuEmblem{width:28px;height:28px}
+  .menuEmblem svg{width:20px;height:20px}
+  .menuTitleRow h1{font-size:1.02rem}
+  .menuSubTag{font-size:.48rem;letter-spacing:.14em}
+  .menuWindHeader{justify-content:space-between;width:100%;gap:5px}
+  .mwhMain{padding:3px 7px;gap:5px;flex:1;min-width:0}
+  .mwhVal{font-size:.96rem}
+  .mwhMax{font-size:.68rem}
+  .menuCard h2{font-size:.54rem}
+  .menuGroup{padding:4px 6px 5px;gap:3px}
+  .menuTopRow{gap:5px}
+  .menuTopRow3{grid-template-columns:1fr 1fr;gap:5px}
   .menuTopRow3 .menuGroup:first-child{grid-column:1 / -1}
   .choices{gap:4px}
   .venueChoices{gap:4px}
-  .choice{min-width:42px;padding:5px 7px;font-size:.64rem}
-  .venueChoices .choice{padding:5px 3px}
-  .venueChoices .choice .lb{font-size:.58rem}
+  .choice{min-width:40px;padding:4px 6px;font-size:.62rem}
+  .venueChoices .choice{padding:4px 3px}
+  .venueChoices .choice .lb{font-size:.57rem}
   #rateChoices .choice .lb,
   #penaltyChoices .choice .lb,
-  #bgmChoices .choice .lb{font-size:.58rem}
-  .crewPreviewRow{padding:6px 8px;gap:8px}
-  .crewRow{gap:6px 8px}
-  .pv{padding:2px 3px 12px}
-  #preview{width:96px;height:68px}
-  .pvCaption{font-size:.44rem;bottom:2px}
-  .sailNat{padding:4px 5px;font-size:.6rem}
-  .colors input[type=text]{width:52px;padding:4px 5px;font-size:.78rem}
-  .startActions{margin-top:0;gap:6px}
-  .startActions .cta{padding:8px 8px;font-size:.92rem;letter-spacing:.04em;gap:6px}
+  #bgmChoices .choice .lb{font-size:.57rem}
+  .crewPreviewRow{padding:4px 7px;gap:7px}
+  .crewRow{gap:5px 7px}
+  .pv{padding:2px 3px 10px}
+  #preview{width:88px;height:60px}
+  .pvCaption{font-size:.42rem;bottom:1px}
+  .sailNat{padding:4px 5px;font-size:.58rem}
+  .colors input[type=text]{width:50px;padding:3px 5px;font-size:.76rem}
+  .startActions{margin-top:0;gap:5px}
+  .startActions .cta{padding:7px 8px;font-size:.88rem;letter-spacing:.04em;gap:5px}
   .menuRateBadge{padding:2px 6px;min-width:0}
-  .menuRateBadge .mrbLabel{font-size:.46rem}
-  .menuRateBadge b{font-size:.86rem}
-  .btnPractice{padding:8px 6px;font-size:.72rem}
-  .weatherInfoBottom{font-size:.52rem;padding-top:4px}
+  .menuRateBadge .mrbLabel{font-size:.44rem}
+  .menuRateBadge b{font-size:.84rem}
+  .btnPractice{padding:7px 6px;font-size:.7rem}
+  .weatherInfoBottom{font-size:.5rem;padding-top:3px}
 }
 
 /* ==========================================================================

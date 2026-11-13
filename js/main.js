@@ -3227,10 +3227,7 @@ function initMenu() {
     enteredStartMenu = true;
     clock.getDelta();
     const ld = $('loading');
-    if (ld) {
-      ld.classList.add('hidden');
-      ld.classList.remove('readyToStart');
-    }
+    if (ld) ld.classList.add('hidden');
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       unlockAudioNow().then((ok) => {
         if (ok && state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
@@ -3254,52 +3251,10 @@ function initMenu() {
     resetHailCooldowns: () => { globalHailCD = 0; pairHailUntil.clear(); for (const b of boats) b.hailCD = 0; },
   };
 
-  // 自動再生が既に許可されている環境(リロード・MEI高スコア・事前タップ済)では即座にスタート画面へ遷移してBGM再生、
-  // ブラウザが初回ジェスチャー待ちでAudioContextをブロックしている場合はロード画面の「▶ タップしてスタート」でアンロックと同時にスタート画面＆BGMを開始する
-  let audioReady = false;
-  if (cfg.bgmMode !== 'off') {
-    try {
-      audioReady = await Promise.race([
-        unlockAudioNow(),
-        new Promise((resolve) => setTimeout(() => resolve(isAudioRunning()), 120))
-      ]);
-    } catch (e) {
-      audioReady = isAudioRunning();
-    }
-  }
-
-  if (audioReady || isAudioRunning() || cfg.bgmMode === 'off' || q.has('auto') || q.has('testmode')) {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => enterStartMenu());
-    });
-    setTimeout(enterStartMenu, 260);
-  } else {
-    const ld = $('loading');
-    const stTxt = $('loadStatusText');
-    const barWrap = $('loadBarWrap');
-    const startSplashBtn = $('loadStartBtn');
-    if (ld) ld.classList.add('readyToStart');
-    if (stTxt) stTxt.innerHTML = '<span>READY</span> — SNIPE CLASS REGATTA';
-    if (barWrap) barWrap.classList.add('hidden');
-    if (startSplashBtn) startSplashBtn.classList.remove('hidden');
-
-    const onSplashActivate = (ev) => {
-      if (ev && ev.type === 'keydown' && (ev.metaKey || ev.ctrlKey || ev.altKey)) return;
-      if (ld) {
-        ld.removeEventListener('click', onSplashActivate);
-        ld.removeEventListener('touchend', onSplashActivate);
-      }
-      if (startSplashBtn) startSplashBtn.removeEventListener('click', onSplashActivate);
-      window.removeEventListener('keydown', onSplashActivate);
-      enterStartMenu();
-    };
-    if (ld) {
-      ld.addEventListener('click', onSplashActivate);
-      ld.addEventListener('touchend', onSplashActivate, { passive: true });
-    }
-    if (startSplashBtn) startSplashBtn.addEventListener('click', onSplashActivate);
-    window.addEventListener('keydown', onSplashActivate);
-  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => enterStartMenu());
+  });
+  setTimeout(enterStartMenu, 220);
 
   if (q.has('auto')) {
     enterStartMenu();

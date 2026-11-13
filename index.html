@@ -6,24 +6,24 @@
   <title>スナイプ級 | ブラウザで遊ぶヨットレースゲーム</title>
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
-  <link rel="stylesheet" href="style.css?v=20261112d">
+  <link rel="stylesheet" href="style.css?v=20261113a">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261112d",
-      "./js/sim.js": "./js/sim.js?v=20261112d",
-      "./js/review.js": "./js/review.js?v=20261112d",
-      "./js/ai.js": "./js/ai.js?v=20261112d",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261112d",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261112d",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261112d",
-      "./js/crew.js": "./js/crew.js?v=20261112d",
-      "./js/camera.js": "./js/camera.js?v=20261112d",
-      "./js/course.js": "./js/course.js?v=20261112d",
-      "./js/rules.js": "./js/rules.js?v=20261112d",
-      "./js/audio.js": "./js/audio.js?v=20261112d"
+      "./js/world.js": "./js/world.js?v=20261113a",
+      "./js/sim.js": "./js/sim.js?v=20261113a",
+      "./js/review.js": "./js/review.js?v=20261113a",
+      "./js/ai.js": "./js/ai.js?v=20261113a",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261113a",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261113a",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261113a",
+      "./js/crew.js": "./js/crew.js?v=20261113a",
+      "./js/camera.js": "./js/camera.js?v=20261113a",
+      "./js/course.js": "./js/course.js?v=20261113a",
+      "./js/rules.js": "./js/rules.js?v=20261113a",
+      "./js/audio.js": "./js/audio.js?v=20261113a"
     }
   }
   </script>
@@ -36,7 +36,6 @@
     </div>
     <p id="loadStatusText">Loading <span id="loadPct">0</span>%</p>
     <div id="loadBarWrap" class="loadBar"><div id="loadFill"></div></div>
-    <button id="loadStartBtn" class="loadStartBtn hidden" type="button">▶ タップしてスタート</button>
   </div>
   <script>
   // 読み込み進捗 & 実ゲーム3D画面と親和性の高い高精細ドット絵(八景島エリア / 江の島エリア + 白FRPスナイプ JPN 31804)
@@ -305,14 +304,14 @@
         if (venue === 'hakkeijima') {
           // 遠景の房総半島うっすらシルエット
           poly([[186, 62], [202, 58], [228, 57], [240, 59], [240, 62]], '#94b8d8');
-          // 左奥: 南本牧ふ頭 ＆ 細身で間隔を空けた5基の赤白ガントリークレーン (修正後の実景準拠)
+          // 左奥: 磯子・並木〜南本牧ふ頭の紅白ガントリークレーン列
           px(0, 59, 48, 3, '#64748b');
-          var craneXs = [7, 15, 24, 33, 42];
+          var craneXs = [4, 10, 17, 24, 31, 37, 43];
           for (var ci = 0; ci < craneXs.length; ci++) {
             var gx = craneXs[ci];
             px(gx, 48, 1, 11, '#dc2626');
             px(gx, 52, 1, 3, '#f8fafc');
-            px(gx - 3, 50, 7, 1, '#dc2626');
+            px(gx - 2, 50, 5, 1, '#dc2626');
           }
           // 左中景: 金沢・幸浦護岸、緑地、4基の銀色卵形消化タンク、幸浦清掃工場の赤白煙突
           poly([[44, 60], [52, 55], [76, 54], [96, 56], [98, 60]], '#2b5d34');
@@ -842,6 +841,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261112d"></script>
+  <script type="module" src="js/main.js?v=20261113a"></script>
 </body>
 </html>
