@@ -1,7 +1,7 @@
 // ゲーム本体: 初期化・状態管理・HUD
 import * as THREE from 'three';
 import { createWorld, MOBILE, SUN_DIR } from './world.js';
-import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BOAT_LEN, OBSTACLES, BASE_WIND_KT, SIDE_BIAS, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
+import { Boat, resolveCollisions, computeBlanket, sheetOpt, KT, SPEED_SCALE, BOAT_LEN, OBSTACLES, BASE_WIND_KT, SIDE_BIAS, POLE_MIN, setWindParams, wrap, clamp, rebuildObstacles, SEA, setSeaState, TIDE, setTideState, randomizeWindShifts, SHIFT_LOG, shiftAt, windAt } from './sim.js';
 import { Recorder, openReview, serializeReviewSnapshot, deserializeReviewSnapshot, buildFallbackReviewFromRecord } from './review.js';
 import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
@@ -1924,7 +1924,7 @@ function playerControl(dt) {
       if (on) {
         if (steerHold[k] === 0) hTarget = wrap(hTarget + s * DEG); // タップ = 1°
         steerHold[k] += dt;
-        if (steerHold[k] > 0.25) hTarget = wrap(hTarget + s * Math.min(60, 20 + (steerHold[k] - 0.25) * 60) * DEG * dt);
+        if (steerHold[k] > 0.16) hTarget = wrap(hTarget + s * Math.min(64, 28 + (steerHold[k] - 0.16) * 65) * DEG * dt);
       }
     }
     closeHoldLock.autoDir = 0;
@@ -1995,6 +1995,15 @@ function playerControl(dt) {
     }
   }
 
+  // ランチャー展開中は目標針路(hTarget)が POLE_MIN(100°)より風上へ張り付いてラダー抵抗を出し続けないようクランプ
+  if (b.pole && !b.maneuver && !b.penalty) {
+    const relTgt = wrap(curWind - hTarget);
+    if (Math.abs(relTgt) < POLE_MIN) {
+      const poleSign = b.tack || Math.sign(relTgt) || 1;
+      hTarget = wrap(curWind - poleSign * POLE_MIN);
+    }
+  }
+
   let err = wrap(hTarget - b.h);
   if (Math.abs(err) > 0.12) { hTarget = wrap(b.h + Math.sign(err) * 0.12); err = wrap(hTarget - b.h); } // 目標針路の先行を約7°に制限(舵の慣性を抑える)
   // ランチャー制限などで目標針路へ向けない状態が続いたら目標を現在の針路に合わせる
@@ -2009,7 +2018,7 @@ function playerControl(dt) {
     let tg = b.sOpt;
     if (dn) tg = Math.max(0.05, b.sOpt - 0.55);
     else if (up) tg = Math.min(1, b.sOpt + 0.62);
-    const rate = up ? 6.8 : 3.0;
+    const rate = up ? 6.8 : 4.8;
     b.sheet += (tg - b.sheet) * (1 - Math.exp(-dt * rate));
   } else {
     if (up) b.sheet = Math.min(1, b.sheet + dt * 1.35);

@@ -386,8 +386,8 @@ export function computeBlanket(boats) {
       const ahead = rx * fx + rz * fz;
       const leeDist = rx * lx + rz * lz;
       const isRearSide = ahead < 0.8;
-      // リーチングでは風下ブランケットが後ろ側(isRearSide)にもう少し広がるよう真風角余弦と横幅を拡張
-      const minTrueCos = isRearSide ? baseMinTrueCos - 0.26 * reachFactor : baseMinTrueCos;
+      // リーチングでは見かけ風が前寄りになるため、真風下後方への過度な拡張を抑え風上至近艇のブランケットのみを的確に反映
+      const minTrueCos = isRearSide ? baseMinTrueCos - 0.10 * reachFactor : baseMinTrueCos;
 
       // 真風方向でA艇が風上側にいない場合(横並びや前方を走っている場合)はブランケットにならない
       const alongTrue = rx * twx + rz * twz;
@@ -398,8 +398,8 @@ export function computeBlanket(boats) {
         if (along > 1.1 && along < maxLen) {
           const signedLat = -rx * sz + rz * sx;
           const lat = Math.abs(signedLat);
-          const rearSpread = isRearSide ? 1 + 0.78 * reachFactor * clamp((-ahead + 1.5) / 6.5, 0, 1) : 1.0;
-          const half = (sailProj + along * (0.125 + (isRearSide ? 0.115 * reachFactor : 0))) * rearSpread;
+          const rearSpread = isRearSide ? 1 + 0.25 * reachFactor * clamp((-ahead + 1.2) / 5.5, 0, 1) : 1.0;
+          const half = (sailProj + along * (0.120 + (isRearSide ? 0.035 * reachFactor : 0))) * rearSpread;
           if (lat < half) {
             const normDist = clamp((along - 1.1) / (maxLen - 1.1), 0, 1);
             const distFactor = Math.pow(1 - Math.pow(normDist, 1.28), 1.45);
@@ -408,7 +408,8 @@ export function computeBlanket(boats) {
             const trueAlign = smoothstep(minTrueCos, Math.min(0.95, minTrueCos + 0.18), alongTrue / dist);
             const bestS = clamp(distFactor * trueAlign * (0.80 * coreFactor + 0.20 * edgeFactor), 0, 1.0);
             if (bestS > 0.01) {
-              B.coverT = clamp(B.coverT + bestS, 0, 1.0);
+              // リーチング隊列で遠くの複数艇の端影が線形合算されて過剰な減速にならないよう減衰合成する
+              B.coverT = clamp(1 - (1 - B.coverT) * (1 - bestS * (1 - 0.18 * reachFactor)), 0, 1.0);
               // 風影内ではセール後流の乱れで風向がヘダー(頭を抑えられる悪風)になる
               if (B.twa < 1.55 && bestS > 0.14) {
                 B.windBendT -= bestS * 0.048;
@@ -917,11 +918,11 @@ export class Boat {
     // タック回頭中は惰性が残るため減速を大幅に抑える
     const rawPolarV = polar(twaDeg, localWindKt) * SPEED_SCALE;
     let polarV = turning ? Math.max(rawPolarV, V45_CLOSE * SPEED_SCALE * 0.74) : rawPolarV;
-    // リーチング(58°〜135°)でのぼした(ラフした)際、見かけ風速(AWS)の増加とスロット効果で艇速が一段伸びる実艇の特性
-    if (twaDeg >= 58 && twaDeg <= 135 && !this.pole) {
-      const reachSlot = Math.sin(((clamp(twaDeg, 60, 115) - 60) / 55) * Math.PI); // 60°〜115°(ピーク約85°付近)
-      const isLuffingUp = steer * this.tack < -0.02 ? clamp(-steer * this.tack, 0, 0.8) : 0;
-      const reachBoost = 1 + 0.045 * reachSlot + 0.038 * isLuffingUp * smoothstep(65, 130, twaDeg);
+    // リーチング(58°〜135°)でのぼした(ラフした: steer * this.tack > 0)際、見かけ風速(AWS)の増加とスロット効果で艇速が一段伸びる実艇の特性
+    if (twaDeg >= 58 && twaDeg <= 135) {
+      const reachSlot = Math.sin(((clamp(twaDeg, 58, 132) - 58) / 74) * Math.PI) * (1 - 0.55 * this.poleK * smoothstep(108, 130, twaDeg));
+      const isLuffingUp = steer * this.tack > 0.02 ? clamp(steer * this.tack, 0, 0.8) : 0;
+      const reachBoost = 1 + 0.045 * reachSlot + 0.038 * isLuffingUp * smoothstep(62, 128, twaDeg) * (1 - 0.7 * this.poleK);
       polarV *= reachBoost;
     }
     // 180°近く〜180°を超えてバイザリー(180°〜200°)に入った際はメインセールがジブを隠し気流が剥離して艇速が大きく落ちる
@@ -931,10 +932,14 @@ export class Boat {
       const byLeePenalty = 0.10 * near180 + 0.26 * clamp(over180 / 18, 0, 1); // 180°超で最大約36%減速
       polarV *= (1 - byLeePenalty);
     }
-    // ランチャー: 下レグ(深い角度)でジブが開き、センターボード引き上げ(抵抗減)＆フォアステイ緩和で速くなる。リーチより上では逆効果
-    const poleF = 1 + this.poleK * (0.072 * smoothstep(1.80, 2.55, twa) - 0.35 * clamp(POLE_MIN + 0.1 - twa, 0, 1));
-    const steerDrag = (twaDeg >= 58 && twaDeg <= 135 && steer * this.tack < 0) ? 0.06 : 0.18; // リーチングでのぼす舵は失速しにくい
-    let target = polarV * Math.pow(w.f, 0.8) * this.skill * eff * poleF * (1 - (turning ? 0.022 : steerDrag) * Math.abs(steer)) * this.throttle;
+    // ランチャー: 下レグ(100°以上)でジブが開き、センターボード引き上げ(抵抗減)＆フォアステイ緩和で速くなる。100°未満では逆効果
+    const poleF = 1 + this.poleK * (0.068 * smoothstep(POLE_MIN, 2.55, twa) - 0.35 * clamp(POLE_MIN - 0.02 - twa, 0, 1));
+    const isReachBand = twaDeg >= 58 && twaDeg <= 140;
+    const steerDrag = isReachBand ? (steer * this.tack > 0 ? 0.045 : 0.085) : 0.18; // リーチングは水流が速く、特にのぼす舵は失速しにくい
+    // スナイプ級のワンデザイン特性: クローズやランニングのVMG勝負では技量差(skill)が出る一方、直線ハルスピード勝負のリーチングでは不自然な速度差が出ないよう圧縮
+    const reachHullBand = smoothstep(50, 68, twaDeg) * (1 - 0.65 * smoothstep(134, 154, twaDeg));
+    const effSkill = 1 + (this.skill - 1) * (1 - 0.80 * reachHullBand);
+    let target = polarV * Math.pow(w.f, 0.8) * effSkill * eff * poleF * (1 - (turning ? 0.022 : steerDrag) * Math.abs(steer)) * this.throttle;
     // 波: 順風以上のランニング・リーチングでは波に乗ったり(サーフィン加速)、波から下りたり(谷・裏斜面での減速)で艇速が変化する挙動
     {
       const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));
@@ -947,17 +952,17 @@ export class Boat {
       const downFactor = smoothstep(1.05, 1.70, twa);   // リーチング〜ランニング
       const runDeep = smoothstep(1.85, 2.65, twa);      // 特にランニング(106°〜152°+)で波乗り・波間の速度差が顕著になる
       const upw = 1 - downFactor;
-      const down = smoothstep(1.15, 1.85, twa);
+      const down = smoothstep(1.55, 2.28, twa);
       const poundScale = (0.35 + 1.15 * slowFactor) * (1 - 0.72 * downFactor * speedNorm);
       let wf = 1 - upw * 0.15 * Hn * SEA.steep * (0.58 + 0.98 * Math.max(0, climb)) * poundScale;
       if (turning) wf -= 0.11 * Hn * SEA.steep * (0.58 + 0.58 * slowFactor);
 
       // ランニング・リーチングでのサーフィン加速と波間の減速: スピード変化はほぼ元通りとし、ほんのわずかだけ反映
       const windOk = clamp((localWindKt - 7.8) / 6.5, 0.08, 1.35);
-      const naturalSurf = down * (SEA.surf + 0.18 * runDeep) * Math.max(0, -climb) * (0.50 + 1.05 * windOk) * clamp(this.v / (1.9 * SPEED_SCALE), 0.35, 1.18);
+      const naturalSurf = down * (SEA.surf * (0.62 + 0.38 * runDeep) + 0.18 * runDeep) * Math.max(0, -climb) * (0.50 + 1.05 * windOk) * clamp(this.v / (1.9 * SPEED_SCALE), 0.35, 1.18);
       // 波から下りた時・次の波の裏斜面(climb > 0)に入った時の減速(ほぼ元通り＋ほんのわずか)
-      const waveOffSlow = down * (0.10 + 0.17 * runDeep) * Math.max(0, climb) * (0.42 + 0.80 * windOk);
-      wf += naturalSurf - waveOffSlow;
+      const waveOffSlow = down * (0.08 + 0.17 * runDeep) * Math.max(0, climb) * (0.42 + 0.80 * windOk);
+      wf += clamp(naturalSurf - waveOffSlow, -0.14, 0.15 + 0.11 * runDeep);
       this.isSurfing = naturalSurf > 0.10 && down > 0.25;
       // ランニングで波に乗る時はバウが下がり気味(負のピッチ)、波から下りる時はバウが上がり気味(正のピッチ)になる挙動
       const surfWaveK = Math.pow(Math.max(0, -climb), 0.85);
