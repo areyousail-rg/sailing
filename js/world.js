@@ -1876,6 +1876,35 @@ export function createWorld(scene) {
     }
   };
 
+  const drawBoldArrow = (ctx, xLeft, cy, w, dir, col) => {
+    ctx.save();
+    ctx.fillStyle = col;
+    const headW = 30, headH = 48, shaftH = 15;
+    ctx.beginPath();
+    if (dir < 0) {
+      // 左矢印 ←
+      ctx.moveTo(xLeft, cy);
+      ctx.lineTo(xLeft + headW, cy - headH / 2);
+      ctx.lineTo(xLeft + headW, cy - shaftH / 2);
+      ctx.lineTo(xLeft + w, cy - shaftH / 2);
+      ctx.lineTo(xLeft + w, cy + shaftH / 2);
+      ctx.lineTo(xLeft + headW, cy + shaftH / 2);
+      ctx.lineTo(xLeft + headW, cy + headH / 2);
+    } else {
+      // 右矢印 →
+      ctx.moveTo(xLeft + w, cy);
+      ctx.lineTo(xLeft + w - headW, cy - headH / 2);
+      ctx.lineTo(xLeft + w - headW, cy - shaftH / 2);
+      ctx.lineTo(xLeft, cy - shaftH / 2);
+      ctx.lineTo(xLeft, cy + shaftH / 2);
+      ctx.lineTo(xLeft + w - headW, cy + shaftH / 2);
+      ctx.lineTo(xLeft + w - headW, cy + headH / 2);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
   const updateStartLabel = () => {
     const skewDeg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
     const isEven = FAVORED === 'even' || skewDeg === 0;
@@ -1883,14 +1912,14 @@ export function createWorld(scene) {
     const ctx = startCanvas.getContext('2d');
     ctx.clearRect(0, 0, 1280, 440);
 
-    const px = 86, py = 24, pw = 1108, ph = 186;
+    const px = 86, py = 20, pw = 1108, ph = 172;
 
     // 1) メインバナー筐体: シャープなスラント面取りダークマリングラス
     ctx.save();
     ctx.shadowColor = 'rgba(2, 8, 20, 0.72)';
     ctx.shadowBlur = 22;
     ctx.shadowOffsetY = 8;
-    drawChamferPlate(ctx, px, py, pw, ph, 28);
+    drawChamferPlate(ctx, px, py, pw, ph, 26);
     const bgGrad = ctx.createLinearGradient(px, py, px, py + ph);
     bgGrad.addColorStop(0.00, 'rgba(11, 24, 43, 0.95)');
     bgGrad.addColorStop(0.52, 'rgba(6, 13, 26, 0.97)');
@@ -1901,7 +1930,7 @@ export function createWorld(scene) {
 
     // 内部アクセント光沢＆両翼レーシングストライプ
     ctx.save();
-    drawChamferPlate(ctx, px, py, pw, ph, 28);
+    drawChamferPlate(ctx, px, py, pw, ph, 26);
     ctx.clip();
 
     const sheen = ctx.createLinearGradient(px, py, px + pw * 0.65, py + ph);
@@ -1911,12 +1940,12 @@ export function createWorld(scene) {
     ctx.fillStyle = sheen;
     ctx.fillRect(px, py, pw, ph);
 
-    // 左ウイング: シグナルオレンジ＆レガッタゴールドの斜めツインシェブロン
+    // 両翼: シグナルオレンジ＆レガッタゴールドの斜めツインシェブロン
     const drawSlash = (sx, w, col) => {
       ctx.fillStyle = col;
       ctx.beginPath();
-      ctx.moveTo(sx + 34, py);
-      ctx.lineTo(sx + 34 + w, py);
+      ctx.moveTo(sx + 32, py);
+      ctx.lineTo(sx + 32 + w, py);
       ctx.lineTo(sx + w, py + ph);
       ctx.lineTo(sx, py + ph);
       ctx.closePath();
@@ -1940,110 +1969,155 @@ export function createWorld(scene) {
     ctx.restore();
 
     // メタリック極細リム枠線
-    drawChamferPlate(ctx, px, py, pw, ph, 28);
+    drawChamferPlate(ctx, px, py, pw, ph, 26);
     ctx.strokeStyle = 'rgba(148, 205, 248, 0.56)';
     ctx.lineWidth = 2.6;
     ctx.stroke();
 
-    // 2) 上部マイクロアイブロウ (OFFICIAL REGATTA COURSE)
-    ctx.save();
-    ctx.strokeStyle = 'rgba(125, 211, 252, 0.36)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(320, 56); ctx.lineTo(445, 56);
-    ctx.moveTo(835, 56); ctx.lineTo(960, 56);
-    ctx.stroke();
-    ctx.fillStyle = '#7dd3fc';
-    ctx.font = '800 21px "Outfit", "Helvetica Neue", Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    drawSpacedTitle(ctx, 'OFFICIAL RACE START', 640, 56, 5.5);
-    ctx.restore();
-
-    // 3) START LINE メインタイポグラフィ (メタリックホワイト立体文字＋ワイドトラッキング)
+    // 2) START LINE メインタイポグラフィ (上部の細かい文字を排し、プレート中央へ大きくクリアに配置)
     ctx.save();
     ctx.shadowColor = 'rgba(0, 6, 16, 0.85)';
     ctx.shadowBlur = 12;
     ctx.shadowOffsetY = 4;
-    ctx.font = '900 102px "Outfit", "Arial Black", "Hiragino Kaku Gothic ProN", sans-serif';
+    ctx.font = '900 110px "Outfit", "Arial Black", "Hiragino Kaku Gothic ProN", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const txtGrad = ctx.createLinearGradient(0, 86, 0, 186);
+    const txtGrad = ctx.createLinearGradient(0, py + 28, 0, py + ph - 24);
     txtGrad.addColorStop(0.00, '#ffffff');
     txtGrad.addColorStop(0.62, '#f8fafc');
     txtGrad.addColorStop(1.00, '#cbd5e1');
     ctx.fillStyle = txtGrad;
-    drawSpacedTitle(ctx, 'START LINE', 640, 136, 9);
+    drawSpacedTitle(ctx, 'START LINE', 640, py + ph * 0.52, 8.5);
     ctx.restore();
 
-    // 4) 下段: 有利サイド・タクティカルポッド
+    // 3) 下段: 大型化した有利サイド・タクティカルポッド
     if (showPreStartFav) {
-      const bx = 186, by = 226, bw = 908, bh = 114;
+      const bx = 86, by = 206, bw = 1108, bh = 188;
+      const cy = by + bh * 0.5;
       ctx.save();
-      ctx.shadowColor = 'rgba(2, 8, 20, 0.68)';
-      ctx.shadowBlur = 16;
-      ctx.shadowOffsetY = 5;
-      drawChamferPlate(ctx, bx, by, bw, bh, 18);
-      ctx.fillStyle = 'rgba(7, 16, 30, 0.95)';
+      ctx.shadowColor = 'rgba(2, 8, 20, 0.72)';
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetY = 6;
+      drawChamferPlate(ctx, bx, by, bw, bh, 24);
+      const podGrad = ctx.createLinearGradient(bx, by, bx, by + bh);
+      podGrad.addColorStop(0.0, 'rgba(10, 22, 40, 0.96)');
+      podGrad.addColorStop(1.0, 'rgba(5, 12, 24, 0.97)');
+      ctx.fillStyle = podGrad;
       ctx.fill();
-      ctx.strokeStyle = isEven ? 'rgba(125, 211, 252, 0.65)' : 'rgba(251, 191, 36, 0.82)';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = isEven ? 'rgba(125, 211, 252, 0.72)' : 'rgba(251, 191, 36, 0.92)';
+      ctx.lineWidth = 4;
       ctx.stroke();
       ctx.restore();
 
-      // 角度ピルバッジ + 有利サイドテキストを一体レイアウト
       ctx.save();
       ctx.textBaseline = 'middle';
+      const fontSide = '900 66px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      const fontYuri = '900 70px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+      const fontDeg = '900 76px "Outfit", "Arial Black", sans-serif';
+
       if (isEven) {
-        // EVEN LINE バッジ
-        drawChamferPlate(ctx, 336, by + 22, 148, 70, 12);
+        // EVEN 有利なし [ 0° ]
+        const labelStr = 'EVEN  有利なし';
+        ctx.font = fontYuri;
+        const tw = ctx.measureText(labelStr).width;
+        const pillW = 196, pillH = 122, gap = 34;
+        const totW = tw + gap + pillW;
+        const startX = 640 - totW / 2;
+
+        ctx.fillStyle = '#e0f2fe';
+        ctx.textAlign = 'left';
+        ctx.fillText(labelStr, startX, cy + 2);
+
+        const pillX = startX + tw + gap;
+        drawChamferPlate(ctx, pillX, cy - pillH / 2, pillW, pillH, 16);
         ctx.fillStyle = '#0ea5e9';
         ctx.fill();
         ctx.fillStyle = '#04111f';
-        ctx.font = '900 40px "Outfit", sans-serif';
+        ctx.font = fontDeg;
         ctx.textAlign = 'center';
-        ctx.fillText('±0°', 410, by + 58);
+        ctx.fillText('0°', pillX + pillW / 2, cy + 3);
+      } else if (!isCom) {
+        // アウター(左)有利: ← アウターサイド 有利 [ X° ]
+        const sideStr = 'アウターサイド';
+        const yuriStr = '有利';
+        const degStr = `${skewDeg}°`;
+        const arrowW = 68, gap1 = 24, gap2 = 26, gap3 = 30;
+        ctx.font = fontSide;
+        const sideW = ctx.measureText(sideStr).width;
+        ctx.font = fontYuri;
+        const yuriW = ctx.measureText(yuriStr).width;
+        ctx.font = fontDeg;
+        const pillW = Math.max(204, Math.ceil(ctx.measureText(degStr).width + 64));
+        const pillH = 124;
+        const totW = arrowW + gap1 + sideW + gap2 + yuriW + gap3 + pillW;
+        let curX = 640 - totW / 2;
 
-        ctx.fillStyle = '#e0f2fe';
-        ctx.font = '800 46px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+        drawBoldArrow(ctx, curX, cy, arrowW, -1, '#fde047');
+        curX += arrowW + gap1;
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 6, 16, 0.75)';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#fde047';
+        ctx.font = fontSide;
         ctx.textAlign = 'left';
-        ctx.fillText('EVEN  有利なし', 512, by + 58);
-      } else if (isCom) {
-        // 本部船(右・上)有利: [ +X° ] 上有利 (本部船側) ▶▶
-        drawChamferPlate(ctx, 224, by + 21, 166, 72, 12);
+        ctx.fillText(sideStr, curX, cy + 2);
+        curX += sideW + gap2;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = fontYuri;
+        ctx.fillText(yuriStr, curX, cy + 2);
+        curX += yuriW + gap3;
+        ctx.restore();
+
+        drawChamferPlate(ctx, curX, cy - pillH / 2, pillW, pillH, 16);
         ctx.fillStyle = '#fbbf24';
         ctx.fill();
         ctx.fillStyle = '#08111d';
-        ctx.font = '900 45px "Outfit", sans-serif';
+        ctx.font = fontDeg;
         ctx.textAlign = 'center';
-        ctx.fillText(`+${skewDeg}°`, 307, by + 58);
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '900 50px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText('上有利', 416, by + 58);
-
-        ctx.fillStyle = '#fde047';
-        ctx.font = '800 38px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
-        ctx.fillText('本部船サイド  ▶▶', 592, by + 58);
+        ctx.fillText(degStr, curX + pillW / 2, cy + 4);
       } else {
-        // アウター(左・下)有利: ◀◀ アウターサイド 下有利 [ +X° ]
+        // 本部船(右)有利: 本部船サイド 有利 [ X° ] →
+        const sideStr = '本部船サイド';
+        const yuriStr = '有利';
+        const degStr = `${skewDeg}°`;
+        const arrowW = 68, gap1 = 26, gap2 = 30, gap3 = 26;
+        ctx.font = fontSide;
+        const sideW = ctx.measureText(sideStr).width;
+        ctx.font = fontYuri;
+        const yuriW = ctx.measureText(yuriStr).width;
+        ctx.font = fontDeg;
+        const pillW = Math.max(204, Math.ceil(ctx.measureText(degStr).width + 64));
+        const pillH = 124;
+        const totW = sideW + gap1 + yuriW + gap2 + pillW + gap3 + arrowW;
+        let curX = 640 - totW / 2;
+
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 6, 16, 0.75)';
+        ctx.shadowBlur = 8;
         ctx.fillStyle = '#fde047';
-        ctx.font = '800 38px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
+        ctx.font = fontSide;
         ctx.textAlign = 'left';
-        ctx.fillText('◀◀  アウターサイド', 226, by + 58);
+        ctx.fillText(sideStr, curX, cy + 2);
+        curX += sideW + gap1;
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = '900 50px "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif';
-        ctx.fillText('下有利', 688, by + 58);
+        ctx.font = fontYuri;
+        ctx.fillText(yuriStr, curX, cy + 2);
+        curX += yuriW + gap2;
+        ctx.restore();
 
-        drawChamferPlate(ctx, 882, by + 21, 166, 72, 12);
+        drawChamferPlate(ctx, curX, cy - pillH / 2, pillW, pillH, 16);
         ctx.fillStyle = '#fbbf24';
         ctx.fill();
         ctx.fillStyle = '#08111d';
-        ctx.font = '900 45px "Outfit", sans-serif';
+        ctx.font = fontDeg;
         ctx.textAlign = 'center';
-        ctx.fillText(`+${skewDeg}°`, 965, by + 58);
+        ctx.fillText(degStr, curX + pillW / 2, cy + 4);
+        curX += pillW + gap3;
+
+        drawBoldArrow(ctx, curX, cy, arrowW, 1, '#fde047');
       }
       ctx.restore();
     }
@@ -2870,7 +2944,7 @@ export function createWorld(scene) {
       // 2) START LINE / FINISH ラベル: 遠くからでもしっかり大きく読めつつ、接近時も洗練されたバランスを保つよう距離比例スケールを調整
       if (startLabel) {
         const dStart = Math.hypot(startLabel.position.x - cx, startLabel.position.z - cz);
-        const sw = clampN(6.6 + dStart * 0.29, 11.4, 70.0);
+        const sw = clampN(7.4 + dStart * 0.33, 12.6, 78.0);
         const sh = sw * (440 / 1280);
         startLabel.scale.set(sw, sh, 1);
         startLabel.position.y = 2.5 + sh * 0.56;

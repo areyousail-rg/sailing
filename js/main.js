@@ -1349,8 +1349,8 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
   if (stepIdx === 0) {
     updateOrientVisualPointer([
       '#timerPanel',
-      // startCanvas (960x350) 内の START LINE プレート＋有利サイドバッジ描画領域 (x=84..876, y=22..282) を正確に囲む
-      { worldObj: world.startLabel, u0: 0.082, u1: 0.918, v0: 0.055, v1: 0.815, arrowDir: 'down' },
+      // startCanvas (1280x440) 内の START LINE プレート＋大型有利サイドポッド描画領域 (x=86..1194, y=20..394) を正確に囲む
+      { worldObj: world.startLabel, u0: 0.062, u1: 0.938, v0: 0.04, v1: 0.90, arrowDir: 'down' },
     ]);
   } else if (stepIdx === 1) {
     if (elapsed < 5.6) {
