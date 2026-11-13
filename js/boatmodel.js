@@ -602,8 +602,8 @@ const TT_HEIGHTS = [0.28, 0.50, 0.72], TT_V = 0.14; // 視認しやすい位置
 // サイドステー(シュラウド): 広くなった船体幅(x=0.72)と高くなったリグに合わせてチェーンプレート → スプレッダー先端
 const SHROUD_A = [0.72, 0.375, -0.75], SHROUD_B = [0.64, 3.85, -0.92];
 const onShroud = (y) => { const t = (y - SHROUD_A[1]) / (SHROUD_B[1] - SHROUD_A[1]); return [SHROUD_A[0] + (SHROUD_B[0] - SHROUD_A[0]) * t, y, SHROUD_A[2] + (SHROUD_B[2] - SHROUD_A[2]) * t]; };
-// ランチャー(ウィスカーポール): ブーム基部(グースネック付近 y=1.36)からジブクリューの先端まで正確に伸びる
-const POLE_ROOT = new THREE.Vector3(0, 1.36, -0.92);
+// ランチャー(ウィスカーポール): ブーム基部ポート側(左舷 -x, y=1.365)からジブクリューの先端まで正確に伸びる
+const POLE_ROOT = new THREE.Vector3(-0.044, 1.365, -0.945);
 const poleGeo = new THREE.CylinderGeometry(0.015, 0.017, 1, 8); poleGeo.translate(0, 0.5, 0);
 // シート用共有ジオメトリ (毎フレームのジオメトリ生成・破棄をゼロにしてGPUメモリ負荷と描画崩れを完全解消)
 const sheetSegGeo = new THREE.CylinderGeometry(0.0064, 0.0064, 1, 6); sheetSegGeo.translate(0, 0.5, 0);
@@ -1103,17 +1103,20 @@ export class BoatModel {
       this.forestaySegs.push(fs);
     }
     this.syncForestay(0, boat.tack);
-    // ランチャーポール(全艇): 使わない時はブーム脇に沿って格納し、先端がマストよりほんのわずかに前(z=-0.105)へ突き出る実艇の配置を再現
+    // ランチャーポール(全艇): 実艇どおりブームのポート(左舷: -x)側脇に沿って格納し、先端がマストのポート側前方(z=-0.105)へ突き出る配置を再現
     this.pole = new THREE.Mesh(poleGeo, spar); this.pole.position.copy(POLE_ROOT); this.pole.visible = false; this.body.add(this.pole);
     this.poleTipRing = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.0045, 8, 14), M.steel);
     this.body.add(this.poleTipRing);
     const stowGeo = new THREE.CylinderGeometry(0.013, 0.013, 2.26, 8); stowGeo.rotateX(Math.PI / 2);
-    this.poleStow = new THREE.Mesh(stowGeo, spar); this.poleStow.position.set(0.044, 0.965, 1.025); this.mainPivot.add(this.poleStow);
+    this.poleStow = new THREE.Mesh(stowGeo, spar); this.poleStow.position.set(-0.044, 0.965, 1.025); this.mainPivot.add(this.poleStow);
     const stowCap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.032, 8), M.dark);
     stowCap.rotation.x = Math.PI / 2;
     stowCap.position.set(0, 0, -1.13);
     this.poleStow.add(stowCap);
-    for (const zz of [-0.01, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.035), M.alu); clip.position.set(0.038, 0.985, zz); this.mainPivot.add(clip); }
+    const mastPoleRing = new THREE.Mesh(new THREE.TorusGeometry(0.019, 0.0038, 8, 14), M.steel);
+    mastPoleRing.position.set(-0.042, 0.965, -0.045);
+    this.mainPivot.add(mastPoleRing);
+    for (const zz of [-0.01, 1.95]) { const clip = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.035), M.alu); clip.position.set(-0.038, 0.985, zz); this.mainPivot.add(clip); }
     this.jibRot = 0;
 
     // 船内カメラ用マウント(スキッパーの目線／少し高めのデッキ後方視点)
@@ -1572,12 +1575,13 @@ export class BoatModel {
 
     this.poleStow.visible = pk <= 0.01;
     if (pk > 0.01) {
-      const boomSlide = (1 - pk) * 0.45;
       const pm = this.boomRotY;
+      const rootXl = -0.044; // ポート(左舷)側のマストランチャーリング・ブーム脇を通って展開
+      const rootZl = -0.045 + (1 - pk) * 0.45;
       _root.set(
-        POLE_ROOT.x + Math.sin(pm) * boomSlide,
-        POLE_ROOT.y,
-        POLE_ROOT.z + Math.cos(pm) * boomSlide
+        rootXl * Math.cos(pm) + rootZl * Math.sin(pm),
+        1.365,
+        -0.90 - rootXl * Math.sin(pm) + rootZl * Math.cos(pm)
       );
       this.pole.position.copy(_root);
       _v.set(clewX, clewY, clewZ).sub(_root);
@@ -1604,11 +1608,9 @@ export class BoatModel {
     const poleMoving = pk > 0.03 && pk < 0.97 ? Math.sin(pk * Math.PI) : 0;
     const crewPoleAct = clamp(Math.max(this.crewPoleTimer / 1.15, poleMoving), 0, 1);
 
-    // クルー・スキッパーの乗船・ハイクアウト姿勢 ＆ 連続的に滑らかな重心移動:
-    // 舵をずっと同じ方向に切った時でもカクッと段階的に飛ばないよう、smoothstepによる連続補間と座標・回転のダンピングを適用
-    //  ・±10°以内: 真ん中(0)
-    //  ・±30°付近: 真ん中右寄り・左寄り(0.52 * sgn)
-    //  ・クローズ〜リーチ〜ラン: 上デッキ(+sgn) → 上と真ん中の間(+0.52*sgn) → センター横オフセット → 下と真ん中の間(-0.52*sgn) → 下デッキ(-sgn)
+    // クルー・スキッパーの乗船・ハイクアウト姿勢 ＆ 風速・ブローに応じた連続的な重心移動:
+    // 肌で風を感じられないゲーム画面でも「風が強くなった/弱くなった・ブローが入った」ことが一目で伝わるよう、
+    // 微風時は船内寄りに座って上体を起こし、順風〜強風・ブロー時は2人ともガンネル外縁へ出て力強くハイクアウトする
     const sStep = (e0, e1, val) => {
       const x = clamp((val - e0) / (e1 - e0), 0, 1);
       return x * x * (3 - 2 * x);
@@ -1619,17 +1621,14 @@ export class BoatModel {
     const cbLift = this.cbBoard ? this.cbBoard.position.y : 0;
     const cbRaiseBlend = sStep(0.015, 0.075, cbLift);
 
-    // クローズ時の風上デッキ量を風速(hikeAmt)に滑らかに連動 (微風時は 0.52、中〜強風時は 1.0)
-    const windwardFull = 0.52 + 0.48 * sStep(0.14, 0.34, hikeAmt);
-    // 1) 0°..10.5° は 0、10.5°..24° で 0 → 0.52 へ滑らかに遷移、24°..33° は 0.52 (±30°で真ん中右/左寄り)、33°..43° で 0.52 → windwardFull へ遷移
-    const upRise1 = sStep(10.5, 22.0, twaDeg);
-    const upRise2 = sStep(33.0, 43.0, twaDeg);
-    let sideCoeff = upRise1 * (0.52 + (windwardFull - 0.52) * upRise2);
+    // クローズ〜リーチ時の風上デッキ乗り出し量を風速・ブロー(hikeAmt)に連動 (微風 ~0.46 → 中風 ~0.68 → ブロー・強風 1.0)
+    const windwardFull = 0.46 + 0.54 * sStep(0.08, 0.72, hikeAmt);
+    const windwardMid = 0.38 + 0.20 * sStep(0.08, 0.60, hikeAmt);
+    const upRise1 = sStep(9.0, 19.0, twaDeg);
+    const upRise2 = sStep(19.0, 28.0, twaDeg);
+    let sideCoeff = upRise1 * (windwardMid + (windwardFull - windwardMid) * upRise2);
 
-    // 2) アビーム〜フリー〜ランニング (96°..164°) の連続遷移:
-    //    96°..114°: windwardFull → +0.52 (上と真ん中の間)
-    //    114°..142°: +0.52 → -0.52 (センターボード上げ時は中央0を通過せず ±0.44 を滑らかに維持して貫通を防止)
-    //    142°..162°: -0.52 → -1.0 (下デッキ)
+    // アビーム〜フリー〜ランニング (96°..164°) の連続遷移:
     if (twaDeg > 96.0) {
       const toWindMid = sStep(96.0, 112.0, twaDeg);
       const toLeeMid = sStep(114.0, 142.0, twaDeg);
@@ -1642,21 +1641,27 @@ export class BoatModel {
     const targetCrewSide = sideCoeff * sgn;
     this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 4.8));
 
-    // スキッパー・クルーの上体ハイク角度も不連続な三項演算子を廃して連続関数＋ダンピングで滑らかに補間
-    const activeHikeWindow = sStep(14.0, 38.0, twaDeg) * (1 - sStep(108.0, 145.0, twaDeg));
-    const targetHelmLean = 0.12 + clamp(hikeAmt * 0.96, 0.04, 1.24) * activeHikeWindow;
+    // スキッパーの横デッキ位置も微風時はコーミング内側寄り、強風・ブロー時はガンネル外縁へスムーズにスライド
+    const activeHikeWindow = sStep(14.0, 29.0, twaDeg) * (1 - sStep(108.0, 145.0, twaDeg));
+    const targetHelmDeck = (1 - activeHikeWindow) * 0.78 + activeHikeWindow * (0.46 + 0.54 * sStep(0.08, 0.72, hikeAmt));
+    if (this.helmDeckCur === undefined) this.helmDeckCur = targetHelmDeck;
+    this.helmDeckCur += (targetHelmDeck - this.helmDeckCur) * (1 - Math.exp(-dt * 4.8));
+    const helmDeck = this.helmDeckCur;
+
+    // スキッパー・クルーの上体ハイク角度: 微風時はほぼ直立(0.04 rad)、ブロー・強風時はしっかり上体を反らせる
+    const targetHelmLean = 0.04 + clamp((hikeAmt - 0.06) * 0.96, 0, 1.32) * activeHikeWindow;
     if (this.helmLeanCur === undefined) this.helmLeanCur = targetHelmLean;
-    this.helmLeanCur += (targetHelmLean - this.helmLeanCur) * (1 - Math.exp(-dt * 5.2));
+    this.helmLeanCur += (targetHelmLean - this.helmLeanCur) * (1 - Math.exp(-dt * 5.4));
     const lean = this.helmLeanCur;
 
-    const crewDeckFactor = sStep(0.32, 0.95, Math.abs(this.crewSide));
-    const targetCrewLean = (0.08 + clamp(hikeAmt * 1.06 * crewDeckFactor, 0, 1.36) * activeHikeWindow) * (1 - 0.85 * crewPoleAct);
+    const crewSideAbs = Math.abs(this.crewSide);
+    const crewDeckFactor = sStep(0.20, 0.65, crewSideAbs);
+    const targetCrewLean = (0.04 + clamp((hikeAmt - 0.06) * 1.02, 0, 1.38) * activeHikeWindow) * sStep(0.16, 0.42, crewSideAbs) * (1 - 0.85 * crewPoleAct);
     if (this.crewLeanCur === undefined) this.crewLeanCur = targetCrewLean;
-    this.crewLeanCur += (targetCrewLean - this.crewLeanCur) * (1 - Math.exp(-dt * 5.2));
+    this.crewLeanCur += (targetCrewLean - this.crewLeanCur) * (1 - Math.exp(-dt * 5.4));
     const crewLean = this.crewLeanCur;
 
     const sideAbs = Math.abs(this.side);
-    const crewSideAbs = Math.abs(this.crewSide);
     const boomLow = clamp(1 - (this.boomA - 0.35) / 0.30, 0, 1);
 
     // 待機モーション用の自然な周期波
@@ -1672,23 +1677,24 @@ export class BoatModel {
 
     // ヘルムスマン(スキッパー)
     const helmPet = !!this.helm.userData.isRoundPet;
+    const helmOutX = (0.37 + 0.21 * helmDeck) + lean * (helmPet ? 0.155 : 0.125);
     this.helmRig.position.set(
-      this.side * (0.54 + lean * (helmPet ? 0.17 : 0.155)),
-      0.35 - (1 - sideAbs) * 0.06 - Math.max(0, lean - 0.85) * (helmPet ? 0.01 : 0.035) + 0.008 * Math.sin(idleT * 2.4),
+      this.side * helmOutX,
+      0.35 - (1 - sideAbs * helmDeck) * 0.055 - Math.max(0, lean - 0.78) * (helmPet ? 0.014 : 0.040) + 0.008 * Math.sin(idleT * 2.4),
       0.86
     );
-    this.helmRig.rotation.y = this.side * 1.35;
+    this.helmRig.rotation.y = this.side * (0.95 + 0.40 * helmDeck);
     if (this.tillerExt && this.tillerExtGrip) {
       _p0.set(0, 0.05, -1.17);
-      _p1.set(this.side * (0.48 + lean * 0.13), 0.13 - lean * 0.02, -1.48);
+      _p1.set(this.side * (0.34 + 0.16 * helmDeck + lean * 0.13), 0.13 - lean * 0.02, -1.48);
       placeSeg(this.tillerExt, _p0, _p1);
       this.tillerExtGrip.position.copy(_p1);
     }
     if (this.helm.userData.upper) {
       const hu = this.helm.userData.upper;
       this.helmRig.rotation.z = 0;
-      const duck = (1 - sideAbs) * 0.42 * boomLow;
-      const hike = (helmPet ? Math.min(lean * 0.62, 0.76) : lean * 0.96) * sideAbs;
+      const duck = sStep(0.35, 0.05, sideAbs) * 0.42 * boomLow;
+      const hike = (helmPet ? Math.min(lean * 0.84, 1.05) : lean * 0.98) * sStep(0.14, 0.40, sideAbs);
       hu.rotation.x = hike - duck + helmBreath;
       hu.rotation.z = -this.side * 0.08 + 0.045 * Math.sin(idleT * 1.8);
       if (hu.userData.armL && hu.userData.armR) {
@@ -1706,16 +1712,16 @@ export class BoatModel {
     }
     if (this.helm.userData.head) {
       const uRx = this.helm.userData.upper ? this.helm.userData.upper.rotation.x : 0;
-      this.helm.userData.head.rotation.x = -uRx * (helmPet ? 0.55 : 0.68) + helmLookPitch;
+      this.helm.userData.head.rotation.x = -uRx * (helmPet ? 0.58 : 0.70) + helmLookPitch;
       this.helm.userData.head.rotation.y = -this.side * 0.55 + helmLookYaw;
       this.helm.userData.head.rotation.z = helmHeadTilt;
     }
 
-    // クルー: センターボード引き上げ時のクリアランス回避や前後の移動・体の向きもすべて連続補間で滑らかに動作させる
+    // クルー: センターボード引き上げ時のクリアランス回避や前後の移動・ハイクアウト量もすべて風速に応じて連続補間
     const crewPet = !!this.crew.userData.isRoundPet;
     const fwdShift = clamp(Math.max(pk, sStep(102, 130, twaDeg) * (1 - crewDeckFactor * 0.55)), 0, 1);
-    const baseCrewX = this.crewSide * ((0.55 - 0.17 * fwdShift) + crewLean * (crewPet ? 0.175 : 0.165));
-    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.04 - Math.max(0, crewLean - 0.85) * (crewPet ? 0.01 : 0.04) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
+    const baseCrewX = this.crewSide * ((0.56 - 0.17 * fwdShift) + crewLean * (crewPet ? 0.175 : 0.155));
+    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.045 - Math.max(0, crewLean - 0.78) * (crewPet ? 0.015 : 0.042) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
     const baseCrewZ = -0.04 - 0.38 * fwdShift;
     const actCrewX = sgn * 0.26;
     const actCrewY = 0.39 + 0.03 * Math.sin(t * 14);
@@ -1759,15 +1765,15 @@ export class BoatModel {
 
     if (this.crew.userData.upper) {
       this.crewRig.rotation.z = 0;
-      const cDuck = (1 - crewSideAbs) * 0.45 * boomLow;
-      const cHike = (crewPet ? Math.min(crewLean * 0.64, 0.78) : crewLean * 0.98) * crewSideAbs;
+      const cDuck = sStep(0.35, 0.05, crewSideAbs) * 0.45 * boomLow;
+      const cHike = (crewPet ? Math.min(crewLean * 0.88, 1.08) : crewLean * 0.99) * sStep(0.14, 0.40, crewSideAbs);
       const baseUpperX = cHike - cDuck + crewBreath;
       const actUpperX = -0.52 + 0.14 * Math.sin(t * 16);
       const cu = this.crew.userData.upper;
       cu.rotation.x = baseUpperX + (actUpperX - baseUpperX) * crewPoleAct;
       cu.rotation.z = (-this.crewSide * 0.08 + 0.05 * Math.cos(idleT * 2.1)) * (1 - crewPoleAct);
       if (cu.userData.armL && cu.userData.armR) {
-        const ext = clamp((crewLean - 0.70) / 0.55, 0, 1) * crewSideAbs * (1 - crewPoleAct);
+        const ext = clamp((crewLean - 0.62) / 0.55, 0, 1) * crewSideAbs * (1 - crewPoleAct);
         const lOut = this.crewSide > 0 ? ext : 0;
         const rOut = this.crewSide < 0 ? ext : 0;
         const trimWaveL = 0.15 * Math.sin(idleT * 2.8) * (1 - lOut);
@@ -1784,13 +1790,13 @@ export class BoatModel {
     }
     if (this.crew.userData.head) {
       const cRx = this.crew.userData.upper ? this.crew.userData.upper.rotation.x : 0;
-      this.crew.userData.head.rotation.x = -cRx * (crewPet ? 0.55 : 0.68) + crewLookPitch * (1 - crewPoleAct);
+      this.crew.userData.head.rotation.x = -cRx * (crewPet ? 0.58 : 0.70) + crewLookPitch * (1 - crewPoleAct);
       this.crew.userData.head.rotation.y = (-this.crewSide * 0.50 + crewLookYaw) * (1 - crewPoleAct);
       this.crew.userData.head.rotation.z = crewHeadTilt * (1 - crewPoleAct);
     }
 
-    // カメラ位置：スキッパーの目線近くまで高くし、ハイクアウト時に外側へより大きく乗り出すように調整
-    this.mount.position.set(this.side * (0.50 + lean * 0.7), 1.18 - lean * 0.05, 0.95);
+    // カメラ位置：スキッパーのハイクアウト量に合わせて船内視点でも風上外側への乗り出しが体感できるように調整
+    this.mount.position.set(this.side * (0.36 + 0.18 * helmDeck + lean * 0.68), 1.19 - lean * 0.055, 0.95);
 
     // パフォーマンス最適化(24艇対応): CP艇の細かいロープ・リーチリボン更新は3フレームに1回間引いてCPU負荷を軽減
     this._ropeTick = ((this._ropeTick || 0) + 1) % 3;
@@ -1967,11 +1973,11 @@ export class BoatModel {
     _p2.set(handX, handY, handZ); // クルー手元
     _p3.set(xCamOpp, yCam, zCam); // 反対舷のジブカム
 
-    // ランチャーポールの先端座標(_p5): 格納時(pk≈0)はマストよりわずかに前へ突き出たランチャー先端(z=-0.11)、展開時(pk>0)はポールの先端(ジブクリューへ進出)
+    // ランチャーポールの先端座標(_p5): 格納時(pk≈0)はマストのポート(左舷: -x)側前方へ突き出たランチャー先端(z=-0.11)、展開時(pk>0)はジブクリューへ進出
     const pm = this.boomRotY !== undefined ? this.boomRotY : -sgn * this.boomA;
-    const stowTipX = 0.044 * Math.cos(pm) - 0.11 * Math.sin(pm);
+    const stowTipX = -0.044 * Math.cos(pm) - 0.11 * Math.sin(pm);
     const stowTipY = 1.365;
-    const stowTipZ = -0.90 - 0.11 * Math.cos(pm) - 0.044 * Math.sin(pm);
+    const stowTipZ = -0.90 - 0.11 * Math.cos(pm) + 0.044 * Math.sin(pm);
     _p5.set(
       stowTipX + (clewX - stowTipX) * pk,
       stowTipY + (clewY - stowTipY) * pk,

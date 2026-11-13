@@ -8,7 +8,7 @@ import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew, animatePreviewFigure } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
 import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, setFixedStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
-import { initAudio, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
+import { initAudio, isAudioRunning, isBgmPlaying, unlockAudioNow, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
@@ -3154,18 +3154,20 @@ function initMenu() {
   };
   initPreview();
   setBgmVoiceEnabled(cfg.bgmMode !== 'off');
-  if (cfg.bgmMode !== 'off') {
-    initAudio();
-    playBgm('menu');
-  }
-  // ブラウザの自動再生制限で初期状態がsuspendedだった場合も、マウス移動・タッチ・スクロール・キー等のわずかな反応で即座に再生を開始する
-  const unlockEvents = ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mousemove', 'touchstart', 'touchend', 'keydown', 'wheel', 'click'];
+  // ブラウザの自動再生制限で初期状態がsuspendedだった場合のフォールバック（実ユーザー操作イベントのみを監視し、runningになるまで解除しない）
+  const unlockEvents = ['pointerdown', 'mousedown', 'touchstart', 'touchend', 'keydown', 'click'];
   const unlockMenuBgm = () => {
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
-      initAudio();
+      unlockAudioNow().then((ok) => {
+        if (ok && state.phase === 'menu' && cfg.bgmMode !== 'off') {
+          playBgm('menu');
+        }
+      });
       playBgm('menu');
     }
-    unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm));
+    if (isAudioRunning()) {
+      unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm));
+    }
   };
   unlockEvents.forEach((ev) => window.addEventListener(ev, unlockMenuBgm, { passive: true }));
 }
@@ -3218,21 +3220,24 @@ function initMenu() {
   if (window.__setLoad) window.__setLoad(100);
   clock.getDelta();
   loop();
-  const hideLoading = () => {
+
+  let enteredStartMenu = false;
+  const enterStartMenu = () => {
+    if (enteredStartMenu) return;
+    enteredStartMenu = true;
+    clock.getDelta();
     const ld = $('loading');
-    if (ld) ld.classList.add('hidden');
+    if (ld) {
+      ld.classList.add('hidden');
+      ld.classList.remove('readyToStart');
+    }
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
-      initAudio();
+      unlockAudioNow().then((ok) => {
+        if (ok && state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
+      });
       playBgm('menu');
     }
   };
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      clock.getDelta();
-      hideLoading();
-    });
-  });
-  setTimeout(hideLoading, 400);
 
   window.__game = {
     state,
@@ -3243,9 +3248,61 @@ function initMenu() {
     world,
     closeHoldLock,
     checkRightOfWayHails,
+    isAudioRunning,
+    isBgmPlaying,
+    enterStartMenu,
     resetHailCooldowns: () => { globalHailCD = 0; pairHailUntil.clear(); for (const b of boats) b.hailCD = 0; },
   };
+
+  // 自動再生が既に許可されている環境(リロード・MEI高スコア・事前タップ済)では即座にスタート画面へ遷移してBGM再生、
+  // ブラウザが初回ジェスチャー待ちでAudioContextをブロックしている場合はロード画面の「▶ タップしてスタート」でアンロックと同時にスタート画面＆BGMを開始する
+  let audioReady = false;
+  if (cfg.bgmMode !== 'off') {
+    try {
+      audioReady = await Promise.race([
+        unlockAudioNow(),
+        new Promise((resolve) => setTimeout(() => resolve(isAudioRunning()), 120))
+      ]);
+    } catch (e) {
+      audioReady = isAudioRunning();
+    }
+  }
+
+  if (audioReady || isAudioRunning() || cfg.bgmMode === 'off' || q.has('auto') || q.has('testmode')) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => enterStartMenu());
+    });
+    setTimeout(enterStartMenu, 260);
+  } else {
+    const ld = $('loading');
+    const stTxt = $('loadStatusText');
+    const barWrap = $('loadBarWrap');
+    const startSplashBtn = $('loadStartBtn');
+    if (ld) ld.classList.add('readyToStart');
+    if (stTxt) stTxt.innerHTML = '<span>READY</span> — SNIPE CLASS REGATTA';
+    if (barWrap) barWrap.classList.add('hidden');
+    if (startSplashBtn) startSplashBtn.classList.remove('hidden');
+
+    const onSplashActivate = (ev) => {
+      if (ev && ev.type === 'keydown' && (ev.metaKey || ev.ctrlKey || ev.altKey)) return;
+      if (ld) {
+        ld.removeEventListener('click', onSplashActivate);
+        ld.removeEventListener('touchend', onSplashActivate);
+      }
+      if (startSplashBtn) startSplashBtn.removeEventListener('click', onSplashActivate);
+      window.removeEventListener('keydown', onSplashActivate);
+      enterStartMenu();
+    };
+    if (ld) {
+      ld.addEventListener('click', onSplashActivate);
+      ld.addEventListener('touchend', onSplashActivate, { passive: true });
+    }
+    if (startSplashBtn) startSplashBtn.addEventListener('click', onSplashActivate);
+    window.addEventListener('keydown', onSplashActivate);
+  }
+
   if (q.has('auto')) {
+    enterStartMenu();
     startRace();
     const skip = parseFloat(q.get('skip') || '0');
     if (q.has('autopilot')) { const ap = new AI(player, rng); window.__ap = ap; }

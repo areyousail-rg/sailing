@@ -162,14 +162,36 @@ body.touch #miniLog div{font-size:.6rem}
 
 /* ---------- オーバーレイ / ローディング ---------- */
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10}
-#loading{background:radial-gradient(circle at 50% 38%,#12263f 0%,#0b1015 72%);flex-direction:column;gap:14px;z-index:30;transition:opacity .35s ease}
+#loading{background:radial-gradient(circle at 50% 38%,#132a46 0%,#081019 74%);flex-direction:column;gap:12px;z-index:30;transition:opacity .32s ease}
+#loading.readyToStart{cursor:pointer}
 .spinner{display:none}
-.loadingAnimeWrap{width:min(384px,88vw);border-radius:6px;overflow:hidden;border:2px solid #355472;box-shadow:0 12px 36px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.08);background:#0c1828;position:relative}
+.loadingAnimeWrap{width:min(440px,90vw);border-radius:8px;overflow:hidden;border:1.5px solid rgba(148,197,238,.38);border-top:2.5px solid var(--accent);box-shadow:0 16px 42px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.06);background:#081624;position:relative}
 .loadingPixelCanvas{display:block;width:100%;height:auto;aspect-ratio:16/10;image-rendering:pixelated;image-rendering:crisp-edges}
+.loadingCaptionBadge{position:absolute;left:8px;top:7px;padding:2px 7px;border-radius:3px;background:rgba(7,16,28,.74);border:1px solid rgba(148,197,238,.32);font-family:var(--f-num);font-size:.62rem;font-weight:800;letter-spacing:.12em;color:#e0f2fe;pointer-events:none;text-transform:uppercase}
 #loading p{margin:0;font-family:var(--f-num);font-weight:700;letter-spacing:.2em;font-size:.86rem;color:var(--mute);text-transform:uppercase;font-variant-numeric:tabular-nums}
 #loading p span{color:var(--accent)}
-.loadBar{width:min(280px,72vw);height:4px;background:var(--line);border-radius:2px;overflow:hidden}
-#loadFill{height:100%;width:0;background:var(--accent);transition:width .12s ease-out}
+.loadBar{width:min(300px,74vw);height:5px;background:rgba(148,184,218,.18);border-radius:3px;overflow:hidden}
+#loadFill{height:100%;width:0;background:linear-gradient(90deg,#38bdf8 0%,var(--accent) 100%);transition:width .12s ease-out}
+.loadStartBtn{
+  margin-top:2px;
+  padding:11px 28px;
+  border-radius:999px;
+  border:1.5px solid #fde047;
+  background:linear-gradient(180deg,#facc15 0%,#eab308 52%,#ca8a04 100%);
+  color:#08111d;
+  font-weight:900;
+  font-size:.94rem;
+  letter-spacing:.08em;
+  box-shadow:0 8px 24px rgba(234,179,8,.38),inset 0 1px 0 rgba(255,255,255,.65);
+  cursor:pointer;
+  animation:loadBtnPulse 1.6s ease-in-out infinite;
+}
+.loadStartBtn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.loadStartBtn:active{transform:translateY(1px)}
+@keyframes loadBtnPulse{
+  0%,100%{box-shadow:0 6px 20px rgba(234,179,8,.32),0 0 0 0 rgba(250,204,21,.36)}
+  50%{box-shadow:0 10px 28px rgba(234,179,8,.52),0 0 0 7px rgba(250,204,21,0)}
+}
 
 /* ---------- メニュー / カード ---------- */
 .menu{background:rgba(8,12,16,.76);overflow:auto}

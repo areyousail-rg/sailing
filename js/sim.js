@@ -545,7 +545,7 @@ export class Boat {
     this.tack = 1; this.tacking = false; this.tackTimer = 0;
     this.tackCount = 0; this.gybeCount = 0;
     this.rel = 0; this.twa = 0; this.effTwaDeg = 0; this.byTheLee = 0;
-    this.windFrom = W0; this.windF = 1;
+    this.windFrom = W0; this.windF = 1; this.puff = 0; this.localWindKt = BASE_WIND_KT;
     this.maneuver = null; this.penalty = null; this.penaltyDone = false; this.penaltyExpired = null; this.penaltyUpgraded = null;
     this.leg = 0; this.ocs = false; this.started = false; this.finished = false; this.finishTime = 0;
     this.finishHeading = 0; this.finishTack = 1; this.postFinishStop = false;
@@ -1073,21 +1073,26 @@ export class Boat {
     this.x += (Math.sin(this.h) * this.v + leeX + tideX) * dt;
     this.z += (-Math.cos(this.h) * this.v + leeZ + tideZ) * dt;
 
-    // 風の強さ(localWindKt)と風角(twa)・シート引き量に応じたヒール力と、クルーのハイクアウトによる復原力
+    // 風速(localWindKt)およびブロー(w.puff)に応じたスキッパー・クルーのハイクアウト量と、ブロー進入時のわずかなオーバーヒール:
+    // ゲーム上で風の強弱・ブロー/ラルを視覚的にすぐ感じ取れるよう、微風ではインサイド気味に起き、風速上昇・ブロー進入で2人とも大きくハイクアウトしつつ船体が少しオーバーヒールする実艇挙動を再現
     const anglePress = Math.sin(clamp(twa, 0.2, Math.PI * 0.88)) * (0.35 + 0.65 * this.sheet) * (1 - 0.65 * smoothstep(1.85, 2.75, twa)) * (1 - 0.55 * this.luff);
-    const windPress = Math.pow(clamp(localWindKt / 8.8, 0.25, 2.35), 1.32);
-    const speedPress = 0.35 + 0.65 * clamp(Math.abs(this.v) / 1.8, 0, 1);
-    const rawHeelPress = anglePress * windPress * speedPress;
-    const strongWindBoost = smoothstep(8.2, 13.5, localWindKt) * 0.42 * anglePress;
-    const puffBoost = clamp((w.puff - 0.24) / 0.76, 0, 1);
-    const targetHike = twa > 2.45 ? 0.05 : clamp(rawHeelPress * 1.28 + Math.abs(this.heel) * 1.45 + strongWindBoost, 0.05, 1.38);
-    this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.5));
+    const speedPress = 0.38 + 0.62 * clamp(Math.abs(this.v) / 1.75, 0, 1);
+    const windKtNorm = clamp((localWindKt - 4.4) / 10.6, 0, 1.40);
+    const puffBoost = smoothstep(0.16, 0.86, w.puff) * clamp(1 - this.cover * 0.85, 0.15, 1);
+    this.puff += (puffBoost - (this.puff || 0)) * (1 - Math.exp(-dt * 3.8));
+    this.localWindKt = localWindKt;
 
-    const puffHeelAdd = puffBoost * 0.112 * anglePress;
-    const netHeel = Math.max(0.016, rawHeelPress * 0.305 + strongWindBoost * 0.22 + puffHeelAdd - this.hike * 0.132);
+    const hikeSailLoad = clamp(anglePress / 0.65, 0, 1.18) * speedPress;
+    const targetHike = twa > 2.45
+      ? 0.03
+      : clamp((0.06 + Math.pow(windKtNorm, 1.12) * 1.18 + puffBoost * 0.28) * hikeSailLoad, 0.03, 1.52);
+    this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.8));
+
+    const baseHeelMoment = (0.045 + Math.pow(windKtNorm, 1.24) * 0.46 + puffBoost * 0.145) * clamp(anglePress / 0.65, 0, 1.22) * speedPress;
+    const netHeel = Math.max(0.015, baseHeelMoment - this.hike * 0.155);
     const maxHeelLim = this.wildGybeTimer > 0 ? 0.62 : 0.44;
     const heelT = clamp(nt * clamp(netHeel, 0, maxHeelLim) + this.rollBias, -maxHeelLim, maxHeelLim);
-    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 4.6));
+    this.heel += (heelT - this.heel) * (1 - Math.exp(-dt * 5.2));
 
     this.contactCD = Math.max(0, this.contactCD - dt);
     this.touchCD = Math.max(0, this.touchCD - dt);

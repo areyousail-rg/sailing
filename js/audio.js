@@ -70,19 +70,16 @@ let unlockListenersBound = false;
 function ensureAudioUnlockListeners() {
   if (unlockListenersBound || typeof window === 'undefined') return;
   unlockListenersBound = true;
-  const events = ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'mousemove', 'touchstart', 'touchend', 'keydown', 'wheel', 'click', 'focus'];
+  const events = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click'];
   const tryUnlock = () => {
-    if (!ctx) initAudio();
-    if (!ctx) return;
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
-    if (ctx.state === 'running') {
-      events.forEach((ev) => {
-        window.removeEventListener(ev, tryUnlock, true);
-        document.removeEventListener(ev, tryUnlock, true);
-      });
-    }
+    unlockAudioNow().then((ok) => {
+      if (ok || (ctx && ctx.state === 'running')) {
+        events.forEach((ev) => {
+          window.removeEventListener(ev, tryUnlock, true);
+          document.removeEventListener(ev, tryUnlock, true);
+        });
+      }
+    });
   };
   events.forEach((ev) => {
     window.addEventListener(ev, tryUnlock, { capture: true, passive: true });
@@ -91,19 +88,39 @@ function ensureAudioUnlockListeners() {
 }
 ensureAudioUnlockListeners();
 
+export function isAudioRunning() {
+  return !!(ctx && ctx.state === 'running');
+}
+export function isBgmPlaying() {
+  return !!(ctx && ctx.state === 'running' && bgmTimer && bgmVoiceEnabled);
+}
+export function unlockAudioNow() {
+  initAudio();
+  if (!ctx) return Promise.resolve(false);
+  try {
+    const sb = ctx.createBuffer(1, 1, ctx.sampleRate || 44100);
+    const src = ctx.createBufferSource();
+    src.buffer = sb;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch (e) {}
+  if (ctx.state === 'running') return Promise.resolve(true);
+  return ctx.resume().then(() => !!(ctx && ctx.state === 'running')).catch(() => false);
+}
+
 export function initAudio() {
   ensureAudioUnlockListeners();
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); return; }
+  if (ctx) { if (ctx.state !== 'running') ctx.resume().catch(() => {}); return; }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     ctx.onstatechange = () => {
-      if (ctx && ctx.state === 'running' && bgmMode && bgmVoiceEnabled) {
+      if (ctx && ctx.state === 'running' && bgmMode && !bgmTimer && bgmVoiceEnabled) {
         const curMode = bgmMode;
         bgmMode = null;
         playBgm(curMode);
       }
     };
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
     const dcBlock = ctx.createBiquadFilter();
     dcBlock.type = 'highpass'; dcBlock.frequency.value = 28; dcBlock.Q.value = 0.707;
     const comp = ctx.createDynamicsCompressor();
@@ -127,12 +144,13 @@ export function initAudio() {
     const brown = ctx.createBuffer(1, sr * 3, sr), bd = brown.getChannelData(0);
     let last = 0; for (let i = 0; i < bd.length; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; bd[i] = last * 3.5; }
 
-    // 風(ガストでゆっくり強弱)
+    // 風(初期値は0にしてロード中のホワイトノイズ鳴動を防止、レース・スタート画面遷移時に目標値へ)
     const wsrc = loopSource(brown);
     const wlp = ctx.createBiquadFilter(); wlp.type = 'lowpass'; wlp.frequency.value = 720;
-    windGain = ctx.createGain(); windGain.gain.value = 0.14;
+    windGain = ctx.createGain(); windGain.gain.value = 0;
     const gust = ctx.createOscillator(); gust.frequency.value = 0.11;
-    const gustAmp = ctx.createGain(); gustAmp.gain.value = 0.04; gust.connect(gustAmp); gustAmp.connect(windGain.gain); gust.start();
+    const gustAmp = ctx.createGain(); gustAmp.gain.value = 0; gust.connect(gustAmp); gustAmp.connect(windGain.gain); gust.start();
+    windGain._gust = gustAmp;
     wsrc.connect(wlp); wlp.connect(windGain); windGain.connect(master);
 
     // 艇の音バス(カメラがドローンの時は小さく、艇内では大きく)
@@ -180,7 +198,12 @@ export function initAudio() {
   } catch (e) { console.warn('audio init failed', e); ctx = null; }
 }
 
-export function setWind(speedNorm) { if (windGain && ctx) windGain.gain.setTargetAtTime(0.08 + 0.16 * speedNorm, ctx.currentTime, 0.3); }
+export function setWind(speedNorm) {
+  if (windGain && ctx) {
+    windGain.gain.setTargetAtTime(0.08 + 0.16 * speedNorm, ctx.currentTime, 0.3);
+    if (windGain._gust) windGain._gust.gain.setTargetAtTime(0.04, ctx.currentTime, 0.3);
+  }
+}
 export function setCameraAudio(cockpit) { camMul = cockpit ? 1.0 : 0.45; }
 export function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : MASTER_GAIN; return muted; }
 export function isBgmVoiceEnabled() { return bgmVoiceEnabled; }
@@ -791,7 +814,10 @@ function silenceSailingNow() {
     if (shiverGain._amp) shiverGain._amp.gain.setTargetAtTime(0, now, 0.015);
   }
   if (nearGain) nearGain.gain.setTargetAtTime(0, now, 0.03);
-  if (windGain) windGain.gain.setTargetAtTime(0.015, now, 0.10);
+  if (windGain) {
+    windGain.gain.setTargetAtTime(0.012, now, 0.10);
+    if (windGain._gust) windGain._gust.gain.setTargetAtTime(0.004, now, 0.10);
+  }
 }
 
 // ---- スタジオ品質マルチトラックBGMエンジン (サンプル精度16分音符ルックアヘッド・FMエレピ/ストリングス/ホーン/ギター/リード/スタジオドラム) ----
@@ -852,7 +878,7 @@ export function playBgm(mode = 'result') {
     return;
   }
   if (!ctx) { bgmMode = mode; return; }
-  if (ctx.state === 'suspended') {
+  if (ctx.state !== 'running') {
     bgmMode = mode;
     ctx.resume().then(() => {
       if (ctx && ctx.state === 'running' && bgmMode === mode && !bgmTimer && bgmVoiceEnabled) {
