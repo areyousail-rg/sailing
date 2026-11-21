@@ -405,7 +405,7 @@ function rebuildPlayerModel() {
 const hud = {
   clock: $('clock'), phase: $('phase'), big: $('bigCount'), wkt: $('windKt'), wdir: $('windDir'), needle: $('needle'), spd: $('spd'), hdg: $('hdg'), twa: $('twa'),
   tack: $('tackLbl'), sheet: $('sheetFill'), pen: $('penBadge'), leg: $('legLbl'), legDist: $('legDist'), legArrow: $('legArrow'), leaders: $('leaders'), rank: $('rank'),
-  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), blkTxt: $('blkTxt'), blkFill: $('blkFill'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'), tCamReset: $('tCamReset'),
+  cam: $('camLabel'), toasts: $('toasts'), ocs: $('ocsBadge'), blk: $('blkBadge'), blkTxt: $('blkTxt'), blkFill: $('blkFill'), sheetOpt: $('sheetOpt'), autoLbl: $('autoLbl'), pole: $('poleLbl'), tCam: $('tCam'), tCamLbl: $('tCamLbl'), tCamReset: $('tCamReset'),
 };
 function toast(text, kind = 'info', ms = 5200) {
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = text;
@@ -984,7 +984,13 @@ function updateHUD(sorted) {
   } else hud.pen.style.display = 'none';
   if (hud.ocs) hud.ocs.style.display = 'none';
   hud.cam.textContent = 'CAM  ' + CAM_MODES[cam.mode] + ' [C]';
-  if (hud.tCam) { const nx = cam.mode === COCKPIT ? 'ドローン' : '船内'; if (hud.tCam.textContent !== nx) hud.tCam.textContent = nx; }
+  if (hud.tCam) {
+    const isDroneTarget = cam.mode === COCKPIT;
+    hud.tCam.classList.toggle('isDroneTarget', isDroneTarget);
+    const nx = isDroneTarget ? 'ドローン' : '船内';
+    const lbl = hud.tCamLbl || hud.tCam;
+    if (lbl.textContent !== nx) lbl.textContent = nx;
+  }
   if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
   if (!isPrac) {
     const c = Math.ceil(-t);

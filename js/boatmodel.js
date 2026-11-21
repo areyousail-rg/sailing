@@ -1227,15 +1227,23 @@ export class BoatModel {
   }
 
   // サイドステー(シュラウド)・スプレッダーがメインセールを貫通しないよう幾何学的にクランプしつつ、ランニング時にサイドステーに押し付けられる折れ目を再現
-  updateMainShroudPress(pressAmt, boomAng = 0.3, absScaleX = 1.0) {
+  updateMainShroudPress(pressAmt, boomAng = 0.3, absScaleX = 1.0, leeSlack = 0) {
     if (!this.mainGeo || !this._baseMainPos) return;
-    const eps = this.boat.isPlayer ? 0.006 : 0.020;
-    if (Math.abs(pressAmt - this._lastShroudPress) < eps && Math.abs(boomAng - (this._lastShroudBoomA || 0)) < eps) return;
+    const eps = this.boat.isPlayer ? 0.005 : 0.018;
+    if (
+      Math.abs(pressAmt - this._lastShroudPress) < eps &&
+      Math.abs(boomAng - (this._lastShroudBoomA || 0)) < eps &&
+      Math.abs(absScaleX - (this._lastShroudScaleX || 0)) < eps &&
+      Math.abs(leeSlack - (this._lastLeeSlack || 0)) < 0.02
+    ) return;
     this._lastShroudPress = pressAmt;
     this._lastShroudBoomA = boomAng;
+    this._lastShroudScaleX = absScaleX;
+    this._lastLeeSlack = leeSlack;
     const pos = this.mainGeo.attributes.position;
     const src = this._baseMainPos;
     const nu = 28, nv = 12;
+    const safeScale = Math.max(0.25, absScaleX);
     let idx = 0;
     for (let i = 0; i <= nu; i++) {
       const u = i / nu;
@@ -1251,19 +1259,20 @@ export class BoatModel {
         if (pressAmt > 0.005 && uContact > 0.01) {
           const dv = (v - vShroud) / 0.14;
           const contactIndent = Math.exp(-dv * dv * 2.2) * uContact * pressAmt;
-          const aftBell = v > vShroud ? Math.sin(clamp((v - vShroud) / (1 - vShroud), 0, 1) * Math.PI) * 0.065 * uContact * pressAmt : 0;
-          xMod = bx * (1 - 0.42 * contactIndent) + aftBell;
-          zMod = bz - 0.032 * contactIndent;
+          const aftBell = v > vShroud ? Math.sin(clamp((v - vShroud) / (1 - vShroud), 0, 1) * Math.PI) * 0.055 * uContact * pressAmt : 0;
+          xMod = bx * (1 - 0.45 * contactIndent) + aftBell;
+          zMod = bz - 0.028 * contactIndent;
         }
-        // サイドステー＆スプレッダー貫通防止ガード:
-        // マスト回転中心(0, yBody, -0.90)に対するシュラウド位置(xS, dzS)の角度(angShroud)を超えないようキャンバーxModを制限
+        // サイドステー＆スプレッダー貫通防止ガード (正確な平面符号付き距離クランプ):
+        // マスト回転中心(0, yBody, -0.90)に対する実際の風下サイドステー座標(xS, dzS)より必ず後方(aft)にクリアランスを保つ
         const yBody = 0.40 + by;
-        if (yBody <= 5.95 && zMod > 0.03) {
+        if (yBody <= 6.02 && zMod > 0.04) {
           let xS, dzS;
           if (yBody <= 3.85) {
             const tS = clamp((yBody - 0.375) / (3.85 - 0.375), 0, 1);
-            xS = 0.72 - 0.08 * tS;
-            dzS = 0.15 - 0.17 * tS;
+            const sag = leeSlack * Math.sin(Math.PI * tS);
+            xS = (0.72 - 0.08 * tS) - 0.032 * sag;
+            dzS = (0.15 - 0.17 * tS) + 0.048 * sag;
           } else {
             const tU = clamp((yBody - 3.85) / (5.95 - 3.85), 0, 1);
             xS = 0.64 * (1 - tU);
@@ -1271,14 +1280,23 @@ export class BoatModel {
           }
           const rShroud = Math.hypot(xS, dzS);
           const angShroud = Math.atan2(xS, dzS);
-          const rVert = Math.hypot(xMod * absScaleX, zMod);
-          const nearSpreader = Math.abs(yBody - 3.85) < 0.36 && rVert <= 0.72;
-          const nearShroud = Math.abs(rVert - rShroud) < 0.38;
-          if ((nearShroud || nearSpreader) && rShroud > 0.04) {
-            const maxAllowAng = angShroud - 0.045;
-            const maxLocalAng = maxAllowAng - boomAng;
-            const maxX = Math.max(0.01, zMod * Math.tan(Math.max(0.01, maxLocalAng)) / Math.max(0.25, absScaleX));
-            if (xMod > maxX) xMod = maxX;
+          const rVert = Math.hypot(xMod * safeScale, zMod);
+          const nearSpreader = Math.abs(yBody - 3.85) < 0.45 && rVert <= 0.88;
+          // ラフ直近(r<0.12)はマスト接続を維持し、シュラウド周辺〜やや後方(r<=rShroud+0.95)は三角形補間による貫通も防止
+          const innerW = clamp((rVert - 0.10) / 0.22, 0, 1);
+          const outerW = 1 - clamp((rVert - (rShroud + 0.48)) / 0.52, 0, 1);
+          const guardW = nearSpreader ? Math.max(innerW, 0.85) : innerW * outerW;
+          if (guardW > 0.001 && rShroud > 0.04) {
+            const dTheta = angShroud - boomAng;
+            const cosD = Math.cos(dTheta);
+            if (cosD > 0.08) {
+              const clear = (nearSpreader ? 0.072 : 0.062) * innerW;
+              const rawMaxX = (zMod * Math.sin(dTheta) - clear) / (safeScale * cosD);
+              const clampedX = Math.max(-0.18, rawMaxX);
+              if (xMod > clampedX) {
+                xMod = xMod + (clampedX - xMod) * guardW;
+              }
+            }
           }
         }
         pos.setXYZ(idx, xMod, by, zMod);
@@ -1341,14 +1359,16 @@ export class BoatModel {
   }
 
   // スナイプ級のサイドステー更新: 風上側はピンと直線に張り、風下側はテンションが抜けてわずかにたるみ・揺れる実艇挙動を再現
-  syncShrouds(t, sgn, luff, vAbs, pk) {
+  // ランニング等でメインセールが風下サイドステーに押し付けられる時は、後方(+z)へたるんでセールを貫通しないよう抑える
+  syncShrouds(t, sgn, luff, vAbs, pk, runShroudHold = 0) {
     if (!this.shroudSegs) return;
     const load = clamp((1 - (luff || 0) * 0.85) * (0.28 + 0.72 * clamp((vAbs || 0) / 3.8, 0, 1)) + (pk || 0) * 0.35, 0, 1.15);
+    const leeSlack = load * (1 - clamp(runShroudHold, 0, 1));
     for (const s of [-1, 1]) {
       const segs = this.shroudSegs[String(s)];
       if (!segs || !segs.length) continue;
       const isLeeward = s === -(sgn || 1);
-      const slack = isLeeward ? load : 0;
+      const slack = isLeeward ? leeSlack : 0;
       const N = segs.length;
       const x0 = s * SHROUD_A[0], y0 = SHROUD_A[1], z0 = SHROUD_A[2];
       const x1 = s * SHROUD_B[0], y1 = SHROUD_B[1], z1 = SHROUD_B[2];
@@ -1367,7 +1387,7 @@ export class BoatModel {
         const s = v.side || 1;
         const vy = v.vy || 1.68;
         const uV = clamp((vy - SHROUD_A[1]) / (SHROUD_B[1] - SHROUD_A[1]), 0, 1);
-        const slack = s === -(sgn || 1) ? load : 0;
+        const slack = s === -(sgn || 1) ? leeSlack : 0;
         const bV = slack * Math.sin(Math.PI * uV);
         const wV = slack * 0.009 * Math.sin(t * 7.2 + uV * 2.5 + this.phase) * Math.sin(Math.PI * uV);
         const bx = s * (SHROUD_A[0] + (SHROUD_B[0] - SHROUD_A[0]) * uV) - s * 0.032 * bV + wV;
@@ -1574,9 +1594,9 @@ export class BoatModel {
     this._closeFactor = closeFactor;
     const effMainSheet = clamp(b.sheet + closeFactor * 0.036, 0, 1);
     const sheetAng = (0.018 + (1 - closeFactor) * 0.052) + Math.pow(1 - effMainSheet, 1.10) * (1.36 + 0.16 * runEaseFactor);
-    const maxBoomAng = 1.0 + 0.20 * runEaseFactor;
+    const maxBoomAng = 1.0 + 0.18 * runEaseFactor;
     let ang = Math.min(sheetAng, Math.max(0.018, Math.abs(b.awa) - 0.11 * closeFactor - 0.03 + 0.10 * runEaseFactor), maxBoomAng);
-    ang += luff * 0.09 * Math.sin(t * 19 + this.phase);
+    ang = Math.min(ang + luff * 0.09 * Math.sin(t * 19 + this.phase), maxBoomAng + 0.03);
     this.boomA += (ang - this.boomA) * (1 - Math.exp(-dt * (luff > 0.3 ? 14 : 4)));
 
     const sgn = b.tack;
@@ -1653,8 +1673,11 @@ export class BoatModel {
     const closeDepthScale = 1 + 0.075 * closeFactor;
     this.mainSail.scale.x = bulgeSign * flap * closeDepthScale;
     // サイドステー貫通防止とランニング時のサイドステーへの押し付け形状を更新
+    const runShroudHold = clamp((Math.abs(this.boomRotY) - 0.62) / 0.34, 0, 1);
+    const leeLoadEst = clamp((1 - (luff || 0) * 0.85) * (0.28 + 0.72 * clamp((Math.abs(b.v) || 0) / 3.8, 0, 1)) + (pk || 0) * 0.35, 0, 1.15);
+    const effLeeSlack = leeLoadEst * (1 - runShroudHold);
     const shroudPress = clamp((this.boomA - 0.72) / 0.42, 0, 1);
-    this.updateMainShroudPress(shroudPress, Math.abs(this.boomRotY), Math.abs(this.mainSail.scale.x));
+    this.updateMainShroudPress(shroudPress, Math.abs(this.boomRotY), Math.abs(this.mainSail.scale.x), effLeeSlack);
 
     // クローズ時(およびリーヘルム引き込み時)は深めで丸みのあるジブキャンバー(0.168)、ランチャーアップ時はふっくら風をはらんだ深いポケット(0.31)を表現
     const jibCamberScale = 0.168 * effCloseJib + (0.23 + 0.085 * pk) * (1 - effCloseJib);
@@ -1909,7 +1932,7 @@ export class BoatModel {
     const doDetailSync = b.isPlayer || this._ropeTick === 0 || this._firstSyncDone !== true;
     this._firstSyncDone = true;
     if (doDetailSync) {
-      this.syncShrouds(t, sgn, luff, Math.abs(b.v), pk);
+      this.syncShrouds(t, sgn, luff, Math.abs(b.v), pk, runShroudHold);
       this.syncForestay(pk, sgn);
       if (this.leechRibbons) {
         const stall = b.stall || 0;

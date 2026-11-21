@@ -582,14 +582,23 @@ body.menuOpen .menuPractice{padding-top:10px}
   width:104px;
   height:96px;
   font-size:2rem;
-  border-radius:7px;
+  border-radius:10px;
   display:inline-flex;
   align-items:center;
   justify-content:center;
 }
+.tgrp.left button.tbSteerL{
+  border-top:2.5px solid rgba(251,113,133,.72);
+  background:linear-gradient(180deg,rgba(42,22,34,.86) 0%,rgba(14,18,28,.92) 100%);
+}
+.tgrp.left button.tbSteerR{
+  border-top:2.5px solid rgba(52,211,153,.72);
+  background:linear-gradient(180deg,rgba(18,40,38,.86) 0%,rgba(12,20,28,.92) 100%);
+}
 .tgrp.left button.autoSteer{
   transform:translateY(4px) scale(.96);
   border-color:#38bdf8;
+  border-top-color:#7dd3fc;
   color:#7dd3fc;
   background:linear-gradient(180deg,rgba(14,76,115,.95) 0%,rgba(9,45,72,.98) 100%);
   box-shadow:0 0 0 1px rgba(56,189,248,.38),inset 0 4px 10px rgba(0,0,0,.74);
@@ -612,18 +621,120 @@ body.menuOpen .menuPractice{padding-top:10px}
   line-height:1.2;
   white-space:nowrap;
 }
-.tgrp.right button:active,.tgrp.right button.on{
-  transform:translateY(3px) scale(.97);
-  background:linear-gradient(180deg,rgba(46,66,88,.95) 0%,rgba(24,38,54,.98) 100%);
-  color:var(--accent);
-  border-color:var(--accent);
-  box-shadow:0 1px 0 rgba(4,8,14,.95),inset 0 3px 8px rgba(0,0,0,.68);
-}
 .tgrp{position:absolute;display:flex;gap:10px}
 .tgrp.left{left:14px;bottom:14px}
-.tgrp.mid{left:14px;top:42%;flex-direction:column;gap:6px}.tgrp.mid button{width:76px;height:42px;font-size:.72rem;border-radius:5px;line-height:1.15;padding:0 4px}
-#tCamReset{font-size:.64rem;letter-spacing:-.02em}
-.tgrp.right{right:14px;bottom:14px;width:190px;flex-wrap:wrap;justify-content:flex-end}.tgrp.right button{width:90px;height:60px;font-size:.86rem}
+.tgrp.mid{left:14px;top:38%;flex-direction:column;gap:8px}
+#touch .tbAct,
+#touch .tbTrim{
+  position:relative;
+  display:inline-flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:4px 5px;
+  line-height:1.1;
+}
+#touch .tbIco{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:0;
+  flex-shrink:0;
+}
+#touch .tbIco svg{width:25px;height:25px;display:block}
+#touch .tbLbl{font-size:.66rem;font-weight:800;letter-spacing:.03em;white-space:nowrap}
+
+.tgrp.mid button.tbAct{width:82px;height:58px;border-radius:12px}
+
+/* ランチャーボタン: 琥珀ゴールド系の専用デザイン＋展開中(.on)の明確な点灯インジケーター */
+#touch button.tbPole{
+  border-color:rgba(245,158,11,.68);
+  background:linear-gradient(180deg,rgba(62,40,12,.88) 0%,rgba(28,19,8,.94) 100%);
+  color:#fef3c7;
+  box-shadow:0 4px 0 rgba(18,10,4,.9),0 6px 16px rgba(245,158,11,.18),inset 0 1px 0 rgba(254,240,138,.18);
+}
+#touch button.tbPole::after{
+  content:"";
+  position:absolute;
+  top:6px;
+  right:6px;
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:rgba(251,191,36,.3);
+  border:1px solid rgba(251,191,36,.55);
+}
+#touch button.tbPole.on{
+  border-color:#fde047;
+  background:linear-gradient(180deg,rgba(180,104,8,.96) 0%,rgba(116,60,6,.98) 100%);
+  color:#fffbeb;
+  box-shadow:0 1px 0 rgba(18,10,4,.95),0 0 16px rgba(250,204,21,.45),inset 0 2px 6px rgba(254,249,195,.25);
+}
+#touch button.tbPole.on::after{
+  background:#fde047;
+  border-color:#fffbeb;
+  box-shadow:0 0 8px #fde047;
+}
+
+/* 視点切替ボタン(ドローン ⇄ 船内): アイコン自動切替＋スカイブルー/ティール専用配色 */
+#touch button.tbCam .icoDrone{display:none}
+#touch button.tbCam .icoCockpit{display:block}
+#touch button.tbCam{
+  border-color:rgba(45,212,191,.65);
+  background:linear-gradient(180deg,rgba(12,56,62,.88) 0%,rgba(8,29,36,.94) 100%);
+  color:#ccfbf1;
+  box-shadow:0 4px 0 rgba(4,16,20,.9),0 6px 16px rgba(45,212,191,.16),inset 0 1px 0 rgba(153,246,228,.18);
+}
+#touch button.tbCam.isDroneTarget .icoDrone{display:block}
+#touch button.tbCam.isDroneTarget .icoCockpit{display:none}
+#touch button.tbCam.isDroneTarget{
+  border-color:rgba(56,189,248,.75);
+  background:linear-gradient(180deg,rgba(12,56,92,.90) 0%,rgba(8,28,50,.95) 100%);
+  color:#e0f2fe;
+  box-shadow:0 4px 0 rgba(4,14,24,.9),0 6px 16px rgba(56,189,248,.22),inset 0 1px 0 rgba(186,230,253,.22);
+}
+
+/* カメラ初期位置リセットボタン: インディゴ系ピル風デザイン */
+#touch button.tbReset{
+  border-radius:20px;
+  height:48px;
+  border-color:rgba(129,140,248,.68);
+  background:linear-gradient(180deg,rgba(36,40,84,.88) 0%,rgba(18,22,48,.94) 100%);
+  color:#e0e7ff;
+  box-shadow:0 3px 0 rgba(10,12,28,.9),0 5px 14px rgba(99,102,241,.2);
+}
+#touch button.tbReset .tbIco svg{width:20px;height:20px}
+#touch button.tbReset .tbLbl{font-size:.6rem}
+
+/* セールトリム(引く/出す): 緑(引き込み)と橙(出し)で直感的に区別 */
+.tgrp.right{right:14px;bottom:14px;width:194px;flex-wrap:wrap;justify-content:flex-end}
+.tgrp.right button.tbTrim{width:92px;height:68px;border-radius:11px;gap:3px}
+.tgrp.right button.tbTrim .tbLbl{font-size:.76rem}
+#touch button.tbTrimIn{
+  border-color:rgba(52,211,153,.62);
+  background:linear-gradient(180deg,rgba(14,54,44,.88) 0%,rgba(8,28,24,.94) 100%);
+  color:#d1fae5;
+}
+#touch button.tbTrimIn:active,#touch button.tbTrimIn.on{
+  transform:translateY(3px) scale(.97);
+  border-color:#34d399;
+  color:#ecfdf5;
+  background:linear-gradient(180deg,rgba(16,118,86,.96) 0%,rgba(10,72,54,.98) 100%);
+  box-shadow:0 1px 0 rgba(4,16,12,.95),0 0 12px rgba(52,211,153,.35),inset 0 3px 8px rgba(0,0,0,.55);
+}
+#touch button.tbTrimOut{
+  border-color:rgba(251,146,60,.62);
+  background:linear-gradient(180deg,rgba(62,36,16,.88) 0%,rgba(30,18,10,.94) 100%);
+  color:#ffedd5;
+}
+#touch button.tbTrimOut:active,#touch button.tbTrimOut.on{
+  transform:translateY(3px) scale(.97);
+  border-color:#fb923c;
+  color:#fff7ed;
+  background:linear-gradient(180deg,rgba(154,70,18,.96) 0%,rgba(98,42,10,.98) 100%);
+  box-shadow:0 1px 0 rgba(20,10,4,.95),0 0 12px rgba(251,146,60,.35),inset 0 3px 8px rgba(0,0,0,.55);
+}
 
 body.touch #help,body.touch #leaders{display:none}
 body.touch .top-left{top:8px;left:8px;padding:5px 10px;min-width:150px}
@@ -680,8 +791,16 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   body.touch #bigCount{font-size:3.8rem;top:40%}
   .tgrp.left{left:8px;bottom:10px;gap:8px}.tgrp.left button{width:84px;height:80px;font-size:1.7rem}
   .tgrp.left button.autoSteer::after{bottom:4px;font-size:.5rem;padding:1px 4px}
-  .tgrp.mid,body.menuOpen .tgrp.mid{left:8px;top:auto;bottom:98px;flex-direction:row}.tgrp.mid button{width:auto;min-width:52px;height:34px;padding:0 8px;font-size:.64rem}
-  .tgrp.right{right:8px;bottom:10px;width:150px;gap:6px}.tgrp.right button{width:72px;height:48px;font-size:.66rem}
+  .tgrp.mid,body.menuOpen .tgrp.mid{left:8px;top:auto;bottom:98px;flex-direction:row;gap:6px}
+  .tgrp.mid button.tbAct{width:auto;min-width:66px;height:38px;padding:0 9px;flex-direction:row;gap:5px;border-radius:10px}
+  #touch button.tbReset{height:38px;border-radius:18px}
+  #touch button.tbPole::after{top:4px;right:4px;width:5px;height:5px}
+  #touch .tbAct .tbIco svg{width:19px;height:19px}
+  #touch .tbAct .tbLbl{font-size:.62rem}
+  .tgrp.right{right:8px;bottom:10px;width:154px;gap:6px}
+  .tgrp.right button.tbTrim{width:74px;height:54px;border-radius:10px;gap:1px}
+  .tgrp.right button.tbTrim .tbIco svg{width:20px;height:20px}
+  .tgrp.right button.tbTrim .tbLbl{font-size:.64rem}
   body.menuOpen .menuPractice{padding:6px 0 0}
   .menuCard{padding:0 0 7px;gap:4px;max-height:calc(100vh - 210px);overflow-y:auto;width:95vw}
   .menuCard > *:not(.menuTitleRow){margin-left:8px;margin-right:8px}

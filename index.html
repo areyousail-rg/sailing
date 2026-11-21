@@ -7,25 +7,25 @@
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
   <meta http-equiv="Permissions-Policy" content="autoplay=*">
-  <link rel="stylesheet" href="style.css?v=20261121g">
-  <link rel="stylesheet" href="review.css?v=20261121g">
+  <link rel="stylesheet" href="style.css?v=20261121h">
+  <link rel="stylesheet" href="review.css?v=20261121h">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261121g",
-      "./js/sim.js": "./js/sim.js?v=20261121g",
-      "./js/review.js": "./js/review.js?v=20261121g",
-      "./js/ai.js": "./js/ai.js?v=20261121g",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121g",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261121g",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261121g",
-      "./js/crew.js": "./js/crew.js?v=20261121g",
-      "./js/camera.js": "./js/camera.js?v=20261121g",
-      "./js/course.js": "./js/course.js?v=20261121g",
-      "./js/rules.js": "./js/rules.js?v=20261121g",
-      "./js/audio.js": "./js/audio.js?v=20261121g"
+      "./js/world.js": "./js/world.js?v=20261121h",
+      "./js/sim.js": "./js/sim.js?v=20261121h",
+      "./js/review.js": "./js/review.js?v=20261121h",
+      "./js/ai.js": "./js/ai.js?v=20261121h",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121h",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261121h",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261121h",
+      "./js/crew.js": "./js/crew.js?v=20261121h",
+      "./js/camera.js": "./js/camera.js?v=20261121h",
+      "./js/course.js": "./js/course.js?v=20261121h",
+      "./js/rules.js": "./js/rules.js?v=20261121h",
+      "./js/audio.js": "./js/audio.js?v=20261121h"
     }
   }
   </script>
@@ -572,18 +572,77 @@
 
     <div id="touch" class="hidden">
       <div class="tgrp left">
-        <button id="tLeft" type="button" aria-label="左へ">◀</button>
-        <button id="tRight" type="button" aria-label="右へ">▶</button>
+        <button id="tLeft" class="tbSteer tbSteerL" type="button" aria-label="左へ">◀</button>
+        <button id="tRight" class="tbSteer tbSteerR" type="button" aria-label="右へ">▶</button>
       </div>
       <div class="tgrp mid">
-        <button id="tPole" type="button">ランチャー</button>
-        <button id="tCam" type="button">船内</button>
-        <button id="tCamReset" class="hidden" type="button">カメラ初期位置</button>
+        <button id="tPole" class="tbAct tbPole" type="button" aria-label="ランチャー切替">
+          <span class="tbIco" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="none">
+              <path d="M14 3.5V22.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M14 5.5C19.8 7.6 22.8 12.6 21.8 19.5L14 18.4V5.5Z" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M14 7.2C8.4 9.0 5.4 13.6 6.6 19.2L14 17.6" fill="#f59e0b" fill-opacity=".35" stroke="#fbbf24" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M14 15.2L5.0 18.8" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="5.0" cy="18.8" r="1.8" fill="#fde047"/>
+              <path d="M5.5 23.6C9.5 24.9 18.5 24.9 22.5 23.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity=".75"/>
+            </svg>
+          </span>
+          <span class="tbLbl">ランチャー</span>
+        </button>
+        <button id="tCam" class="tbAct tbCam" type="button" aria-label="視点切替">
+          <span class="tbIco" aria-hidden="true">
+            <svg class="icoDrone" viewBox="0 0 28 28" fill="none">
+              <circle cx="6.2" cy="7.2" r="3.6" stroke="currentColor" stroke-width="1.6" fill="currentColor" fill-opacity=".16"/>
+              <circle cx="21.8" cy="7.2" r="3.6" stroke="currentColor" stroke-width="1.6" fill="currentColor" fill-opacity=".16"/>
+              <circle cx="6.2" cy="20.8" r="3.6" stroke="currentColor" stroke-width="1.6" fill="currentColor" fill-opacity=".16"/>
+              <circle cx="21.8" cy="20.8" r="3.6" stroke="currentColor" stroke-width="1.6" fill="currentColor" fill-opacity=".16"/>
+              <path d="M8.8 9.6L11.8 12.2M19.2 9.6L16.2 12.2M8.8 18.4L11.8 15.8M19.2 18.4L16.2 15.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <rect x="10.4" y="10.8" width="7.2" height="6.4" rx="2.4" fill="currentColor" fill-opacity=".28" stroke="currentColor" stroke-width="1.6"/>
+              <circle cx="14" cy="14" r="1.7" fill="#38bdf8"/>
+            </svg>
+            <svg class="icoCockpit" viewBox="0 0 28 28" fill="none">
+              <path d="M14 4.2L22.5 21.8C19.8 23.2 8.2 23.2 5.5 21.8L14 4.2Z" fill="currentColor" fill-opacity=".16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M14 4.2V18.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <path d="M14 7.5C17.4 9.2 19.2 12.5 18.8 16.5L14 15.6" fill="#2dd4bf" fill-opacity=".35" stroke="#5eead4" stroke-width="1.4" stroke-linejoin="round"/>
+              <circle cx="14" cy="20.2" r="2.2" fill="#5eead4"/>
+              <path d="M3.5 24.4C7 25.5 21 25.5 24.5 24.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-opacity=".65"/>
+            </svg>
+          </span>
+          <span class="tbLbl" id="tCamLbl">船内</span>
+        </button>
+        <button id="tCamReset" class="tbAct tbReset hidden" type="button" aria-label="カメラ初期位置">
+          <span class="tbIco" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="none">
+              <path d="M21.2 14A7.2 7.2 0 1 1 18.8 8.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M19.2 4.8L19.6 9.3L15.1 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="14" cy="14" r="2.3" fill="#a5b4fc"/>
+            </svg>
+          </span>
+          <span class="tbLbl">初期位置</span>
+        </button>
         <button id="tAuto" type="button">AUTO</button>
       </div>
       <div class="tgrp right">
-        <button id="tUp" type="button">引く</button>
-        <button id="tDown" type="button">出す</button>
+        <button id="tUp" class="tbTrim tbTrimIn" type="button" aria-label="セールを引く">
+          <span class="tbIco" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="none">
+              <path d="M9 5.5V22.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-opacity=".75"/>
+              <path d="M9 6.5C13.5 9.2 15.2 14.5 13.8 20.5L9 19.5" fill="#34d399" fill-opacity=".28" stroke="#6ee7b7" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M23.5 14H15.8M18.6 10.6L15.2 14L18.6 17.4" stroke="#6ee7b7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="tbLbl">引く</span>
+        </button>
+        <button id="tDown" class="tbTrim tbTrimOut" type="button" aria-label="セールを出す">
+          <span class="tbIco" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="none">
+              <path d="M7.5 5.5V22.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-opacity=".75"/>
+              <path d="M7.5 6.5C14.5 8.5 17.8 14.2 15.8 20.8L7.5 19.2" fill="#fb923c" fill-opacity=".26" stroke="#fdba74" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M16.2 14H23.8M20.6 10.6L24.0 14L20.6 17.4" stroke="#fdba74" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="tbLbl">出す</span>
+        </button>
       </div>
     </div>
   </main>
@@ -816,6 +875,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261121g"></script>
+  <script type="module" src="js/main.js?v=20261121h"></script>
 </body>
 </html>
