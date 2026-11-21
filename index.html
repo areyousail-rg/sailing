@@ -7,24 +7,25 @@
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
   <meta http-equiv="Permissions-Policy" content="autoplay=*">
-  <link rel="stylesheet" href="style.css?v=20261113d">
+  <link rel="stylesheet" href="style.css?v=20261121a">
+  <link rel="stylesheet" href="review.css?v=20261121a">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261113d",
-      "./js/sim.js": "./js/sim.js?v=20261113d",
-      "./js/review.js": "./js/review.js?v=20261113d",
-      "./js/ai.js": "./js/ai.js?v=20261113d",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261113d",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261113d",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261113d",
-      "./js/crew.js": "./js/crew.js?v=20261113d",
-      "./js/camera.js": "./js/camera.js?v=20261113d",
-      "./js/course.js": "./js/course.js?v=20261113d",
-      "./js/rules.js": "./js/rules.js?v=20261113d",
-      "./js/audio.js": "./js/audio.js?v=20261113d"
+      "./js/world.js": "./js/world.js?v=20261121a",
+      "./js/sim.js": "./js/sim.js?v=20261121a",
+      "./js/review.js": "./js/review.js?v=20261121a",
+      "./js/ai.js": "./js/ai.js?v=20261121a",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121a",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261121a",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261121a",
+      "./js/crew.js": "./js/crew.js?v=20261121a",
+      "./js/camera.js": "./js/camera.js?v=20261121a",
+      "./js/course.js": "./js/course.js?v=20261121a",
+      "./js/rules.js": "./js/rules.js?v=20261121a",
+      "./js/audio.js": "./js/audio.js?v=20261121a"
     }
   }
   </script>
@@ -743,58 +744,6 @@
     <div id="orientFlash" class="orientFlash"></div>
     <div id="orientPointerLayer" class="orientPointerLayer" aria-hidden="true"></div>
 
-    <div id="orientReviewDemo" class="orientReviewDemo hidden" aria-hidden="true">
-      <div class="orientRevCard">
-        <div class="orientRevHeader">
-          <div>
-            <h3>レース振り返り・航跡リプレイ画面</h3>
-          </div>
-          <span class="orientRevCloseMock">閉じる</span>
-        </div>
-        <div class="orientRevGrid">
-          <div class="orientRevMapPane" id="orientRevMapTarget">
-            <div class="orientRevMapTitle">航跡リプレイ＆風向シフト履歴</div>
-            <div class="orientRevMapMock">
-              <svg viewBox="0 0 240 150" class="orientRevSvg">
-                <rect width="240" height="150" fill="#091929"/>
-                <line x1="55" y1="128" x2="175" y2="128" stroke="#fde047" stroke-width="2" stroke-dasharray="4 3"/>
-                <circle cx="115" cy="24" r="5" fill="#ff7a1a"/>
-                <text x="124" y="27" fill="#fff" font-size="9" font-weight="bold">1マーク</text>
-                <path d="M 148 128 L 82 76 L 115 24" stroke="#ff5a1f" stroke-width="2.5" fill="none"/>
-                <path d="M 110 128 L 154 78 L 115 24" stroke="#38bdf8" stroke-width="1.8" stroke-dasharray="3 2" fill="none"/>
-                <circle cx="82" cy="76" r="4" fill="#ff5a1f"/>
-              </svg>
-              <div class="orientRevRankMini">
-                <b>再生時点の順位</b>
-                <div>1. あなた</div>
-                <div>2. JPN 29410</div>
-                <div>3. ITA 31022</div>
-              </div>
-            </div>
-            <div class="orientRevPlayBar" id="orientRevPlayTarget">
-              <span class="orientRevPlayBtn">▶ 再生</span>
-              <div class="orientRevScrub"><div class="orientRevScrubFill"></div></div>
-              <span class="orientRevTime">01:24 / 04:12</span>
-            </div>
-          </div>
-          <div class="orientRevStatsPane" id="orientRevStatsTarget">
-            <div class="orientRevMapTitle">各艇パフォーマンス比較（艇速・角度・距離・スタート）</div>
-            <table class="orientRevTable">
-              <thead>
-                <tr><th>順位</th><th>艇</th><th>スタート</th><th>走行距離</th><th>上り艇速/角度</th><th>下り艇速/角度</th><th>T/J</th></tr>
-              </thead>
-              <tbody>
-                <tr class="me"><td>1</td><td>あなた</td><td>2位</td><td>1,420m</td><td>4.62kt / 41.80°</td><td>5.84kt / 142.50°</td><td>6 / 3</td></tr>
-                <tr><td>2</td><td>JPN 29410</td><td>1位</td><td>1,468m</td><td>4.58kt / 42.40°</td><td>5.71kt / 144.10°</td><td>8 / 4</td></tr>
-                <tr><td>3</td><td>ITA 31022</td><td>5位</td><td>1,495m</td><td>4.51kt / 43.10°</td><td>5.66kt / 141.20°</td><td>9 / 4</td></tr>
-              </tbody>
-            </table>
-            <div class="orientRevWindNote">海面ブロー・振れ履歴: 左海面ブロー優勢 ／ 01:15 右へ+7°シフト ／ 02:40 左へ-5°シフト</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="orientCardWrap">
       <div id="orientCard" class="orientCard">
         <div class="orientStepHead">
@@ -867,6 +816,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261113d"></script>
+  <script type="module" src="js/main.js?v=20261121a"></script>
 </body>
 </html>

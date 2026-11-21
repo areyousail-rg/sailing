@@ -332,6 +332,21 @@ export function randomizeWindShifts(seed = Date.now()) {
   }
 }
 randomizeWindShifts(Date.now());
+export function setOrientationWindShifts() {
+  const D = Math.PI / 180;
+  SHIFT_LOG.length = 0;
+  for (let i = 0; i < SHIFT_N; i++) {
+    const t = SHIFT_T0 + i * SHIFT_DT;
+    let deg = 0;
+    if (t >= 64 && t <= 84) {
+      // STEP 5: タック判断を実演しやすい左へのヘダー(-6.5°)→ポートタックでリフト
+      const u = Math.min(1, Math.max(0, (t - 64) / 4));
+      deg = -6.5 * u * u * (3 - 2 * u);
+    }
+    SHIFT_TAB[i] = deg * D;
+  }
+  SHIFT_LOG.push({ t: 64, type: 'step', deg: -6.5 });
+}
 export function shiftAt(t) {
   let u = (t - SHIFT_T0) / SHIFT_DT;
   if (u < 0) u = 0;

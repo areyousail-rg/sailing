@@ -391,7 +391,8 @@ export class Recorder {
 // ---------- 表示 ----------
 let cssAdded = false;
 function addCss() {
-  if (cssAdded) return; cssAdded = true;
+  if (cssAdded || document.querySelector('link[href^="review.css"]')) { cssAdded = true; return; }
+  cssAdded = true;
   const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'review.css'; document.head.appendChild(l);
 }
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
@@ -401,7 +402,7 @@ const sec = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}秒`;
 
 export function openReview(rec, o) {
   addCss();
-  playBgm('review');
+  if (!o || !o.keepBgm) playBgm('review');
   let root = document.getElementById('review');
   if (root) root.remove();
   root = document.createElement('div');
@@ -940,10 +941,10 @@ export function buildFallbackReviewFromRecord(r, fallbackOpts = {}) {
     return (parseInt(m, 10) || 0) * 60 + (parseFloat(s) || 0);
   };
   const endT = Math.max(90, Math.round(parseTimeSec(r.time)));
-  const marks = isUpwind
-    ? { pin: { a: 0, c: -50 }, com: { a: 0, c: 50 }, m1: { a: 600, c: 0 }, fcom: { a: 600, c: 28 }, fm: { a: 600, c: 0 } }
-    : { pin: { a: 0, c: -50 }, com: { a: 0, c: 50 }, m1: { a: 300, c: 0 }, m1a: { a: 300, c: -30 }, m2: { a: 215, c: -110 }, m3: { a: 40, c: -110 }, gL: { a: 40, c: -22 }, gR: { a: 40, c: 22 }, fcom: { a: -110, c: -135 }, fm: { a: -110, c: -168 } };
-  const legs = isUpwind
+  const marks = fallbackOpts.marks || (isUpwind
+    ? { pin: { a: 0, c: -75 }, com: { a: 0, c: 75 }, m1: { a: 600, c: -22 }, fcom: { a: 600, c: 24 }, fm: { a: 600, c: -22 } }
+    : { pin: { a: 0, c: -75 }, com: { a: 0, c: 75 }, m1: { a: 300, c: 0 }, m1a: { a: 300, c: -30 }, m2: { a: 200, c: -160 }, m3: { a: -40, c: -160 }, gL: { a: 40, c: -22 }, gR: { a: 40, c: 22 }, fcom: { a: -95, c: -70 }, fm: { a: -135, c: -110 } });
+  const legs = fallbackOpts.legs || (isUpwind
     ? [{ id: 0, name: 'F', type: 'finish' }]
     : [
         { id: 0, name: '1', type: 'mark' },
@@ -953,32 +954,49 @@ export function buildFallbackReviewFromRecord(r, fallbackOpts = {}) {
         { id: 4, name: '2', type: 'mark' },
         { id: 5, name: '3', type: 'mark' },
         { id: 6, name: 'F', type: 'finish' },
-      ];
+      ]);
   const d = new Map();
   const order = [];
   const palette = [0xff5a1f, 0x38bdf8, 0x22c55e, 0xeab308, 0xa855f7, 0xec4899, 0x14b8a6, 0xf97316];
+  const nats = ['JPN', 'ITA', 'BRA', 'USA', 'ESP', 'POR', 'ARG', 'FRA', 'GBR', 'NZL'];
   for (let pos = 1; pos <= fleet; pos++) {
     const isP = pos === pRank;
     const id = isP ? 0 : pos;
     order.push(id);
     const rankDiff = pos - pRank;
-    const bV = Math.max(1.8, pV * (1 - rankDiff * 0.012));
-    const baseDist = isUpwind ? 860 : 1480;
+    const bV = Math.max(1.8, pV * (1 - rankDiff * 0.011));
+    const baseDist = isUpwind ? 860 : 1540;
     const dist = Math.round(baseDist + (pos - 1) * 9.5);
+    const startC = isP ? 22 : Math.max(-66, Math.min(66, -58 + ((pos * 29) % 120)));
+    const sideChoice = pos % 3 === 0 ? 1 : -1; // 多くが有利な左海面(-c)を使い、一部が右海面(+c)を使うリアルな航跡
+    const gateC = pos % 3 === 1 ? 23 : -23;
+    const bEnd = endT + (pos - 1) * 2.4;
     const waypoints = isUpwind
-      ? [[0, 12, -18], [endT * 0.45, 290, -52 + (pos % 5) * 14], [endT, 600, 10]]
+      ? [
+          [-24, -28, startC + 20],
+          [0, 0, startC],
+          [bEnd * 0.36, 215, sideChoice * (85 + (pos % 4) * 10)],
+          [bEnd * 0.74, 455, -sideChoice * (55 + (pos % 3) * 12)],
+          [bEnd, 600, 2 + ((pos % 5) - 2) * 3],
+        ]
       : [
-          [0, 0, 18 - (pos % 7) * 8],
-          [endT * 0.24, 300, 0],
-          [endT * 0.28, 300, -30],
-          [endT * 0.48, 40, pos % 2 === 0 ? -18 : 18],
-          [endT * 0.72, 300, 0],
-          [endT * 0.82, 215, -110],
-          [endT * 0.92, 40, -110],
-          [endT, -110, -150],
+          [-24, -26, startC + 22],
+          [0, 2, startC],
+          [bEnd * 0.12, 138, sideChoice < 0 ? -78 - (pos % 4) * 8 : 54 + (pos % 3) * 9],
+          [bEnd * 0.21, 248, sideChoice < 0 ? -24 + (pos % 3) * 7 : 18 - (pos % 3) * 6],
+          [bEnd * 0.26, 303, 2],
+          [bEnd * 0.29, 301, -33],
+          [bEnd * 0.38, 168, -48 + (pos % 5) * 11],
+          [bEnd * 0.46, 38, gateC],
+          [bEnd * 0.58, 166, gateC < 0 ? -82 - (pos % 3) * 7 : 58 + (pos % 3) * 8],
+          [bEnd * 0.67, 265, gateC < 0 ? -18 + (pos % 3) * 5 : 16 - (pos % 3) * 5],
+          [bEnd * 0.72, 303, 2],
+          [bEnd * 0.81, 200, -163],
+          [bEnd * 0.92, -42, -162],
+          [bEnd, -106 - (pos % 4) * 3, -81 - (pos % 4) * 3],
         ];
     const track = [];
-    for (let t = 0; t <= endT; t += 4) {
+    for (let t = -24; t <= Math.ceil(endT); t += 3) {
       let w0 = waypoints[0], w1 = waypoints[waypoints.length - 1];
       for (let k = 0; k < waypoints.length - 1; k++) {
         if (t >= waypoints[k][0] && t <= waypoints[k + 1][0]) {
@@ -987,10 +1005,13 @@ export function buildFallbackReviewFromRecord(r, fallbackOpts = {}) {
       }
       const u = w1[0] > w0[0] ? (t - w0[0]) / (w1[0] - w0[0]) : 1;
       const a = w0[1] + (w1[1] - w0[1]) * u;
-      const c = w0[2] + (w1[2] - w0[2]) * u + Math.sin(t * 0.08 + pos) * 6;
-      track.push({ t, a, c, h: 0, v: bV, rank: pos });
+      const c = w0[2] + (w1[2] - w0[2]) * u + Math.sin(t * 0.06 + pos) * 2.4;
+      const curRank = Math.max(1, Math.min(fleet, Math.round(pos + Math.sin(t * 0.035 + pos * 1.3) * (isP ? 1.2 : 2.2))));
+      track.push({ t, a, c, h: 0, v: bV, rank: t >= endT - 8 ? pos : curRank });
     }
-    const boatObj = { id, isPlayer: isP, sailNo: String(30000 + pos * 113), nat: isP ? 'JPN' : 'JPN', name: isP ? 'あなた' : `CP ${30000 + pos * 113}` };
+    const nat = isP ? 'JPN' : nats[pos % nats.length];
+    const sailNo = isP ? (fallbackOpts.playerSailNo || '31804') : String(28400 + pos * 217);
+    const boatObj = { id, isPlayer: isP, sailNo, nat, name: isP ? 'あなた' : `${nat} ${sailNo}` };
     d.set(id, {
       id,
       color: isP ? 0xff5a1f : palette[pos % palette.length],
@@ -1002,61 +1023,62 @@ export function buildFallbackReviewFromRecord(r, fallbackOpts = {}) {
       dist,
       avgV: bV,
       avgUpV: bV * 0.94,
-      avgDnV: isUpwind ? null : bV * 1.08,
-      avgRcV: isUpwind ? null : bV * 1.12,
-      avgUpAng: 41.8 + (pos - 1) * 0.18,
-      avgUpCourseAng: 41.2 + (pos - 1) * 0.22,
-      avgUpShiftGain: 0.6,
-      avgDnAng: isUpwind ? null : 144.0 - (pos - 1) * 0.25,
-      avgWindF: 1.02 - (pos - 1) * 0.004,
-      startCross: 1.8 + (pos - 1) * 0.45,
-      startRank: pos,
-      gunRank: pos,
+      avgDnV: isUpwind ? null : bV * 1.12,
+      avgRcV: isUpwind ? null : bV * 1.16,
+      avgUpAng: 41.6 + (pos - 1) * 0.16,
+      avgUpCourseAng: 40.9 + (pos - 1) * 0.20,
+      avgUpShiftGain: 0.7,
+      avgDnAng: isUpwind ? null : 145.2 - (pos - 1) * 0.22,
+      avgWindF: 1.03 - (pos - 1) * 0.004,
+      startCross: 1.4 + (pos - 1) * 0.38,
+      startRank: isP ? 2 : (pos === 2 ? 1 : pos),
+      gunRank: isP ? 2 : (pos === 2 ? 1 : pos),
       tacks: isUpwind ? 4 + (pos % 3) : 6 + (pos % 4),
       gybes: isUpwind ? 0 : 3 + (pos % 2),
-      blkT: Math.max(0, (pos - 1) * 2.2),
-      backT: Math.max(0, (pos - 2) * 1.1),
-      lossBlk: Math.max(0, (pos - 1) * 1.6),
-      lossBack: Math.max(0, (pos - 2) * 0.8),
-      lossWave: 4.2,
-      pinchT: Math.max(0, (pos - 2) * 1.8),
-      lossPinch: Math.max(0, (pos - 2) * 1.4),
-      footT: Math.max(0, (pos - 3) * 1.5),
-      lossFoot: Math.max(0, (pos - 3) * 1.1),
-      headerT: Math.max(0, (pos - 1) * 2.5),
-      overstandT: Math.max(0, (pos - 2) * 1.2),
-      lossCourse: Math.max(0, (pos - 1) * 2.1),
-      distAngleDiff: (pos - 1) * 3.2,
-      distShiftDiff: (pos - 1) * 4.5,
-      distOverDiff: (pos - 1) * 1.8,
+      blkT: Math.max(0, (pos - 1) * 2.0),
+      backT: Math.max(0, (pos - 2) * 1.0),
+      lossBlk: Math.max(0, (pos - 1) * 1.5),
+      lossBack: Math.max(0, (pos - 2) * 0.7),
+      lossWave: 3.8,
+      pinchT: Math.max(0, (pos - 2) * 1.6),
+      lossPinch: Math.max(0, (pos - 2) * 1.2),
+      footT: Math.max(0, (pos - 3) * 1.4),
+      lossFoot: Math.max(0, (pos - 3) * 1.0),
+      headerT: Math.max(0, (pos - 1) * 2.2),
+      overstandT: Math.max(0, (pos - 2) * 1.1),
+      lossCourse: Math.max(0, (pos - 1) * 1.9),
+      distAngleDiff: (pos - 1) * 2.8,
+      distShiftDiff: (pos - 1) * 4.1,
+      distOverDiff: (pos - 1) * 1.6,
       contacts: 0,
       touches: 0,
       penalties: 0,
       final: r.status === 'DSQ' && isP ? null : pos,
       status: isP && r.status !== 'FIN' ? r.status : '',
-      finishTime: endT + (pos - pRank) * 3.2,
-      avgDrop: 0.18,
-      lostTotal: 8 + pos * 1.8,
-      events: [],
-      legMarks: legs.map((lg, li) => ({ leg: lg.id, t: Math.round(((li + 1) / legs.length) * endT), rank: pos })),
+      finishTime: endT + (pos - pRank) * 2.6,
+      avgDrop: 0.17,
+      lostTotal: 6 + pos * 1.6,
+      events: isP ? [{ t: Math.round(endT * 0.26), dur: 4.2, drop: 0.19, lost: 3.8, cause: 'マーク回航', leg: 0 }] : [],
+      legMarks: legs.map((lg, li) => ({ leg: lg.id, t: Math.round(((li + 1) / legs.length) * endT), rank: li < 2 && isP ? 2 : pos })),
     });
   }
   const rec = {
     endT,
     n: fleet,
     order,
-    meta: { sea: `${r.venue || '八景島'} (${r.wind || '9kt'})`, tide: r.date || '', courseMode },
-    windSummary: { blowSideTxt: `戦績記録 (${r.date || ''}) — ${r.venue || ''} / ${r.course || ''} / 風況 ${r.wind || ''}`, shifts: [] },
+    meta: { sea: r.seaMeta || `${r.venue || '八景島'} (${r.wind || '9kt'})`, tide: r.tideMeta || r.date || '', courseMode },
+    windSummary: fallbackOpts.windSummary || { blowSideTxt: `戦績記録 (${r.date || ''}) — ${r.venue || ''} / ${r.course || ''} / 風況 ${r.wind || ''}`, shifts: [] },
     d,
   };
   const o = {
-    nameOf: (b) => b.name || (b.isPlayer ? 'あなた' : b.sailNo),
+    nameOf: (b) => b.name || (b.isPlayer ? 'あなた' : `${b.nat || 'JPN'} ${b.sailNo}`),
     playerId: 0,
     marks,
     courseMode,
     legs,
     speedScale,
     kt,
+    keepBgm: !!fallbackOpts.keepBgm,
     returnBgm: fallbackOpts.returnBgm || 'menu_hakkeijima',
     onClose: fallbackOpts.onClose,
   };
