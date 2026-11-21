@@ -202,7 +202,7 @@ function ensureMenuHtmlAudio() {
     if (document.body) document.body.appendChild(a);
     menuHtmlAudio = a;
   }
-  if (menuWavUrl && menuHtmlAudio.src !== menuWavUrl) {
+  if (menuWavUrl && (!menuHtmlAudio.src || (menuHtmlAudio.paused && menuHtmlAudio.src !== menuWavUrl))) {
     menuHtmlAudio.src = menuWavUrl;
   }
   return menuHtmlAudio;
@@ -251,6 +251,10 @@ function ensureAudioUnlockListeners() {
   const gestureEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const tryUnlockSync = () => {
     initAudio();
+    const loadingNow = isLoadingScreenActive();
+    if (!loadingNow && bgmMode && bgmVoiceEnabled && !bgmSource) {
+      playBgm(bgmMode);
+    }
     if (ctx && ctx.state !== 'running') {
       try {
         const sb = ctx.createBuffer(1, 1, ctx.sampleRate || 44100);
@@ -260,15 +264,13 @@ function ensureAudioUnlockListeners() {
         src.start(0);
       } catch (e) {}
       ctx.resume().then(() => {
-        if (bgmMode && bgmVoiceEnabled && !bgmSource) {
-          const cur = bgmMode;
-          playBgm(cur);
-        } else if (bgmMode === 'menu') {
-          syncMenuHtmlAudioPlayback();
+        if (!isLoadingScreenActive() && bgmMode && bgmVoiceEnabled) {
+          if (!bgmSource) playBgm(bgmMode);
+          else if (bgmMode === 'menu') syncMenuHtmlAudioPlayback();
         }
       }).catch(() => {});
     }
-    if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
+    if (!loadingNow && bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
       syncMenuHtmlAudioPlayback();
     }
   };
@@ -281,7 +283,7 @@ function ensureAudioUnlockListeners() {
     window.addEventListener(ev, () => {
       if (document.visibilityState === 'hidden') return;
       if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
-      if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) syncMenuHtmlAudioPlayback();
+      if (!isLoadingScreenActive() && bgmMode === 'menu' && bgmVoiceEnabled && !muted) syncMenuHtmlAudioPlayback();
     }, { passive: true });
   });
 }
@@ -294,14 +296,14 @@ export function isAudioRunning() {
   );
 }
 export function isBgmPlaying() {
-  if (!bgmVoiceEnabled || muted || !bgmMode) return false;
+  if (!bgmVoiceEnabled || muted || !bgmMode || isLoadingScreenActive()) return false;
   if (ctx && ctx.state === 'running' && bgmSource) return true;
   if (bgmMode === 'menu' && menuHtmlAudio && !menuHtmlAudio.paused) return true;
   return false;
 }
 export function unlockAudioNow() {
   initAudio();
-  if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
+  if (!isLoadingScreenActive() && bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
     syncMenuHtmlAudioPlayback();
   }
   if (!ctx) return Promise.resolve(false);
@@ -332,9 +334,9 @@ export function initAudio() {
       }
     }
     ctx.onstatechange = () => {
-      if (ctx && ctx.state === 'running' && bgmMode && !bgmSource && bgmVoiceEnabled) {
-        const curMode = bgmMode;
-        playBgm(curMode);
+      if (ctx && ctx.state === 'running' && !isLoadingScreenActive() && bgmMode && bgmVoiceEnabled) {
+        if (!bgmSource) playBgm(bgmMode);
+        else if (bgmMode === 'menu') syncMenuHtmlAudioPlayback();
       }
     };
     if (ctx.state !== 'running') ctx.resume().catch(() => {});
@@ -665,18 +667,19 @@ export function updateSailingAudio(dt, b, active = true) {
   const waveMod3 = Math.sin(wPhase * 0.47 + 2.1);
   const dynWave = clampN(0.5 + 0.28 * waveMod1 + 0.18 * waveMod2 + 0.12 * waveMod3, 0.1, 1.15);
 
-  // 連続水流音のゲインとフィルタ周波数を波のうねり・ヒール・艇速で表情付け (スロットリング付きで歪み防止)
-  setSmoothTarget(hissGain.gain, (0.006 + 0.20 * Math.pow(sp, 1.35)) * (1 + heel * 2.0) * (0.72 + 0.50 * dynWave), now, 0.08, 0.003);
+  // 連続水流音のゲインとフィルタ周波数を波のうねり・ヒール・艇速・プレーニング状態で表情付け (スロットリング付きで歪み防止)
+  const planeF = b ? clamp01(b.planingF || 0) : 0;
+  setSmoothTarget(hissGain.gain, (0.006 + 0.20 * Math.pow(sp, 1.35) + 0.085 * planeF) * (1 + heel * 2.0) * (0.72 + 0.50 * dynWave), now, 0.08, 0.003);
   if (hissHP && hissLP) {
-    setSmoothTarget(hissHP.frequency, 1050 + sp * 480 - heel * 500 + waveMod2 * 220, now, 0.10, 12);
-    setSmoothTarget(hissLP.frequency, 3800 + sp * 3600 + dynWave * 1600, now, 0.10, 30);
+    setSmoothTarget(hissHP.frequency, 1050 + sp * 480 + planeF * 320 - heel * 500 + waveMod2 * 220, now, 0.10, 12);
+    setSmoothTarget(hissLP.frequency, 3800 + sp * 3600 + planeF * 2200 + dynWave * 1600, now, 0.10, 30);
   }
-  setSmoothTarget(rushGain.gain, (0.012 + 0.20 * sp) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12, 0.003);
-  setSmoothTarget(rushFilter.frequency, 260 + sp * 780 + waveMod1 * 140 + heel * 260, now, 0.12, 10);
+  setSmoothTarget(rushGain.gain, (0.012 + 0.20 * sp + 0.055 * planeF) * (0.78 + 0.45 * (1 - dynWave)), now, 0.12, 0.003);
+  setSmoothTarget(rushFilter.frequency, 260 + sp * 780 + planeF * 280 + waveMod1 * 140 + heel * 260, now, 0.12, 10);
 
   if (chineGain && chineFilter) {
-    setSmoothTarget(chineGain.gain, sp * (0.032 + 0.10 * heel + 0.04 * Math.abs(waveMod2)), now, 0.10, 0.002);
-    setSmoothTarget(chineFilter.frequency, 580 + sp * 620 + waveMod3 * 240, now, 0.10, 12);
+    setSmoothTarget(chineGain.gain, sp * (0.032 + 0.10 * heel + 0.11 * planeF + 0.04 * Math.abs(waveMod2)), now, 0.10, 0.002);
+    setSmoothTarget(chineFilter.frequency, 580 + sp * 620 + planeF * 780 + waveMod3 * 240, now, 0.10, 12);
   }
 
   // シバー: セールの「バサッ」音(shiverFlap)は元の音量・反応に戻し、0度付近での連続ノイズ(ザーっという音)のみ抑える
@@ -1134,6 +1137,11 @@ export function stopBgm() {
   fadeOutActiveBgmSource(0.07, 280);
 }
 
+export function ensureBgmReady(mode = 'menu') {
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  return renderBgmBuffer(mode).catch(() => null);
+}
+
 export function prewarmBgm(modes = ['menu']) {
   if (typeof window === 'undefined') return;
   const list = Array.isArray(modes) ? modes.slice() : [modes];
@@ -1147,16 +1155,16 @@ export function prewarmBgm(modes = ['menu']) {
     renderBgmBuffer(m)
       .catch(() => {})
       .finally(() => {
-        if (list.length > 0) setTimeout(next, 320);
+        if (list.length > 0) setTimeout(next, m === 'menu' ? 40 : 320);
       });
   };
   next();
 }
 
 function mountBgmBufferSource(buf, mode, isQuick) {
-  if (!ctx || ctx.state !== 'running' || !buf) return false;
+  if (!ctx || ctx.state === 'closed' || !master || !buf) return false;
   let startOffset = 0;
-  if (!isQuick && bgmIsQuick && bgmSource && bgmMode === mode) {
+  if (!isQuick && bgmIsQuick && bgmSource && bgmMode === mode && ctx.state === 'running') {
     // クイック4小節バッファ再生中からフル長バッファへ位相一致でシームレス昇格
     startOffset = Math.max(0, (ctx.currentTime - bgmStartCtxTime) % buf.duration);
   } else if (mode === 'menu' && menuHtmlAudio && !menuHtmlAudio.paused && menuHtmlAudio.volume > 0.05) {
@@ -1183,6 +1191,7 @@ function mountBgmBufferSource(buf, mode, isQuick) {
 
 export function playBgm(mode = 'result') {
   if (isLoadingScreenActive()) {
+    bgmMode = mode;
     stopMenuHtmlAudio();
     fadeOutActiveBgmSource(0.05, 150);
     return;
@@ -1196,7 +1205,8 @@ export function playBgm(mode = 'result') {
     bgmMode = mode;
     return;
   }
-  if (bgmMode === mode && bgmSource && !bgmIsQuick && ctx && ctx.state === 'running') {
+  if (bgmMode === mode && bgmSource && !bgmIsQuick) {
+    if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
     if (mode === 'menu') syncMenuHtmlAudioPlayback();
     return;
   }
@@ -1213,23 +1223,19 @@ export function playBgm(mode = 'result') {
     if (mode === 'menu' && !menuWavUrl) {
       menuWavUrl = encodeAudioBufferToWavUrl(buf);
     }
-    if (!ctx || ctx.state !== 'running') {
-      if (mode === 'menu' && !muted) syncMenuHtmlAudioPlayback();
-      if (ctx) {
-        ctx.resume().then(() => {
-          if (ctx && ctx.state === 'running' && bgmMode === mode && !bgmSource && bgmVoiceEnabled) {
-            playBgm(mode);
-          }
-        }).catch(() => {});
-      }
-      return;
-    }
     if (isQuick && bgmSource && prevMode === mode) return;
     if (!isQuick && bgmSource && !bgmIsQuick && prevMode === mode) {
+      if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
       if (mode === 'menu') syncMenuHtmlAudioPlayback();
       return;
     }
     mountBgmBufferSource(buf, mode, isQuick);
+    if (ctx && ctx.state !== 'running') {
+      ctx.resume().then(() => {
+        if (mode === 'menu' && bgmMode === 'menu') syncMenuHtmlAudioPlayback();
+      }).catch(() => {});
+    }
+    if (mode === 'menu' && !muted) syncMenuHtmlAudioPlayback();
   };
 
   if (bgmBufferCache.has(mode)) {
@@ -2417,7 +2423,7 @@ function renderBgmBuffer(mode) {
             }
 
             if (si < numSlices - 1) {
-              const yieldMs = (bgmMode !== mode && bgmQuickWaiters.size > 0) ? 90 : 0;
+              const yieldMs = (mode !== 'menu' && bgmMode !== mode && bgmQuickWaiters.size > 0) ? 90 : 0;
               await new Promise((r) => setTimeout(r, yieldMs));
             }
           }
@@ -2449,9 +2455,13 @@ function renderBgmBuffer(mode) {
             const oldUrl = menuWavUrl;
             menuWavUrl = encodeAudioBufferToWavUrl(loopBuf);
             if (oldUrl && oldUrl !== menuWavUrl) {
-              setTimeout(() => { try { URL.revokeObjectURL(oldUrl); } catch (e) {} }, 5000);
+              setTimeout(() => {
+                try {
+                  if (!menuHtmlAudio || menuHtmlAudio.src !== oldUrl) URL.revokeObjectURL(oldUrl);
+                } catch (e) {}
+              }, 8000);
             }
-            if (bgmMode === 'menu' && bgmVoiceEnabled && !muted) syncMenuHtmlAudioPlayback();
+            if (!isLoadingScreenActive() && bgmMode === 'menu' && bgmVoiceEnabled && !muted) syncMenuHtmlAudioPlayback();
           }
           resolve(loopBuf);
         } catch (err) {

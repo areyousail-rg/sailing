@@ -764,6 +764,7 @@ function makeWaterCutMat() {
       uHeel: { value: 0 },
       uSteer: { value: 0 },
       uRudderDrag: { value: 0 },
+      uPlaning: { value: 0 },
       uOpacity: { value: 1.0 },
     },
     vertexShader: `
@@ -774,6 +775,7 @@ function makeWaterCutMat() {
       uniform float uHeel;
       uniform float uSteer;
       uniform float uRudderDrag;
+      uniform float uPlaning;
       varying vec2 vUv;
       varying float vKind;
       varying float vSideBoost;
@@ -786,40 +788,40 @@ function makeWaterCutMat() {
         vec3 p = position;
         float spd = clamp(uSpeed, 0.0, 1.45);
         float wav = clamp(uWave, 0.0, 1.35);
+        float pln = clamp(uPlaning, 0.0, 1.15);
 
         if (kind < 0.5) {
-          // 1) ハル水線・バウ水切り波リボン
+          // 1) ハル水線・バウ水切り波リボン ＋ プレーニング時のV字チャインスプレーシート
           float u = uv.x;
           float v = uv.y;
           // ヒールしている側(風下チャイン)がより深く水を捉えて強い水切り波を生む
           float leeBoost = clamp(1.0 - side * uHeel * 2.2, 0.55, 1.55);
           vSideBoost = leeBoost;
-          // 船体水線すぐ脇(v=0)から外側斜め後方(v=1)へ広がるケルビンバウ波幅 (ほんのわずかに大きめに調整)
-          float spreadW = (0.052 + (0.16 + 0.48 * pow(u, 0.82)) * (0.20 + 0.76 * spd + 0.38 * wav)) * leeBoost;
+          float planeWingEnv = smoothstep(0.10, 0.38, u) * (1.12 - 0.28 * u);
+          float spreadW = (0.052 + (0.16 + 0.48 * pow(u, 0.82)) * (0.20 + 0.76 * spd + 0.38 * wav) + 0.58 * pln * planeWingEnv) * leeBoost;
           // ヒールに伴う水線の横ずれ補正
           float heelShift = -uHeel * 0.14;
           p.x = side * (hx + v * spreadW) + heelShift;
-          // バウ〜フォアフット(u < 0.42)で水を左右へ押し分けながら立ち上がる薄い水膜リップ
+          // バウ〜フォアフット(u < 0.44)で水を左右へ押し分けながら立ち上がる薄い水膜リップ
           float bowEnv = sin(clamp(u / 0.44, 0.0, 1.0) * 3.14159265);
           float lipH = (1.0 - v) * (1.0 - v * 0.65) * bowEnv * (0.028 + 0.078 * spd + 0.086 * wav) * leeBoost;
-          // 船体側面の水線メニスカス(水とハルの境界を自然に馴染ませる微かなせり上がり)
-          float chineLip = (1.0 - smoothstep(0.0, 0.38, v)) * (1.0 - u * 0.55) * (0.016 + 0.028 * spd);
-          float ripple = 0.009 * sin(u * 22.0 - uTime * (5.0 + 5.5 * spd) + v * 6.0) * spd * v;
-          p.y = 0.012 + lipH + chineLip + ripple;
-          p.z += v * (0.14 + 0.32 * spd) * u;
+          // プレーニング時はチャイン中腹部〜後方から低く鋭い水膜が横へ張り出す
+          float planeLip = sin(clamp(v * 0.85, 0.0, 1.0) * 3.14159265) * planeWingEnv * 0.105 * pln * leeBoost;
+          float chineLip = (1.0 - smoothstep(0.0, 0.38, v)) * (1.0 - u * 0.55) * (0.016 + 0.028 * spd + 0.024 * pln);
+          float ripple = (0.009 + 0.010 * pln) * sin(u * 24.0 - uTime * (5.5 + 7.5 * spd + 6.0 * pln) + v * 6.5) * spd * v;
+          p.y = 0.012 + lipH + planeLip + chineLip + ripple;
+          p.z += v * (0.14 + 0.34 * spd + 0.42 * pln) * u;
         } else {
-          // 2) ラダーブレード＆トランサム水切りストリーム
+          // 2) ラダーブレード＆トランサム水切りストリーム（プレーニング時は船尾ルースターテールが増大）
           float u = uv.x;
           float rSide = side; // -1 .. +1
-          vSideBoost = 1.0 + uRudderDrag * 0.8;
-          // ラダー前縁(u=0.04)で鋭く水を割り、後方へV字に広がる乱流シート
-          float halfW = 0.030 + (0.105 + 0.30 * pow(u, 0.78)) * (0.30 + 0.68 * spd + 0.50 * uRudderDrag + 0.25 * wav);
-          // 舵角(uSteer)に応じてラダー直後の水流軌道がしなる
+          vSideBoost = 1.0 + uRudderDrag * 0.8 + pln * 0.65;
+          float halfW = 0.030 + (0.105 + (0.30 + 0.24 * pln) * pow(u, 0.76)) * (0.30 + 0.68 * spd + 0.50 * uRudderDrag + 0.25 * wav + 0.42 * pln);
           float deflect = -uSteer * pow(u, 1.28) * (0.32 + 0.24 * spd);
           p.x = deflect + rSide * halfW;
-          // ラダーブレードが水を切る襟状の盛り上がり(ラダーカラー)
-          float collarEnv = exp(-pow((u - 0.06) / 0.085, 2.0)) * (1.0 - abs(rSide) * 0.75);
-          float collarH = collarEnv * (0.028 + 0.062 * spd + 0.050 * uRudderDrag + 0.028 * wav);
+          float collarEnv = exp(-pow((u - 0.08) / (0.09 + 0.07 * pln), 2.0)) * (1.0 - abs(rSide) * 0.72);
+          float roosterEnv = sin(clamp(u / 0.52, 0.0, 1.0) * 3.14159265) * (1.0 - abs(rSide) * 0.68) * pln;
+          float collarH = collarEnv * (0.028 + 0.062 * spd + 0.050 * uRudderDrag + 0.028 * wav) + roosterEnv * 0.068;
           p.y = 0.014 + collarH;
         }
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -831,6 +833,7 @@ function makeWaterCutMat() {
       uniform float uSpeed;
       uniform float uWave;
       uniform float uRudderDrag;
+      uniform float uPlaning;
       uniform float uOpacity;
       varying vec2 vUv;
       varying float vKind;
@@ -845,48 +848,46 @@ function makeWaterCutMat() {
 
       void main() {
         float spd = clamp(uSpeed, 0.0, 1.45);
+        float pln = clamp(uPlaning, 0.0, 1.15);
         if (spd < 0.04 && uWave < 0.05) discard;
         float u = vUv.x;
         float v = vUv.y;
-        float flowT = uTime * (2.6 + 4.8 * spd);
+        float flowT = uTime * (2.6 + 5.2 * spd + 5.8 * pln);
 
         if (vKind < 0.5) {
-          // ハル水線・バウ水切り波: 船体直近の透き通った水膜光沢＋バウ先から後方へ流れる繊細な気泡筋
+          // ハル水線・バウ水切り波 ＋ プレーニング時の白いチャインスプレーウィング
           float n1 = vn(vec2(v * 5.2, u * 11.0 - flowT));
-          float n2 = vn(vec2(v * 11.5 + 3.1, u * 22.0 - flowT * 1.35));
-          float streak = 0.55 * n1 + 0.45 * n2;
-          // 内側(v=0: 船体キワ)は滑らかに立ち上がり、外側(v=1)と後端(u=1)で自然に海面へ溶け込む
-          float edgeIn = smoothstep(0.0, 0.09, v);
-          float edgeOut = pow(max(0.0, 1.0 - v), 1.65);
-          float bowFade = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.68, 1.0, u));
-          // バウが水を切る先端部(u < 0.36)のリップハイライト
+          float n2 = vn(vec2(v * 12.5 + 3.1, u * 24.0 - flowT * 1.4));
+          float streak = 0.52 * n1 + 0.48 * n2;
+          float edgeIn = smoothstep(0.0, 0.08, v);
+          float edgeOut = pow(max(0.0, 1.0 - v), mix(1.65, 1.12, clamp(pln, 0.0, 1.0)));
+          float aftCut = mix(0.68, 0.92, clamp(pln, 0.0, 1.0));
+          float bowFade = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(aftCut, 1.0, u));
           float bowCrest = smoothstep(0.38, 0.04, u) * smoothstep(0.55, 0.08, v) * (0.45 + 0.55 * streak);
-          // ケルビン波の外縁に沿って走る細い水紋ライン
           float kelvinRidge = exp(-pow((v - (0.42 + 0.32 * u)) / 0.18, 2.0)) * (0.4 + 0.6 * n1);
-          float intensity = (bowCrest * 0.75 + kelvinRidge * 0.52 + edgeOut * streak * 0.38) * edgeIn * bowFade;
-          float act = clamp((spd * 0.75 + uWave * 0.55) * vSideBoost, 0.0, 1.32);
-          float alpha = clamp(intensity * act * 0.66 * uOpacity, 0.0, 0.74);
+          float planeSheet = pln * smoothstep(0.10, 0.34, u) * (0.52 + 0.48 * streak) * (1.0 - smoothstep(0.55, 0.98, v));
+          float intensity = (bowCrest * 0.75 + kelvinRidge * 0.52 + edgeOut * streak * 0.38 + planeSheet * 0.78) * edgeIn * bowFade;
+          float act = clamp((spd * 0.75 + uWave * 0.55 + pln * 0.55) * vSideBoost, 0.0, 1.48);
+          float alpha = clamp(intensity * act * 0.68 * uOpacity, 0.0, 0.84);
           if (alpha < 0.01) discard;
           vec3 waterSheen = vec3(0.58, 0.84, 0.95);
-          vec3 foamWhite = vec3(0.95, 0.99, 1.0);
-          vec3 col = mix(waterSheen, foamWhite, clamp(bowCrest * 0.85 + streak * 0.45 + uWave * 0.3, 0.0, 1.0));
+          vec3 foamWhite = vec3(0.96, 0.99, 1.0);
+          vec3 col = mix(waterSheen, foamWhite, clamp(bowCrest * 0.85 + planeSheet * 0.9 + streak * 0.45 + uWave * 0.3, 0.0, 1.0));
           gl_FragColor = vec4(col, alpha);
         } else {
-          // ラダー水切り＆トランサム渦流: ラダー前縁の水割りカラーと後方へ伸びる白い水流筋
-          float rDist = abs(v - 0.5) * 2.0; // 0(中心) .. 1(外縁)
+          // ラダー水切り＆トランサムプレーニング航跡
+          float rDist = abs(v - 0.5) * 2.0;
           float n1 = vn(vec2(rDist * 4.5, u * 10.5 - flowT * 1.25));
-          float n2 = vn(vec2(v * 9.0 + 1.7, u * 19.0 - flowT * 1.6));
+          float n2 = vn(vec2(v * 9.5 + 1.7, u * 20.0 - flowT * 1.65));
           float turb = 0.55 * n1 + 0.45 * n2;
-          // ラダーブレード直近(u < 0.18)のV字水切りカラー
-          float collar = smoothstep(0.22, 0.02, u) * (1.0 - smoothstep(0.0, 0.78, rDist));
-          // ラダー後方へ尾を引く2本の剥離渦と中央の気泡ストリーム
+          float collar = smoothstep(0.22 + 0.14 * pln, 0.02, u) * (1.0 - smoothstep(0.0, 0.80, rDist));
           float twinVortex = exp(-pow((rDist - (0.25 + 0.35 * u)) / 0.24, 2.0));
-          float centerStream = (1.0 - smoothstep(0.0, 0.68, rDist)) * (0.45 + 0.55 * turb);
-          float uEnv = smoothstep(0.0, 0.04, u) * pow(max(0.0, 1.0 - u), 1.25);
-          float rAct = clamp(spd * 0.72 + uRudderDrag * 0.78 + uWave * 0.28, 0.0, 1.40);
-          float alpha = clamp((collar * 0.80 + (twinVortex * 0.52 + centerStream * 0.55) * turb) * uEnv * rAct * 0.70 * uOpacity, 0.0, 0.78);
+          float centerStream = (1.0 - smoothstep(0.0, 0.72, rDist)) * (0.45 + 0.55 * turb);
+          float uEnv = smoothstep(0.0, 0.04, u) * pow(max(0.0, 1.0 - u), mix(1.25, 0.88, clamp(pln, 0.0, 1.0)));
+          float rAct = clamp(spd * 0.72 + uRudderDrag * 0.78 + uWave * 0.28 + pln * 0.68, 0.0, 1.55);
+          float alpha = clamp((collar * 0.82 + (twinVortex * 0.55 + centerStream * (0.55 + 0.32 * pln)) * turb) * uEnv * rAct * 0.72 * uOpacity, 0.0, 0.84);
           if (alpha < 0.01) discard;
-          vec3 col = mix(vec3(0.62, 0.86, 0.96), vec3(0.96, 0.99, 1.0), clamp(collar * 0.9 + turb * 0.5 + uRudderDrag * 0.4, 0.0, 1.0));
+          vec3 col = mix(vec3(0.62, 0.86, 0.96), vec3(0.97, 0.995, 1.0), clamp(collar * 0.9 + turb * 0.52 + pln * 0.45 + uRudderDrag * 0.4, 0.0, 1.0));
           gl_FragColor = vec4(col, alpha);
         }
       }
@@ -1090,13 +1091,21 @@ export class BoatModel {
     this.phase = Math.random() * 10;
     this._prevPole = boat.pole;
     this.crewPoleTimer = 0;
+    const fSegGeo = new THREE.CylinderGeometry(0.0068, 0.0068, 1, 6); fSegGeo.translate(0, 0.5, 0);
+    // スナイプ級特有のサイドステー挙動(風上側はピンと張り、風下側は荷重が抜けてわずかにたるむ)を再現する4セグメント構成
+    this.shroudSegs = { '-1': [], '1': [] };
     for (const s of [-1, 1]) {
       const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.68, 8), spar); sp.rotation.z = Math.PI / 2 + s * 0.12; sp.position.set(s * 0.31, 3.85, -0.92); this.body.add(sp);
-      this.body.add(stay([s * SHROUD_A[0], SHROUD_A[1], SHROUD_A[2]], [s * SHROUD_B[0], SHROUD_B[1], SHROUD_B[2]]), stay([s * SHROUD_B[0], 3.85, -0.92], [0, 5.95, -0.9]));
+      for (let i = 0; i < 4; i++) {
+        const shSeg = new THREE.Mesh(fSegGeo, stayMat);
+        this.body.add(shSeg);
+        this.shroudSegs[String(s)].push(shSeg);
+      }
+      this.body.add(stay([s * SHROUD_B[0], 3.85, -0.92], [0, 5.95, -0.9]));
     }
+    this.syncShrouds(0, boat.tack, 0, 0, 0);
     // フォアステイ: ランチャーアップ時はテンションを少し緩めて前・風下へわずかにサギングできるよう4セグメントで構成
     this.forestaySegs = [];
-    const fSegGeo = new THREE.CylinderGeometry(0.0068, 0.0068, 1, 6); fSegGeo.translate(0, 0.5, 0);
     for (let i = 0; i < 4; i++) {
       const fs = new THREE.Mesh(fSegGeo, stayMat);
       this.body.add(fs);
@@ -1125,7 +1134,7 @@ export class BoatModel {
     this.body.add(this.mount);
 
     // 3Dバウしぶき（中低速〜高速走行中にバウ左右から舞い上がり艇内カメラでも見える飛沫）＋ 波にはたかれた際の大しぶきバースト
-    this.SPRAY_N = 28; // 0..15: 常時走行バウしぶき, 16..27: 波にはたかれた際のスプラッシュ
+    this.SPRAY_N = 28; // 0..15: 常時走行バウ＆プレーニングチャインしぶき, 16..27: 波にはたかれた際のスプラッシュ
     this.bowSprayMesh = new THREE.InstancedMesh(getSpray3DGeo(), getSprayDropMat(), this.SPRAY_N);
     this.bowSprayMesh.frustumCulled = false;
     this.bowSprayMesh.renderOrder = 6;
@@ -1150,20 +1159,24 @@ export class BoatModel {
 
     if (boat.isPlayer) {
       this.tells = [];
-      const yGeo = yarnGeo(0.28, 0.0046); // 細い毛糸・紐状のテルテール
-      const patchGeo = new THREE.CircleGeometry(0.012, 10); patchGeo.rotateY(Math.PI / 2);
+      const yGeo = yarnGeo(0.30, 0.0068); // 船内カメラからでも逆光で潰れず鮮明に読める毛糸テルテール
+      const patchGeo = new THREE.CircleGeometry(0.015, 10); patchGeo.rotateY(Math.PI / 2);
       const patchMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, side: THREE.DoubleSide });
-      for (const u of TT_HEIGHTS) {
+      const ttSpecs = [
+        ...TT_HEIGHTS.map((u) => ({ u, v: TT_V })),
+        { u: 0.17, v: 0.28 }, // ジブ下部クリアウィンドウ上縁のウィンドウテルテール
+      ];
+      for (const spec of ttSpecs) {
         for (const side of [1, -1]) {
-          // 右舷(スタボ)=鮮やかな青(0x1d7dfa)、左舷(ポート)=赤(0xff2233)
-          const matWind = new THREE.MeshStandardMaterial({ color: side > 0 ? 0x1d7dfa : 0xff2233, roughness: 0.85, metalness: 0.0 });
-          const matLeeward = new THREE.MeshBasicMaterial({ color: side > 0 ? 0x1e40af : 0x881111, transparent: true, opacity: 0.35, depthTest: true });
+          // 右舷(スタボ)=鮮やかな青(0x1d7dfa)、左舷(ポート)=赤(0xff2438)
+          const matWind = new THREE.MeshBasicMaterial({ color: side > 0 ? 0x1d7dfa : 0xff2438 });
+          const matLeeward = new THREE.MeshBasicMaterial({ color: side > 0 ? 0x1e40af : 0x991b1b, transparent: true, opacity: 0.48, depthTest: true });
           const m = new THREE.Mesh(yGeo, matWind);
           const patch = new THREE.Mesh(patchGeo, patchMat);
           m.add(patch);
           const mShadow = new THREE.Mesh(yGeo, matLeeward);
           this.jibPivot.add(m); this.jibPivot.add(mShadow);
-          this.tells.push({ m, mShadow, u, side, ph: Math.random() * 9 });
+          this.tells.push({ m, mShadow, u: spec.u, v: spec.v, side, ph: Math.random() * 9 });
         }
       }
 
@@ -1176,7 +1189,7 @@ export class BoatModel {
           const vm = new THREE.Mesh(ribbonGeo(0.14, 0.022), new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide }));
           vm.geometry = vm.geometry.clone(); vm.geometry.rotateY(Math.PI / 2);
           const bead = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2222 }));
-          vane.add(vm, bead); this.body.add(vane); this.vanes.push({ g: vane, ph: s * 1.7 + vy });
+          vane.add(vm, bead); this.body.add(vane); this.vanes.push({ g: vane, side: s, vy, ph: s * 1.7 + vy });
         }
       }
     }
@@ -1308,6 +1321,43 @@ export class BoatModel {
     }
   }
 
+  // スナイプ級のサイドステー更新: 風上側はピンと直線に張り、風下側はテンションが抜けてわずかにたるみ・揺れる実艇挙動を再現
+  syncShrouds(t, sgn, luff, vAbs, pk) {
+    if (!this.shroudSegs) return;
+    const load = clamp((1 - (luff || 0) * 0.85) * (0.28 + 0.72 * clamp((vAbs || 0) / 3.8, 0, 1)) + (pk || 0) * 0.35, 0, 1.15);
+    for (const s of [-1, 1]) {
+      const segs = this.shroudSegs[String(s)];
+      if (!segs || !segs.length) continue;
+      const isLeeward = s === -(sgn || 1);
+      const slack = isLeeward ? load : 0;
+      const N = segs.length;
+      const x0 = s * SHROUD_A[0], y0 = SHROUD_A[1], z0 = SHROUD_A[2];
+      const x1 = s * SHROUD_B[0], y1 = SHROUD_B[1], z1 = SHROUD_B[2];
+      for (let i = 0; i < N; i++) {
+        const u0 = i / N, u1 = (i + 1) / N;
+        const b0 = slack * Math.sin(Math.PI * u0), b1 = slack * Math.sin(Math.PI * u1);
+        const w0 = slack * 0.009 * Math.sin(t * 7.2 + u0 * 2.5 + this.phase) * Math.sin(Math.PI * u0);
+        const w1 = slack * 0.009 * Math.sin(t * 7.2 + u1 * 2.5 + this.phase) * Math.sin(Math.PI * u1);
+        _p0.set(x0 + (x1 - x0) * u0 - s * 0.032 * b0 + w0, y0 + (y1 - y0) * u0, z0 + (z1 - z0) * u0 + 0.048 * b0);
+        _p1.set(x0 + (x1 - x0) * u1 - s * 0.032 * b1 + w1, y0 + (y1 - y0) * u1, z0 + (z1 - z0) * u1 + 0.048 * b1);
+        placeSeg(segs[i], _p0, _p1);
+      }
+    }
+    if (this.vanes) {
+      for (const v of this.vanes) {
+        const s = v.side || 1;
+        const vy = v.vy || 1.68;
+        const uV = clamp((vy - SHROUD_A[1]) / (SHROUD_B[1] - SHROUD_A[1]), 0, 1);
+        const slack = s === -(sgn || 1) ? load : 0;
+        const bV = slack * Math.sin(Math.PI * uV);
+        const wV = slack * 0.009 * Math.sin(t * 7.2 + uV * 2.5 + this.phase) * Math.sin(Math.PI * uV);
+        const bx = s * (SHROUD_A[0] + (SHROUD_B[0] - SHROUD_A[0]) * uV) - s * 0.032 * bV + wV;
+        const bz = SHROUD_A[2] + (SHROUD_B[2] - SHROUD_A[2]) * uV + 0.048 * bV;
+        v.g.position.set(bx, vy, bz);
+      }
+    }
+  }
+
   // フォアステイの更新: クローズではピンと直線に張り、ランチャーアップ(pk>0)時はテンションを抜いて前・風上側へはっきりサギングさせる
   syncForestay(pk, sgn) {
     if (!this.forestaySegs) return;
@@ -1415,10 +1465,10 @@ export class BoatModel {
     // リーバウ効果やスターン通過リフト(windBend > 0)を受けている時はテルテールがリフト反応を示す
     const leeBowLift = clamp((this.boat.windBend || 0) * 6.0, -0.5, 0.65);
     for (const k of this.tells) {
-      const u = k.u, v = TT_V;
+      const u = k.u, v = k.v !== undefined ? k.v : TT_V;
       this.evalJibPoint(u, v, clewX, clewLocalY, clewLocalZ, camberSigned, pk, _v);
-      k.m.position.set(_v.x + k.side * 0.011, _v.y, _v.z);
-      k.mShadow.position.set(_v.x - k.side * 0.008, _v.y, _v.z);
+      k.m.position.set(_v.x + k.side * 0.012, _v.y, _v.z);
+      k.mShadow.position.set(_v.x - k.side * 0.009, _v.y, _v.z);
 
       const windward = k.side === sgn;
       const lift = windward ? Math.max(luff, Math.max(0, leeBowLift) * 0.55) : Math.max(stall, Math.max(0, -leeBowLift) * 0.55);
@@ -1439,20 +1489,42 @@ export class BoatModel {
     const ph = t * 1.6 + this.phase;
     const hx = Math.sin(b.h), hz = -Math.cos(b.h);
     const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
-    const speedNorm = clamp(Math.abs(b.v) / 2.6, 0, 1);
+    const ktApprox = Math.abs(b.v) / 1.0288;
+    const twaDegCur = ((b.twa || 0) * 180) / Math.PI;
+    const sStep01 = (e0, e1, val) => {
+      const x = clamp((val - e0) / (e1 - e0), 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+    // リーチング〜ブロードリーチ高速域(5.0kt〜6.6kt+)または波乗りサーフィン時の連続プレーニング度合い
+    const reachPlaneWin = sStep01(54, 68, twaDegCur) * (1 - sStep01(140, 165, twaDegCur));
+    const spdPlane = sStep01(5.0, 6.55, ktApprox);
+    const surfPlane = b.isSurfing ? sStep01(4.6, 6.0, ktApprox) * 0.55 : 0;
+    const targetPlaningF = clamp(reachPlaneWin * spdPlane + surfPlane, 0, 1.15);
+    if (this._planingF === undefined) this._planingF = targetPlaningF;
+    else this._planingF += (targetPlaningF - this._planingF) * (1 - Math.exp(-dt * 4.5));
+    const planingF = this._planingF;
+    b.planingF = planingF;
+
+    const speedNorm = clamp(ktApprox / 5.2, 0, 1);
     const slowFactor = Math.pow(1 - speedNorm, 1.35);
     const downFactor = clamp((b.twa - 1.05) / 0.65, 0, 1);
-    const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm);
-    const heave = ws.hLong * 0.84 + (ws.h - ws.hLong) * 0.30 * chopRespond + 0.042 * Math.sin(ph * 1.35);
-    const minPitchW = -0.025 - 0.068 * downFactor;
+    const chopRespond = (0.34 + 1.08 * slowFactor) * (1 - 0.65 * downFactor * speedNorm) * (1 - 0.35 * clamp(planingF, 0, 1));
+    const heave = ws.hLong * 0.84 + (ws.h - ws.hLong) * 0.30 * chopRespond + 0.042 * Math.sin(ph * 1.35) * (1 - 0.35 * clamp(planingF, 0, 1));
+    const minPitchW = -0.025 - 0.055 * downFactor * (1 - 0.65 * clamp(planingF, 0, 1));
     const slopeRespond = chopRespond + 0.48 * downFactor;
     const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * slopeRespond), minPitchW, 0.115);
     const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
     const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
-    this.body.position.y = 0.132 + Math.abs(b.heel) * 0.078 + heave;
-    this.body.rotation.z = b.heel + 0.014 * Math.sin(ph * 0.8) - rollW;
-    this.body.rotation.x = 0.008 * (1 - 0.75 * downFactor) + pitchW + (b.runWavePitch || 0) + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.032 * (1 - 0.85 * downFactor);
+    // プレーニング時はハルがステップに乗ってわずかに浮上し、バウが軽快にリフトするスナイプ特有の滑走姿勢を再現
+    const planingLiftY = 0.052 * planingF;
+    const planingBowPitch = 0.048 * planingF + 0.0035 * planingF * Math.sin(t * 22.0 + this.phase);
+    const visHeel = clamp((b.heel || 0) * 1.45, -0.46, 0.46);
+    this.body.position.y = 0.132 + Math.abs(visHeel) * 0.078 + heave + planingLiftY;
+    this.body.rotation.z = visHeel + 0.014 * Math.sin(ph * 0.8) - rollW;
+    this.body.rotation.x = 0.008 * (1 - 0.75 * downFactor) + pitchW + (b.runWavePitch || 0) + 0.012 * Math.sin(ph * 1.1 + 1) + clamp(b.v / 12, 0, 0.28) * 0.032 * (1 - 0.85 * downFactor) + planingBowPitch;
+    b.bodyPitch = this.body.rotation.x;
+    b.bodyRoll = this.body.rotation.z;
     if (this.blackBall) this.blackBall.visible = !!b.hasBlackBall;
 
     if (this.rudderGroup) {
@@ -1467,12 +1539,13 @@ export class BoatModel {
       this.waterCutMesh.rotation.z = -clamp(Math.atan(wsR.slope * 0.55), -0.08, 0.08);
       const u = this.waterCutMat.uniforms;
       u.uTime.value = t;
-      u.uSpeed.value = clamp(Math.abs(b.v) / 2.25, 0, 1.45);
+      u.uSpeed.value = clamp(ktApprox / 4.2, 0, 1.45);
       const waveCut = clamp((SEA.H || 0.25) * 1.15 + Math.max(0, ws.h) * 2.1 + Math.max(0, ws.slope) * 2.6 + (b.waveSlam || 0) * 0.9, 0.08, 1.35);
       u.uWave.value = waveCut;
-      u.uHeel.value = b.heel || 0;
+      u.uHeel.value = visHeel;
       u.uSteer.value = b.steer || 0;
       u.uRudderDrag.value = clamp((b.rudderDrag || 0) + Math.abs(b.steer || 0) * 0.55, 0, 1.2);
+      u.uPlaning.value = planingF;
     }
 
     // セール: クローズ時はしっかり引き込み、ランニング時は従来(1.0rad)よりもう少し大きく(最大1.24rad≒71°)ブームを出せるようにしてサイドステーへの押し付け形状も再現
@@ -1509,8 +1582,11 @@ export class BoatModel {
 
     const pk = b.poleK || 0;
     if (this.cbBoard) {
-      const reachLift = clamp((twa - 1.28) / 1.05, 0, 1);
-      this.cbBoard.position.y = Math.max(reachLift * 0.16, pk * 0.23);
+      // 実艇スナイプ同様にリーチング(約62°〜)ではダガーボードを半分引き上げ、ランニング・ランチャー展開時はさらに高く引き上げる
+      const reachLift = clamp((twa - 1.08) / 0.52, 0, 1);
+      const runLift = clamp((twa - 2.15) / 0.55, 0, 1);
+      const targetCbY = Math.max(reachLift * 0.20 + runLift * 0.05, pk * 0.25);
+      this.cbBoard.position.y += (targetCbY - this.cbBoard.position.y) * (1 - Math.exp(-dt * 6.5));
       if (this.cbBoard.userData.underBlade) {
         this.cbBoard.userData.underBlade.visible = false;
       }
@@ -1803,16 +1879,18 @@ export class BoatModel {
     const doDetailSync = b.isPlayer || this._ropeTick === 0 || this._firstSyncDone !== true;
     this._firstSyncDone = true;
     if (doDetailSync) {
+      this.syncShrouds(t, sgn, luff, Math.abs(b.v), pk);
       this.syncForestay(pk, sgn);
       if (this.leechRibbons) {
         const stall = b.stall || 0;
+        const fastFlow = 1 + 0.55 * clamp(planingF, 0, 1);
         for (const r of this.leechRibbons) {
           r.m.position.x = r.twistX * this.mainSail.scale.x;
           const twistYaw = bulgeSign * (0.14 * r.u);
           const curl = -bulgeSign * stall * (0.75 + 0.55 * Math.sin(t * 20 + r.ph)) + luff * 0.45 * Math.sin(t * 23 + r.ph);
-          const flutter = (0.06 + 0.22 * Math.max(luff, stall)) * Math.sin(t * 17 + r.ph);
+          const flutter = (0.05 + 0.22 * Math.max(luff, stall) + 0.03 * planingF) * Math.sin(t * 17 * fastFlow + r.ph);
           r.m.rotation.y = twistYaw + curl + flutter;
-          r.m.rotation.x = -0.05 + 0.16 * Math.sin(t * 14 + r.ph) * (0.3 + Math.max(luff, stall));
+          r.m.rotation.x = -0.04 * (1 - 0.5 * clamp(planingF, 0, 1)) + 0.14 * Math.sin(t * 14 * fastFlow + r.ph) * (0.28 + Math.max(luff, stall));
         }
       }
       this.syncMainSheet(sgn, lean, sideAbs);
@@ -1821,15 +1899,15 @@ export class BoatModel {
     this.syncBowSpray(dt, t, ws, sgn);
   }
 
-  // バウしぶき: 通常走行時は上に噴き上げず海面側(wake)でほんのわずかに白くなる表現にとどめ、波にはたかれた時のみしぶきが上がる
+  // バウしぶき: 常時走行の波切り・プレーニングチャインスプレーは海面シェーダ(waterCutMesh)で精細に表現し、波頭スラム時のみ控えめな立体飛沫(16..27)を上げる
   syncBowSpray(dt, t, ws, sgn) {
     if (!this.bowSprayMesh) return;
     const b = this.boat;
     const vAbs = Math.abs(b.v);
     const spdF = clamp((vAbs - 0.72) / 1.75, 0, 1.30);
     const galeWhitecapF = clamp((BASE_WIND_KT * (b.windF || 1) - 13.8) / 4.2, 0, 1.35);
+    let matrixDirty = false;
 
-    // 1) 通常航行時の常時バウしぶき(0..15)は非表示に保つ(カメラ近くの海面が白くなりすぎるのを防ぐ)
     if (!this._sprayZeroed) {
       _spM4.makeScale(0, 0, 0);
       _spCol.setScalar(0);
@@ -1838,71 +1916,74 @@ export class BoatModel {
         this.bowSprayMesh.setColorAt(i, _spCol);
       }
       this._sprayZeroed = true;
+      matrixDirty = true;
     }
 
-    // 2) 波にはたかれた瞬間(visualSlam または波頭スラム)に上がるしぶき演出 (16..27)
+    // 波にはたかれた瞬間(visualSlam または波頭スラム)に上がるしぶき演出 (16..27)
     this.slamAutoCD = Math.max(0, (this.slamAutoCD || 0) - dt);
     if (b.visualSlam > 0.17) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75 + galeWhitecapF * 0.15, 0.48, 1.20);
+      this.slamBurstPow = clamp(0.48 + b.visualSlam * 0.75 + galeWhitecapF * 0.15, 0.48, 1.15);
       b.visualSlam = 0;
     } else if (this.slamBurstT <= 0 && this.slamAutoCD <= 0 && vAbs > 0.72 && (
-      (ws.h > 0.048 && ws.slope > 0.055) ||
-      (b.isSurfing && vAbs > 1.8)
+      (ws.h > 0.055 && ws.slope > 0.062) ||
+      (b.isSurfing && vAbs > 2.2)
     )) {
       this.slamBurstT = 0.001;
-      this.slamBurstPow = clamp(0.48 + (ws.h * 1.45 + Math.abs(ws.slope) * 2.4), 0.48, 1.15);
-      this.slamAutoCD = 2.2 + Math.random() * 1.4;
+      this.slamBurstPow = clamp(0.45 + (ws.h * 1.35 + Math.abs(ws.slope) * 2.2), 0.45, 1.05);
+      this.slamAutoCD = 2.6 + Math.random() * 1.5;
     }
 
     const SLAM_DUR = 0.56;
     if (this.slamBurstT > 0) {
       this.slamBurstT += dt;
       if (this.slamBurstT >= SLAM_DUR) this.slamBurstT = 0;
-    } else if (this._sprayIdleCleared) {
-      return;
-    }
-    this._sprayIdleCleared = this.slamBurstT <= 0;
-
-    for (let j = 0; j < 12; j++) {
-      const idx = 16 + j;
-      if (this.slamBurstT <= 0) {
-        _spM4.makeScale(0, 0, 0);
+      this._sprayIdleCleared = false;
+      matrixDirty = true;
+      for (let j = 0; j < 12; j++) {
+        const idx = 16 + j;
+        const side = j % 2 === 0 ? 1 : -1;
+        const tier = (j >> 1) / 5; // 0..1
+        const delay = tier * 0.095;
+        const u = clamp((this.slamBurstT - delay) / (SLAM_DUR - delay), 0, 1);
+        if (u <= 0 || u >= 1) {
+          _spM4.makeScale(0, 0, 0);
+          this.bowSprayMesh.setMatrixAt(idx, _spM4);
+          _spCol.setScalar(0);
+          this.bowSprayMesh.setColorAt(idx, _spCol);
+          continue;
+        }
+        const pow = this.slamBurstPow;
+        const arc = Math.sin(u * Math.PI);
+        const x = side * (0.46 + tier * 0.16 + u * (0.76 + tier * 0.46) * pow);
+        const y = 0.18 + arc * (0.42 + (1 - tier * 0.35) * 0.36) * pow - u * u * 0.16;
+        const z = -2.18 + tier * 0.42 + u * (1.22 + spdF * 0.52);
+        const sz = (0.16 + u * 0.26) * pow;
+        _spPos.set(x, y, z);
+        _spEul.set(u * 2.1 + j, side * (0.45 + u), u * 1.65);
+        _spQuat.setFromEuler(_spEul);
+        _spScale.set(sz * 1.0, sz * 0.85, sz * 1.35);
+        _spM4.compose(_spPos, _spQuat, _spScale);
         this.bowSprayMesh.setMatrixAt(idx, _spM4);
-        _spCol.setScalar(0);
+        const fade = Math.pow(1 - u, 1.55) * Math.min(1, u * 6.5) * clamp(0.22 * pow, 0.10, 0.26);
+        _spCol.setRGB(0.88 * fade, 0.96 * fade, 1.0 * fade);
         this.bowSprayMesh.setColorAt(idx, _spCol);
-        continue;
       }
-      const side = j % 2 === 0 ? 1 : -1;
-      const tier = (j >> 1) / 5; // 0..1
-      const delay = tier * 0.095;
-      const u = clamp((this.slamBurstT - delay) / (SLAM_DUR - delay), 0, 1);
-      if (u <= 0 || u >= 1) {
-        _spM4.makeScale(0, 0, 0);
-        this.bowSprayMesh.setMatrixAt(idx, _spM4);
-        _spCol.setScalar(0);
-        this.bowSprayMesh.setColorAt(idx, _spCol);
-        continue;
+    } else if (!this._sprayIdleCleared) {
+      _spM4.makeScale(0, 0, 0);
+      _spCol.setScalar(0);
+      for (let j = 0; j < 12; j++) {
+        this.bowSprayMesh.setMatrixAt(16 + j, _spM4);
+        this.bowSprayMesh.setColorAt(16 + j, _spCol);
       }
-      const pow = this.slamBurstPow;
-      const arc = Math.sin(u * Math.PI);
-      const x = side * (0.44 + tier * 0.16 + u * (0.76 + tier * 0.46) * pow);
-      const y = 0.23 + arc * (0.55 + (1 - tier * 0.35) * 0.48) * pow - u * u * 0.18;
-      const z = -2.15 + tier * 0.45 + u * (1.22 + spdF * 0.52);
-      const sz = (0.185 + u * 0.31) * pow;
-      _spPos.set(x, y, z);
-      _spEul.set(u * 2.1 + j, side * (0.45 + u), u * 1.65);
-      _spQuat.setFromEuler(_spEul);
-      _spScale.set(sz * 1.0, sz * 0.92, sz * 1.30);
-      _spM4.compose(_spPos, _spQuat, _spScale);
-      this.bowSprayMesh.setMatrixAt(idx, _spM4);
-      const fade = Math.pow(1 - u, 1.48) * Math.min(1, u * 7.0) * clamp(0.33 * pow, 0.16, 0.42);
-      _spCol.setRGB(0.91 * fade, 0.97 * fade, 1.0 * fade);
-      this.bowSprayMesh.setColorAt(idx, _spCol);
+      this._sprayIdleCleared = true;
+      matrixDirty = true;
     }
 
-    this.bowSprayMesh.instanceMatrix.needsUpdate = true;
-    if (this.bowSprayMesh.instanceColor) this.bowSprayMesh.instanceColor.needsUpdate = true;
+    if (matrixDirty) {
+      this.bowSprayMesh.instanceMatrix.needsUpdate = true;
+      if (this.bowSprayMesh.instanceColor) this.bowSprayMesh.instanceColor.needsUpdate = true;
+    }
   }
 
   // メインシート ＆ ブーム後方の三角形ブライドル(実艇写真1・2・3枚目準拠):

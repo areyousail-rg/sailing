@@ -7,8 +7,9 @@ export const CAM_MODES = ['ドローンカメラ', '艇内カメラ(オンボー
 export const COCKPIT = 1;
 // スマホ(小さい画面)ではドローンを少し引いて周囲を見やすくする
 const SMALL = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
-// デフォルトのドローンカメラ距離・高さを元の見やすい位置に設定
-const DRONE_D = SMALL ? 20.5 : 16.2, DRONE_H = SMALL ? 7.8 : 6.2, DRONE_FOV = SMALL ? 66 : 63;
+// デフォルトのドローンカメラ距離・高さを少し高めの見やすい俯瞰位置に設定
+const DRONE_D = SMALL ? 21.8 : 17.4, DRONE_H = SMALL ? 10.6 : 8.8, DRONE_FOV = SMALL ? 66 : 63;
+const COCKPIT_FOV = SMALL ? 108 : 104;
 
 export class DroneCam {
   constructor(camera, dom) {
@@ -17,6 +18,7 @@ export class DroneCam {
     this.yaw = 0; this.pitch = 0; this.targetYaw = 0; this.targetPitch = 0;
     this.chaseH = 0; this.bank = 0;
     this.zoom = 1; this.inited = false;
+    this.cockpitEul = new THREE.Euler(0, 0, 0, 'YXZ');
     this.tmp = new THREE.Vector3(); this.want = new THREE.Vector3(); this.wantLook = new THREE.Vector3();
     this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
     
@@ -115,7 +117,7 @@ export class DroneCam {
   lookAhead() {
     if (this.mode !== COCKPIT) this.setMode(COCKPIT);
     this.targetYaw = 0;
-    this.targetPitch = -0.12;
+    this.targetPitch = -0.18;
   }
 
   update(dt, t, boat, boats) {
@@ -134,13 +136,28 @@ export class DroneCam {
     this.pitch += (this.targetPitch - this.pitch) * (1 - Math.exp(-dt * 7));
 
     if (this.mode === COCKPIT && this.mount) {
+      // 視点位置(mountワールド座標)はそのまま維持し、人間の目線/オンボードアクションカム同様に水平線を安定させて実艇のヒール角と波乗り・プレーニング姿勢を再現
       this.mount.updateWorldMatrix(true, false);
-      this.mount.matrixWorld.decompose(this.cp, this.cq, this.cs);
-      this.cam.position.copy(this.cp); this.cam.quaternion.copy(this.cq);
-      this.cam.rotateY(this.yaw); this.cam.rotateX(0.11 - this.pitch * 0.6); this.cam.rotateZ(-boat.heel * 0.45);
-      
+      this.mount.getWorldPosition(this.cp);
+      this.cam.position.copy(this.cp);
+
+      const planeF = clamp(boat.planingF || 0, 0, 1.15);
+      const hullPitch = boat.bodyPitch || 0;
+      const hullRoll = boat.bodyRoll !== undefined ? boat.bodyRoll : (boat.heel || 0);
+      const planeVibP = planeF * (0.0028 * Math.sin(t * 24.5) + 0.0018 * Math.sin(t * 37.0));
+      const planeVibR = planeF * (0.0026 * Math.cos(t * 28.5 + 0.8));
+
+      this.cockpitEul.set(
+        -0.025 - this.pitch * 0.6 + hullPitch * 0.78 + planeVibP,
+        -boat.h + this.yaw,
+        hullRoll * 0.08 + planeVibR,
+        'YXZ'
+      );
+      this.cam.quaternion.setFromEuler(this.cockpitEul);
+
+      const targetFov = COCKPIT_FOV + planeF * 3.0;
       if (this.cam.near !== 0.16) { this.cam.near = 0.16; this.cam.updateProjectionMatrix(); }
-      if (Math.abs(this.cam.fov - 124) > 0.05) { this.cam.fov += (124 - this.cam.fov) * 0.25; this.cam.updateProjectionMatrix(); }
+      if (Math.abs(this.cam.fov - targetFov) > 0.04) { this.cam.fov += (targetFov - this.cam.fov) * 0.22; this.cam.updateProjectionMatrix(); }
       return;
     }
 

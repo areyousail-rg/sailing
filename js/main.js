@@ -7,8 +7,8 @@ import { AI } from './ai.js';
 import { BoatModel } from './boatmodel.js';
 import { CREW_TYPES, buildFigure, loadCustomCrew, animatePreviewFigure } from './crew.js';
 import { DroneCam, CAM_MODES, COCKPIT } from './camera.js';
-import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, randomizeStartLine, setFixedStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
-import { initAudio, isAudioRunning, isBgmPlaying, unlockAudioNow, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, prewarmBgm, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
+import { LEGS, W0, LINE_HALF, LINE_SKEW, FAVORED, lineA, MARKS, COURSE_MODE, setCourseMode, setWindDir, randomizeStartLine, setFixedStartLine, updateProgress, progressOf, toCourse, toWorld } from './course.js';
+import { initAudio, isAudioRunning, isBgmPlaying, unlockAudioNow, horn, beep, setWind, toggleMute, thud, markHit, updateNearbyBoatSound, signalHorn, updateSailingAudio, setCameraAudio, sailFlog, poleClank, orientStepSfx, ensureBgmReady, prewarmBgm, playBgm, stopBgm, setBgmVoiceEnabled, playRightOfWayHail, playCrewSelectSound, playRateTickSound, playChallengerSplashSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const RACE_LIMIT = 600;
@@ -260,27 +260,41 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   globalHailCD = 0;
   pairHailUntil.clear();
   if (world.setCourseVisible) world.setCourseVisible(state.phase !== 'menu');
-  // スタートライン半幅 LINE_HALF = 75 (従来の1.5倍 = 全幅150m) に合わせ、24艇がライン全域にバランスよく散らばるよう配置
+  // スタートライン半幅 LINE_HALF = 75 (全幅150m): 実レース同様に有利サイド(上有利=本部船側+c / 下有利=アウター側-c)へ傾斜角に応じてCP艇が集まる配置
+  const skewDeg = Math.abs((LINE_SKEW * 180) / Math.PI);
+  const favBias = clamp(0.45 + skewDeg / 16, 0.45, 1.0);
   const endTargets = FAVORED === 'pin'
-    ? [-69.0, -63.5, -57.5, 69.5, 64.0, 57.5, 51.0, 44.0]
+    ? [-70.5, -67.0, -63.5, -59.5, -55.5, -51.0, -46.5, -41.5]
     : FAVORED === 'com'
-      ? [70.0, 65.5, 60.5, 55.5, 49.5, 43.5, -67.5, -60.5]
-      : [69.5, 64.0, 58.0, 51.5, 45.0, -68.0, -61.5, -54.5];
+      ? [70.5, 67.0, 63.5, 59.5, 55.5, 51.0, 46.5, 41.5]
+      : [-68.0, -61.0, -53.5, 69.0, 62.0, 54.5];
   for (let i = endTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
     [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
   }
   const midTargets = [];
   const nMid = N_BOATS - 1 - endTargets.length;
+  const skewExp = 1.55 + 0.85 * favBias;
   for (let i = 0; i < nMid; i++) {
     const t = i / Math.max(1, nMid - 1);
-    const u = FAVORED === 'com'
-      ? Math.pow(t, 0.68)
-      : FAVORED === 'pin'
-        ? 1 - Math.pow(1 - t, 0.72)
-        : Math.pow(t, 0.85);
-    const minC = FAVORED === 'com' ? -42 : -49;
-    const maxC = FAVORED === 'pin' ? 37 : 40;
+    let u, minC, maxC;
+    if (FAVORED === 'pin') {
+      // 下有利: t^skewExp で minC(-37) 側へ高密度に寄せ、上側(+c)へ出る艇は少数にとどめる
+      u = Math.pow(t, skewExp);
+      minC = -37;
+      maxC = 56 - 20 * favBias;
+    } else if (FAVORED === 'com') {
+      // 上有利: 1 - (1 - t)^skewExp で maxC(+37) 側へ高密度に寄せ、下側(-c)へ出る艇は少数にとどめる
+      u = 1 - Math.pow(1 - t, skewExp);
+      minC = -56 + 20 * favBias;
+      maxC = 37;
+    } else {
+      // イーブンライン: 海面の地理的有利サイド(SIDE_BIAS)をわずかに加味しつつ全域へ分散
+      const geoExp = SIDE_BIAS < -0.15 ? 1.18 : SIDE_BIAS > 0.15 ? 0.85 : 1.0;
+      u = Math.pow(t, geoExp);
+      minC = -46;
+      maxC = 46;
+    }
     midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 3.0);
   }
   for (let i = midTargets.length - 1; i > 0; i--) {
@@ -290,10 +304,10 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const allTargets = [...endTargets, ...midTargets];
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
-    // 20艇フリート(CP19艇)用スタート隊形: 第二線スタート(secondRow: 2艇)、本部船上待機(highComFail: 1艇)、ギャップ狙い(gapShooter: 3艇)、残り13艇は第一線(firstRow)
+    // 20艇フリート(CP19艇): 上有利・イーブン時のみ本部船上待機(highComFail: 1艇)を置き、下有利時は第二線スタートへ回す
     const startRole =
-      (kIdx === 19) ? 'highComFail' :
-      (kIdx === 15 || kIdx === 18) ? 'secondRow' :
+      (kIdx === 19 && FAVORED !== 'pin') ? 'highComFail' :
+      (kIdx === 15 || kIdx === 18 || (kIdx === 19 && FAVORED === 'pin')) ? 'secondRow' :
       (kIdx === 5 || kIdx === 10 || kIdx === 14) ? 'gapShooter' :
       'firstRow';
     if (startRole === 'highComFail') {
@@ -302,7 +316,8 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
       return { a: a0, c: c0, targetC: LINE_HALF - 5.5, startRole };
     }
     const isUpperEnd = targetC >= 30;
-    const baseA0 = isUpperEnd ? -30 - (i % 2) * 2.2 : -33 - (i % 3) * 2.4;
+    const isPinPack = targetC <= -42;
+    const baseA0 = isUpperEnd ? -30 - (i % 2) * 2.2 : isPinPack ? -31.5 - (i % 3) * 2.0 : -33 - (i % 3) * 2.4;
     const a0 = startRole === 'secondRow'
       ? baseA0 - 8.5
       : startRole === 'gapShooter'
@@ -310,7 +325,7 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
         : baseA0;
     // 1分間のスターボードタック前進と低速下流れによる左(-c)への移動量を見越し、
     // 0秒時点で狙ったtargetC付近のスタートライン直下へ到達できるよう右(+c)余裕を持たせて配置する
-    const driftMargin = isUpperEnd ? 21 : 15;
+    const driftMargin = isUpperEnd ? 21 : isPinPack ? 13 : 15;
     const c0 = targetC + Math.abs(a0) * 0.88 + driftMargin;
     return { a: a0, c: c0, targetC, startRole };
   });
@@ -2011,6 +2026,7 @@ function resetCloseHoldLock() {
   closeHoldLock.active = false;
   closeHoldLock.twa = 0;
   closeHoldLock.tack = 1;
+  closeHoldLock.leg = -1;
   closeHoldLock.prevWind = null;
   closeHoldLock.anchorWind = 0;
   closeHoldLock.windRate = 0;
@@ -2024,12 +2040,21 @@ function playerControl(dt) {
   const b = player, DEG = Math.PI / 180;
   const CLOSE_MIN = 30 * DEG, CLOSE_MAX = 50 * DEG;
   const L = keys.has('ArrowLeft') || keys.has('ArrowLeft_Touch') || keys.has('KeyA'), R = keys.has('ArrowRight') || keys.has('ArrowRight_Touch') || keys.has('KeyD');
-  const isUpwindAutoLeg = state.phase === 'race'
-    && state.t >= 0
-    && !b.ocs
-    && (COURSE_MODE === 'upwind' ? b.leg === 0 : (b.leg === 0 || b.leg === 3));
-  const canAutoClose = isUpwindAutoLeg
-    && !b.maneuver && !b.tacking && !b.penalty && !b.pole && !b.capsized && !b.finished && !b.dsq;
+  const inRaceLeg = state.phase === 'race' && state.t >= 0 && !b.ocs;
+  const isUpwindAutoLeg = inRaceLeg && (COURSE_MODE === 'upwind' ? b.leg === 0 : (b.leg === 0 || b.leg === 3));
+  // 1マークから4マーク(オフセット1→1aのleg 1 および 1a→4のleg 2)と、2マークから3マーク(leg 5)の下りレグも対風角一定維持に対応
+  const isDownwindAutoLeg = inRaceLeg && COURSE_MODE === 'trapezoid' && (b.leg === 1 || b.leg === 2 || b.leg === 5);
+  const baseCanAuto = !b.maneuver && !b.tacking && !b.penalty && !b.capsized && !b.finished && !b.dsq;
+  const canAutoAngle = baseCanAuto && ((isUpwindAutoLeg && !b.pole) || isDownwindAutoLeg);
+  const autoMinTwa = isUpwindAutoLeg ? CLOSE_MIN : ((b.leg === 1 && !b.pole ? 75 : (b.pole ? 100 : 95)) * DEG);
+  const autoMaxTwa = isUpwindAutoLeg ? CLOSE_MAX : (179 * DEG);
+
+  if (closeHoldLock.leg !== b.leg) {
+    closeHoldLock.leg = b.leg;
+    closeHoldLock.active = false;
+    closeHoldLock.autoDir = 0;
+    closeHoldLock.holdT = 0;
+  }
 
   const curWind = Number.isFinite(b.windFrom) ? b.windFrom : W0;
   const dWind = closeHoldLock.prevWind !== null ? wrap(curWind - closeHoldLock.prevWind) : 0;
@@ -2060,11 +2085,11 @@ function playerControl(dt) {
     closeHoldLock.autoDir = 0;
     closeHoldLock.holdT = 0;
     closeHoldLock.manualSettleT = 0.42;
-    if (canAutoClose) {
+    if (canAutoAngle) {
       const tgtRel = wrap(curWind - hTarget);
       const tgtTwa = Math.abs(tgtRel);
       const actualTwa = Math.abs(wrap(curWind - b.h));
-      if (tgtTwa >= CLOSE_MIN && tgtTwa <= CLOSE_MAX && actualTwa >= CLOSE_MIN - 2 * DEG && actualTwa <= CLOSE_MAX + 2 * DEG) {
+      if (tgtTwa >= autoMinTwa && tgtTwa <= autoMaxTwa && actualTwa >= autoMinTwa - 2 * DEG && actualTwa <= Math.min(Math.PI, autoMaxTwa + 2 * DEG)) {
         closeHoldLock.active = true;
         closeHoldLock.twa = tgtTwa;
         closeHoldLock.tack = tgtRel >= 0 ? 1 : -1;
@@ -2078,14 +2103,14 @@ function playerControl(dt) {
   } else {
     steerHold.L = 0;
     steerHold.R = 0;
-    if (!canAutoClose) {
+    if (!canAutoAngle) {
       closeHoldLock.active = false;
       closeHoldLock.autoDir = 0;
       closeHoldLock.holdT = 0;
     } else {
       if (!closeHoldLock.active) {
-        // 手動操作後に30°〜50°のクローズホールドへ収まったら現在の対風角をロック
-        if (b.twa >= CLOSE_MIN && b.twa <= CLOSE_MAX && Math.abs(wrap(hTarget - b.h)) < 0.06) {
+        // 手動操作後に対象レグの維持角度帯へ収まったら現在の対風角をロック
+        if (b.twa >= autoMinTwa && b.twa <= autoMaxTwa && Math.abs(wrap(hTarget - b.h)) < 0.06) {
           closeHoldLock.active = true;
           closeHoldLock.twa = b.twa;
           closeHoldLock.tack = b.tack || (wrap(curWind - b.h) >= 0 ? 1 : -1);
@@ -2096,8 +2121,8 @@ function playerControl(dt) {
       if (closeHoldLock.active) {
         const desH = wrap(curWind - closeHoldLock.tack * closeHoldLock.twa);
         const windErr = wrap(desH - b.h);
-        // 衝突やブローチ等で反対タックや大きく外れた角度へ飛ばされた場合はロック解除
-        if ((b.tack !== closeHoldLock.tack && b.twa > 12 * DEG) || Math.abs(windErr) > 38 * DEG) {
+        // 衝突やジャイブ等で反対タックや大きく外れた角度へ飛ばされた場合はロック解除
+        if ((b.tack !== closeHoldLock.tack && b.twa > 12 * DEG && b.twa < 172 * DEG) || Math.abs(windErr) > 38 * DEG) {
           closeHoldLock.active = false;
           closeHoldLock.autoDir = 0;
           closeHoldLock.holdT = 0;
@@ -3372,6 +3397,14 @@ function initMenu() {
     renderer.render(scene, camera);
   } catch (e) {}
 
+  // ローディング完了前にメニューBGMバッファの生成を完了させ、ロード解除と同時の確実な再生を保証(ロード中は無音維持)
+  try {
+    await Promise.race([
+      ensureBgmReady('menu'),
+      new Promise((resolve) => setTimeout(resolve, 650)),
+    ]);
+  } catch (e) {}
+
   if (window.__setLoad) window.__setLoad(100);
   clock.getDelta();
   loop();
@@ -3384,9 +3417,7 @@ function initMenu() {
     clock.getDelta();
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       playBgm('menu');
-      unlockAudioNow().then((ok) => {
-        if (ok && state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
-      });
+      unlockAudioNow();
     }
   };
 
@@ -3394,7 +3425,26 @@ function initMenu() {
     state,
     get boats() { return boats; },
     get player() { return player; },
+    get models() { return models; },
+    get favored() { return FAVORED; },
+    renderer,
+    scene,
+    camera,
     simStep,
+    playerControl,
+    setFixedStartLine,
+    setWindDir,
+    setCourseMode,
+    setWindParams,
+    setSeaState,
+    setOrientationWindShifts,
+    SEA,
+    sheetOpt,
+    windAt,
+    wrap,
+    toWorld,
+    lineA,
+    makeFleet,
     cam,
     world,
     closeHoldLock,

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ゲームの仕様 | スナイプ級ヨットレース</title>
+  <meta name="description" content="スナイプ級ヨットレースゲームの操作方法、気象・海況、コース、帆走物理、RRS競技規則判定、レートと登場キャラクターの仕様一覧。">
+  <meta name="theme-color" content="#0b1015">
+  <style>
+    :root {
+      --bg: #0b1015;
+      --card: #111922;
+      --card-2: #16212c;
+      --line: #253443;
+      --line-2: #35495e;
+      --txt: #e8eef4;
+      --mute: #93a5b7;
+      --accent: #ebb800;
+      --blue: #38bdf8;
+      --good: #28a460;
+      --bad: #e05257;
+      --f-ui: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
+      --f-num: "BIZ UDPGothic", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Helvetica Neue", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--txt);
+      font-family: var(--f-ui);
+      line-height: 1.68;
+      -webkit-font-smoothing: antialiased;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(11, 16, 21, 0.94);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+      border-top: 3px solid var(--accent);
+    }
+    .topbarInner {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .titleGroup {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .titleGroup h1 {
+      margin: 0;
+      font-size: 1.04rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .titleGroup span {
+      font-family: var(--f-num);
+      font-size: 0.64rem;
+      color: var(--mute);
+      letter-spacing: 0.1em;
+    }
+    .backBtn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 13px;
+      background: var(--card-2);
+      border: 1px solid var(--line-2);
+      border-radius: 4px;
+      color: var(--txt);
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .backBtn:hover {
+      background: #1e2d3c;
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 20px 18px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      font-size: 0.8rem;
+    }
+    .toc a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+    .toc a:hover {
+      text-decoration: underline;
+    }
+    section.sec {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 18px 20px;
+    }
+    section.sec h2 {
+      margin: 0 0 12px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.98rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    section.sec h2::before {
+      content: "";
+      width: 4px;
+      height: 15px;
+      background: var(--accent);
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+    section.sec h3 {
+      margin: 16px 0 6px;
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: #cfe0f0;
+    }
+    p {
+      margin: 0 0 10px;
+      font-size: 0.85rem;
+      color: var(--txt);
+    }
+    p:last-child { margin-bottom: 0; }
+    ul {
+      margin: 4px 0 10px;
+      padding-left: 20px;
+      font-size: 0.84rem;
+    }
+    li { margin-bottom: 5px; }
+    .mute { color: var(--mute); font-size: 0.79rem; }
+    kbd {
+      display: inline-block;
+      min-width: 1.5em;
+      text-align: center;
+      background: var(--card-2);
+      border: 1px solid var(--line-2);
+      border-bottom-width: 2px;
+      border-radius: 3px;
+      padding: 0 5px;
+      font: 700 0.78em/1.5 var(--f-num);
+      color: #fff;
+      margin: 0 1px;
+    }
+    .tblWrap {
+      overflow-x: auto;
+      margin: 8px 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+    }
+    th, td {
+      padding: 7px 11px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      background: var(--card-2);
+      color: var(--mute);
+      font-weight: 700;
+      font-size: 0.74rem;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    .num { font-family: var(--f-num); white-space: nowrap; }
+    .tag {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: var(--f-num);
+    }
+    .tag.init { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); }
+    .tag.rate { background: rgba(235, 184, 0, 0.16); color: #fde047; border: 1px solid rgba(235, 184, 0, 0.4); }
+    .tag.cp { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
+    .footBack {
+      display: flex;
+      justify-content: center;
+      padding-top: 6px;
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 14px 12px 44px; gap: 14px; }
+      section.sec { padding: 14px 14px; }
+      th, td { padding: 6px 8px; font-size: 0.78rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbarInner">
+      <div class="titleGroup">
+        <h1>スナイプ級ヨットレース — ゲーム仕様書</h1>
+        <span>GAME SPECIFICATIONS &amp; RULES</span>
+      </div>
+      <a href="./" class="backBtn">← スタート画面へ戻る</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <nav class="toc" aria-label="目次">
+      <a href="#overview">1. 基本構成</a>
+      <a href="#controls">2. 操作とカメラ</a>
+      <a href="#weather">3. 海面・風・波・潮汐</a>
+      <a href="#course">4. コースと進行</a>
+      <a href="#physics">5. 帆走物理と他艇干渉</a>
+      <a href="#rules">6. RRS規則判定とペナルティ</a>
+      <a href="#rate">7. レート制度と登場キャラクター</a>
+      <a href="#review">8. 戦績記録と振り返り分析</a>
+    </nav>
+
+    <section id="overview" class="sec">
+      <h2>1. 基本構成</h2>
+      <p>2人乗りディンギー「スナイプ級（全長 4.72m）」を用いた、自艇1艇＋CP艇19艇の計20艇によるフリートレースです。スタート1分前（−1:00）の準備信号から始まり、0:00の号砲でスタートします。</p>
+      <ul>
+        <li>1レースが5分前後で収まるよう、画面上の進行距離には実艇比 2.0倍の速度スケールをかけています（計器パネルの船速 kt 表示は実艇換算値）。</li>
+        <li>レース全体の制限時間はスタート後 10分（600秒）です。トップ艇のフィニッシュから 150秒以内にフィニッシュラインを切れなかった艇は DNF（未完走）になります。</li>
+        <li>スタート画面の背景海面では、レースを始める前にそのまま舵やトリムを動かして試し乗りができます。</li>
+      </ul>
+    </section>
+
+    <section id="controls" class="sec">
+      <h2>2. 操作とカメラ</h2>
+      <div class="tblWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>操作項目</th>
+              <th>PC（キーボード / マウス）</th>
+              <th>スマホ・タブレット</th>
+              <th>挙動の詳細</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>舵（ラダー）</td>
+              <td><kbd>←</kbd> <kbd>→</kbd> または <kbd>A</kbd> <kbd>D</kbd></td>
+              <td>左下 <kbd>◀</kbd> <kbd>▶</kbd></td>
+              <td>短押し1回で目標針路を 1° 変更、0.16秒以上の長押しで連続回頭。風位（0°）を越えるとタック、真後ろ（180°）を越えるとジャイブ。</td>
+            </tr>
+            <tr>
+              <td>オートタック / ジャイブ</td>
+              <td><kbd>T</kbd> / <kbd>J</kbd></td>
+              <td>舵長押しで風位・真後ろ通過</td>
+              <td>現在のタックと反対側のクローズ角（またはランニング角）まで自動で回頭。</td>
+            </tr>
+            <tr>
+              <td>セールトリム</td>
+              <td><kbd>↑</kbd> 引く / <kbd>↓</kbd> 出す<br><kbd>R</kbd> オート復帰</td>
+              <td>右下 <kbd>引く</kbd> <kbd>出す</kbd><br><kbd>AUTO</kbd></td>
+              <td>初期状態は AUTO（真風角に応じた最適シート量を自動維持）。手動で引く・出すと MANUAL に切り替わり、強風時のヒール逃がしやジャイブ前の引き込みに使える。</td>
+            </tr>
+            <tr>
+              <td>ランチャー（ポール）</td>
+              <td><kbd>L</kbd> または計器内ボタン</td>
+              <td>左列 <kbd>ランチャー</kbd></td>
+              <td>スタート後の下り区間で真風角 100° 以上のとき展開可能。展開中は 100° より風上へ向けない制限がかかる。</td>
+            </tr>
+            <tr>
+              <td>視点切替・見回し</td>
+              <td><kbd>C</kbd> 切替 / ドラッグ見回し / ホイールズーム<br><kbd>Q</kbd>風上 <kbd>E</kbd>風下 <kbd>W</kbd>前 <kbd>S</kbd>後</td>
+              <td>左列 <kbd>船内</kbd> / <kbd>ドローン</kbd><br>画面ドラッグ見回し</td>
+              <td>ドローン俯瞰視点と船内（スキッパー目線）視点を切替。画面ダブルタップ（または「カメラ初期位置」ボタン）で正面に戻る。</td>
+            </tr>
+            <tr>
+              <td>中断・消音</td>
+              <td><kbd>P</kbd> 中断 / <kbd>M</kbd> 音ON・OFF / <kbd>H</kbd> キー表示</td>
+              <td>右上 <kbd>中断</kbd></td>
+              <td>レースの一時停止、やり直し、スタート画面への復帰。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>対風角の自動維持（風向シフト追従）</h3>
+      <p>以下の区間では、舵ボタンから指を離して針路が安定したあと、風が振れても自動で微調整の舵を入れて同じ真風角（TWA）を保ちます。手動で舵を入力した瞬間に手動操作が優先されます。</p>
+      <ul>
+        <li>風上レグ（トラペゾイドの「スタート→1マーク」「4ゲート→1マーク」、および上マークフィニッシュコース全域）：真風角 <span class="num">30°〜50°</span> の範囲。</li>
+        <li>下りレグ（トラペゾイドの「1マーク→1a→4ゲート」および「2マーク→3マーク」）：真風角 <span class="num">95°〜179°</span>（ランチャー展開中は <span class="num">100°〜179°</span>、1→1a オフセット区間は <span class="num">75°〜</span>）の範囲。</li>
+      </ul>
+    </section>
+
+    <section id="weather" class="sec">
+      <h2>3. 海面・風・波・潮汐</h2>
+      <p>レース海面は「八景島（横浜八景島沖）」と「江の島（湘南港沖）」の2種類です。スタート画面を開いた際に Open-Meteo API から現地のリアルタイム風向・風速・最大瞬間風速を取得します（通信不可時は基準値 9kt を使用、極端な微風時は最低 5kt・上限 22kt に補正）。スタート画面右上のボタンで「現地風」と「順風（10kt / 最大12kt）」を切り替えられます。</p>
+
+      <div class="tblWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>海面</th>
+              <th>黄旗（強風注意）基準</th>
+              <th>赤旗（出艇禁止基準）</th>
+              <th>波質と風向別の海面傾向</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>八景島</td>
+              <td class="num">最大 16kt 以上</td>
+              <td class="num">最大 18kt 超</td>
+              <td>護岸反射を伴う短周期の三角波。北〜北東風（330°〜75°）は左海面（八景島・住友岸寄り）にブローとリフトが入りやすく、南〜南東風（130°〜230°）は右海面（東京湾沖側）が伸びやすい。</td>
+            </tr>
+            <tr>
+              <td>江の島</td>
+              <td class="num">最大 18kt 以上</td>
+              <td class="num">最大 20kt 超</td>
+              <td>外洋うねり＋風浪。南南西〜南西のシーブリーズ（195°〜250°）は江の島の風影を避ける左海面（沖・西側）が安定し、北〜東風や南東風では右海面（片瀬・鎌倉岸側）がリフトしやすい。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mute">※ 現地風が赤旗基準を超えている場合、スタート画面に赤旗を表示したうえでレース風速は自動的に「順風（10kt）」へ切り替わります。また、現在時刻の天文潮汐（大潮〜小潮・上げ潮／下げ潮）に応じた潮流ドリフトが海面全体に働きます。</p>
+    </section>
+
+    <section id="course" class="sec">
+      <h2>4. コースと進行</h2>
+      <h3>スタートラインと有利サイド</h3>
+      <p>スタートライン全幅は <span class="num">150m</span>（右端の本部船 <span class="num">+75m</span> 〜 左端のアウターマーク <span class="num">−75m</span>）です。レースごとに約20%の確率で風に対して直角（0°有利なし）、約80%の確率で上有利（本部船側が風上）または下有利（アウター側が風上）へ <span class="num">1°〜15°</span> 傾きます。CP艇も実際のレースと同様に、傾きが大きいほど有利サイド側へ厚く集まってスタートを狙います。</p>
+
+      <h3>選択可能な2種類のコース</h3>
+      <ul>
+        <li><strong>トラペゾイド（IL2）</strong>：スタート → 1マーク（風上 300m・左舷回航） → 1aオフセット（左へ 30m・左舷回航） → 4ゲート（風上 40m 地点の 4S［右舷回航］または 4P［左舷回航］のどちらかを通過） → 1マーク（左舷回航） → 2マーク（左沖ウィング・左舷回航） → 3マーク（左舷回航） → フィニッシュ（3マークからポートタックのリーチングでフィニッシュラインを通過）。</li>
+        <li><strong>上マークフィニッシュ</strong>：RRS 32.2（S旗掲揚による回航マークでのコース短縮）に準拠した単一レグコースです。通常の2倍にあたる風上 <span class="num">600m</span> に設置された1マーク（左端）とS旗掲揚フィニッシュ運営艇（右端）の間を風下から切ってフィニッシュします。</li>
+      </ul>
+    </section>
+
+    <section id="physics" class="sec">
+      <h2>5. 帆走物理と他艇干渉</h2>
+      <ul>
+        <li><strong>ワンデザイン艇速条件</strong>：自艇とCP艇の基本船速上限（ポーラー性能）は同一です。CPのレート差・スキル差はスタート精度、風向シフトへの反応、タック判断、強風時のセール処理などの操船判断に反映され、同じ風・同じ角度で走るCP艇が物理上限を超えて速くなることはありません。また、微小な針路維持（舵角 22% 以下）ではラダー抵抗が増えない層流領域を設けています。</li>
+        <li><strong>クローズホールドの最適角度</strong>：風上への最大VMG角は風速と波高に応じて <span class="num">38°〜44°</span> の間で変化します。順風〜強風で海面がフラットなほど上り角（38°〜40°付近）が伸び、微風や波が高い海面では少し落として（42°〜44°付近）パワーを保つ方が失速しません。ジブの赤・青テルテールが水平に流れる角度が適正目安です。</li>
+        <li><strong>リーチングのラフ増速とプレーニング</strong>：真風角 <span class="num">60°〜135°</span> 付近では、風上へ少しラフすると見かけ風速が増して艇速が上がります。後続艇がラフして風上を奪おうとする「上し合い」も発生します。艇速が約 <span class="num">5.0kt</span> を超えて伸びるとプレーニングに入り、バウが浮いてチャインから横後方へスプレーが吹き出します。</li>
+        <li><strong>バイザリーとワイルドジャイブ・沈</strong>：ランニングで真風角 <span class="num">176°</span> を超えるバイザリー（裏風ぎみ）に入ると減速しやすくなります。さらに風速 <span class="num">13kt 以上</span> で深く落としすぎると、ブームが意図せず一気に返るワイルドジャイブや沈（キャプサイズ）を起こすことがあります。強風ブローで傾きすぎたときはセールを少し出すとヒールを抑えられます。</li>
+        <li><strong>ブランケット・リーバウ・波乗り</strong>：風上側の他艇の風影に入ると風が弱まり（画面上部にブランケット率を表示）、風下すぐ前方にいる艇からはバックウインドを受けて上り角度と速度が落ちます。反対に、相手艇の風下前方（リーバウ位置）や別タック艇のスターン直後を通過すると一時的にリフト（風の好転）を得られます。下りレグでは追い波の前斜面にタイミングよく乗るとサーフィン加速します。</li>
+      </ul>
+    </section>
+
+    <section id="rules" class="sec">
+      <h2>6. RRS規則判定とペナルティ</h2>
+      <p>スタート画面で「RRSペナルティ」を「有」にするとセーリング競技規則（RRS）に基づく権利義務判定とペナルティ回転が有効になります（「無」の場合は船体接触時の物理的な押し返しのみでペナルティ回転は発生しません。スタート時のリコール判定は設定にかかわらず常に有効です）。</p>
+      <div class="tblWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>規則番号</th>
+              <th>対象場面</th>
+              <th>判定内容とペナルティ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="num">RRS 10</td>
+              <td>異なるタックの接近</td>
+              <td>ポートタック艇（左舷から風を受ける艇）がスターボードタック艇を避ける。違反接触時は 720°（2回転）。</td>
+            </tr>
+            <tr>
+              <td class="num">RRS 11</td>
+              <td>同タック・オーバーラップ</td>
+              <td>風上艇が風下艇を避ける。違反接触時は 720°（2回転）。</td>
+            </tr>
+            <tr>
+              <td class="num">RRS 12</td>
+              <td>同タック・オーバーラップなし</td>
+              <td>後続のクリアアスターン艇が前方のクリアアヘッド艇を避ける。違反接触時は 720°（2回転）。</td>
+            </tr>
+            <tr>
+              <td class="num">RRS 13</td>
+              <td>タック中</td>
+              <td>風位を越えてから新しいクローズホールド針路に収まるまでの艇は他艇を避ける。違反接触時は 720°（2回転）。</td>
+            </tr>
+            <tr>
+              <td class="num">RRS 18</td>
+              <td>マークルーム（3艇身ゾーン）</td>
+              <td>回航マークから3艇身（約14.2m）のゾーンに先頭艇が達した時点でインサイドにオーバーラップしていた艇にマークルームを与える（スタートマーク・フィニッシュ運営艇は対象外）。</td>
+            </tr>
+            <tr>
+              <td class="num">RRS 29.1</td>
+              <td>個別リコール（OCS）</td>
+              <td>0:00 の号砲時点でスタートラインより風上側に出ていた艇には X旗と音響信号が出され、一度ライン風下側へ完全に戻って切り直すまでスタート成立にならない。</td>
+            </tr>
+            <tr>
+              <td class="num">RRS 31</td>
+              <td>マーク接触</td>
+              <td>マークまたは運営艇に接触した場合は 360°（1回転）ペナルティ。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mute">※ ペナルティが科された艇は、周囲の他艇やマークから離れてクリアウオーターが確保された時点で自動的に回転履行に入ります。ペナルティ未解消のまま重ねて違反を起こすと回転数の格上げや DSQ（失格）になります。</p>
+    </section>
+
+    <section id="rate" class="sec">
+      <h2>7. レート制度と登場キャラクター</h2>
+      <h3>レートの計算方式</h3>
+      <p>初期レートは <span class="num">1500</span> です。「レート：ON」で出走するとレースごとに参加レートを支払い、完走順位に応じたボーナスが加算されます（DSQ・DNF のボーナスは 0）。「レート：OFF」ではレート変動がなく、CP艇の強さも 1500 基準に固定されます。</p>
+      <div class="tblWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>コース種別</th>
+              <th>参加レート</th>
+              <th>順位ボーナス（20艇完走時）</th>
+              <th>1レースの収支幅</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>トラペゾイド（IL2）</td>
+              <td class="num">−100</td>
+              <td class="num">1位 +200 ／ 10位 +105 ／ 11位 +95 ／ 20位 0</td>
+              <td class="num">+100 〜 −100</td>
+            </tr>
+            <tr>
+              <td>上マークフィニッシュ</td>
+              <td class="num">−50</td>
+              <td class="num">1位 +100 ／ 10位 +53 ／ 11位 +47 ／ 20位 0</td>
+              <td class="num">+50 〜 −50</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mute">※ 計算式（20艇時）：順位 p 位のボーナス ＝ round(最大報酬 × (20 − p) / 19)。キャラクター解放は「過去最高到達レート」で判定されるため、一度解放したキャラクターはその後レートが下がっても引き続き選択できます。</p>
+
+      <h3>レート別の登場・解放キャラクター一覧</h3>
+      <p>動物キャラクターは、プレイヤーが自艇で選択できるようになる解放レートより <span class="num">100</span> 低いレート帯から、一足先にライバルCP艇としてレース海面に登場します。</p>
+      <div class="tblWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>キャラクター</th>
+              <th>自艇での選択解放条件</th>
+              <th>CP艇としての登場レート帯</th>
+              <th>備考</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>男性・女性</strong></td>
+              <td><span class="tag init">初期から選択可</span></td>
+              <td class="num">全レート帯で常時登場</td>
+              <td>プレイヤーレートを中心に初級〜上位レベルまで幅広く乗船。</td>
+            </tr>
+            <tr>
+              <td><strong>ネコ</strong></td>
+              <td><span class="tag init">初期から選択可</span></td>
+              <td class="num">全レート帯で常時登場</td>
+              <td>初期設定のクルー。CP艇では初級〜中級帯を中心に常時登場。</td>
+            </tr>
+            <tr>
+              <td><strong>イヌ</strong></td>
+              <td><span class="tag init">初期から選択可</span></td>
+              <td class="num">全レート帯で常時登場</td>
+              <td>CP艇でも全レート帯で常時登場。</td>
+            </tr>
+            <tr>
+              <td><strong>柴犬</strong></td>
+              <td><span class="tag cp">CP専用</span></td>
+              <td class="num">全レート帯で常時登場</td>
+              <td>CPライバル艇専用の動物キャラクター。</td>
+            </tr>
+            <tr>
+              <td><strong>アヒル</strong></td>
+              <td><span class="tag rate">最高レート 1550 到達</span></td>
+              <td class="num">レート 1450 以上で登場</td>
+              <td>1450〜1599帯では複数艇登場する場合あり。</td>
+            </tr>
+            <tr>
+              <td><strong>タヌキ</strong></td>
+              <td><span class="tag rate">最高レート 1650 到達</span></td>
+              <td class="num">レート 1550 以上で登場</td>
+              <td>フィニッシュ運営船のカメラマン等としても乗船。</td>
+            </tr>
+            <tr>
+              <td><strong>ウサギ</strong></td>
+              <td><span class="tag rate">最高レート 1750 到達</span></td>
+              <td class="num">レート 1650 以上で登場</td>
+              <td>中上位〜上位レート帯の高速CP艇として乗船。</td>
+            </tr>
+            <tr>
+              <td><strong>イルカ</strong></td>
+              <td><span class="tag rate">最高レート 1850 到達</span></td>
+              <td class="num">レート 1750 以上で登場</td>
+              <td>最上位レート帯の強豪CP艇として乗船。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>スキッパーとクルーに同じ種類の動物がペアで乗っている艇は、メインセール中下部にその動物のシルエットマークが入ります。</li>
+        <li>レート帯に応じた下位〜中位のCP艇（レート1640以下では4艇、1780以下では3艇、それ以上では2艇）は、実艇の初心者・練習艇にならってマストトップに黒い球体フロート（沈防止の黒球）を装着しています。</li>
+      </ul>
+    </section>
+
+    <section id="review" class="sec">
+      <h2>8. 戦績記録と振り返り分析</h2>
+      <p>フィニッシュ後のリザルト画面にある「振り返り」ボタン、またはスタート画面の「戦績」履歴から、レース全体の航跡リプレイと要因別のタイム差分析を確認できます。</p>
+      <ul>
+        <li><strong>比較基準艇</strong>：自艇が2位以下のときは「1位艇」との差、自艇が1位のときは「2位艇」との差をレグごとに算出します。</li>
+        <li><strong>要因分解</strong>：スタート通過時刻と初速、風向シフト（リフト／ヘッダー）の獲得差、ブロー（風速差）、ブランケット・バックウインド損失、RRSペナルティロス、マーク回航・余分な走行距離（タック過多やレイラインのオーバースタンド等）を秒単位で集計します。</li>
+        <li><strong>データ保存</strong>：戦績履歴（直近20レース分、そのうち直近10レースは完全な航跡スナップショット付き）およびレート・解放キャラクターは、お使いのブラウザの localStorage に保存されます。</li>
+      </ul>
+    </section>
+
+    <div class="footBack">
+      <a href="./" class="backBtn">← スタート画面へ戻る</a>
+    </div>
+  </main>
+</body>
+</html>

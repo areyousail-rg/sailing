@@ -595,8 +595,8 @@ export function createWorld(scene) {
   scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x4a6770, 1.35));
   const sun = new THREE.DirectionalLight(0xfff0d6, 2.7); sun.position.copy(SUN_DIR).multiplyScalar(200); scene.add(sun);
 
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 1), waterMat);
-  sea.geometry.rotateX(-Math.PI / 2); sea.scale.set(120000, 1, 120000); sea.frustumCulled = false; scene.add(sea);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 96, 96), waterMat);
+  sea.geometry.rotateX(-Math.PI / 2); sea.scale.set(96000, 1, 96000); sea.frustumCulled = false; scene.add(sea);
   // カメラ周辺の立体波浪変位パッチ(うねり・三角波・風浪すべてで常時表示し、波の立体感を表現)
   const PATCH_R = 192, PATCH_SEG = MOBILE ? 96 : 144;
   const seaPatchMat = new THREE.ShaderMaterial({

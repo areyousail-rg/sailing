@@ -483,8 +483,11 @@ h1{margin:0;font-size:1.32rem;line-height:1.25;font-weight:700;letter-spacing:.0
 }
 .btnPractice:hover{background:linear-gradient(180deg,#253b54 0%,#192a3d 100%);border-color:#537494;color:#fff}
 .btnPractice:active{transform:translateY(3px);box-shadow:0 1px 0 #081018}
-.weatherInfoBottom{font-size:.6rem;color:#93a8bd;font-variant-numeric:tabular-nums;padding:4px 2px 0;border-top:1px solid rgba(148,184,218,.16);line-height:1.35;white-space:normal;overflow:visible;word-break:break-word}
-.weatherInfoBottom:empty{display:none}
+.menuFooterRow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:4px 2px 0;border-top:1px solid rgba(148,184,218,.16)}
+.weatherInfoBottom{font-size:.6rem;color:#93a8bd;font-variant-numeric:tabular-nums;line-height:1.35;white-space:normal;overflow:visible;word-break:break-word;flex:1;min-width:0}
+.weatherInfoBottom:empty{visibility:hidden}
+.menuSpecLink{flex-shrink:0;font-size:.64rem;font-weight:600;color:#8fa6bd;text-decoration:none;letter-spacing:.03em;padding:1px 4px;border-radius:3px;border-bottom:1px dotted rgba(148,184,218,.38);transition:color .14s ease,border-color .14s ease}
+.menuSpecLink:hover{color:#f8fafc;border-bottom-color:var(--accent)}
 
 /* 戦績モーダル */
 .recordsCard{width:min(880px,95vw);max-height:86vh;display:flex;flex-direction:column;gap:12px;padding:16px 20px}
