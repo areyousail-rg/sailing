@@ -5,47 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ゲームの仕様 | スナイプ級ヨットレース</title>
   <meta name="description" content="スナイプ級ヨットレースゲームの操作方法、気象・海況、コース、帆走物理、RRS競技規則判定、レートと登場キャラクターの仕様一覧。">
-  <meta name="theme-color" content="#0b1015">
+  <meta name="theme-color" content="#0f2744">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Shippori+Mincho:wght@700;800&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0b1015;
-      --card: #111922;
-      --card-2: #16212c;
-      --line: #253443;
-      --line-2: #35495e;
-      --txt: #e8eef4;
-      --mute: #93a5b7;
-      --accent: #ebb800;
-      --blue: #38bdf8;
-      --good: #28a460;
-      --bad: #e05257;
-      --f-ui: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
-      --f-num: "BIZ UDPGothic", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Helvetica Neue", Arial, sans-serif;
+      --paper: #f6f3eb;
+      --paper-2: #eae5d8;
+      --card: #ffffff;
+      --ink: #10253f;
+      --ink-2: #39506a;
+      --ink-dim: #687d94;
+      --navy: #0f2744;
+      --crimson: #c9382b;
+      --rule: rgba(16, 37, 63, 0.13);
+      --rule-2: rgba(16, 37, 63, 0.24);
+      --stbd: #1e9a62;
+      --f-disp: "Shippori Mincho", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+      --f-ui: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "BIZ UDPGothic", "Yu Gothic UI", sans-serif;
+      --f-num: "Barlow Condensed", "DIN Condensed", "BIZ UDPGothic", "Helvetica Neue", Arial, sans-serif;
     }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
-      background: var(--bg);
-      color: var(--txt);
+      background: var(--paper);
+      color: var(--ink);
       font-family: var(--f-ui);
-      line-height: 1.68;
+      line-height: 1.72;
       -webkit-font-smoothing: antialiased;
     }
     .topbar {
       position: sticky;
       top: 0;
       z-index: 20;
-      background: rgba(11, 16, 21, 0.94);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border-bottom: 1px solid var(--line);
-      border-top: 3px solid var(--accent);
+      background: linear-gradient(135deg, #0f2744 0%, #16385e 100%);
+      border-bottom: 2px solid var(--crimson);
+      box-shadow: 0 3px 14px rgba(8, 22, 38, 0.22);
     }
     .topbarInner {
       max-width: 920px;
       margin: 0 auto;
-      padding: 10px 18px;
+      padding: 12px 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -54,160 +56,172 @@
     .titleGroup {
       display: flex;
       flex-direction: column;
-      gap: 1px;
+      gap: 2px;
     }
     .titleGroup h1 {
       margin: 0;
-      font-size: 1.04rem;
+      font-family: var(--f-disp);
+      font-size: 1.18rem;
       font-weight: 800;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
+      color: #ffffff;
     }
     .titleGroup span {
       font-family: var(--f-num);
-      font-size: 0.64rem;
-      color: var(--mute);
-      letter-spacing: 0.1em;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #a8bfd6;
+      letter-spacing: 0.14em;
     }
     .backBtn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 7px 13px;
-      background: var(--card-2);
-      border: 1px solid var(--line-2);
-      border-radius: 4px;
-      color: var(--txt);
+      padding: 7px 14px;
+      background: rgba(247, 244, 236, 0.12);
+      border: 1px solid rgba(247, 244, 236, 0.34);
+      border-radius: 3px;
+      color: #f7f4ec;
       text-decoration: none;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 700;
       white-space: nowrap;
+      transition: background 0.12s ease, border-color 0.12s ease;
     }
     .backBtn:hover {
-      background: #1e2d3c;
-      border-color: var(--accent);
-      color: #fff;
+      background: rgba(247, 244, 236, 0.22);
+      border-color: #f7f4ec;
+      color: #ffffff;
+    }
+    .footBack .backBtn {
+      background: var(--navy);
+      border-color: var(--navy);
+      color: #ffffff;
+    }
+    .footBack .backBtn:hover {
+      background: #173a62;
     }
     .wrap {
       max-width: 920px;
       margin: 0 auto;
-      padding: 20px 18px 56px;
+      padding: 22px 18px 60px;
       display: flex;
       flex-direction: column;
       gap: 18px;
     }
     .toc {
       background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 6px;
+      border: 1px solid var(--rule-2);
+      border-radius: 4px;
       padding: 12px 16px;
       display: flex;
       flex-wrap: wrap;
-      gap: 6px 14px;
-      font-size: 0.8rem;
+      gap: 6px 16px;
+      font-size: 0.82rem;
     }
     .toc a {
-      color: var(--blue);
+      color: var(--navy);
+      font-weight: 700;
       text-decoration: none;
+      border-bottom: 1px solid rgba(16, 37, 63, 0.22);
     }
     .toc a:hover {
-      text-decoration: underline;
+      color: var(--crimson);
+      border-bottom-color: var(--crimson);
     }
     section.sec {
       background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 18px 20px;
+      border: 1px solid var(--rule-2);
+      border-radius: 4px;
+      padding: 20px 22px;
+      box-shadow: 0 1px 3px rgba(16, 37, 63, 0.05);
     }
     section.sec h2 {
       margin: 0 0 12px;
-      padding-bottom: 7px;
-      border-bottom: 1px solid var(--line);
-      font-size: 0.98rem;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--navy);
+      font-family: var(--f-disp);
+      font-size: 1.08rem;
       font-weight: 800;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.05em;
+      color: var(--ink);
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    section.sec h2::before {
-      content: "";
-      width: 4px;
-      height: 15px;
-      background: var(--accent);
-      border-radius: 1px;
-      flex-shrink: 0;
-    }
     section.sec h3 {
       margin: 16px 0 6px;
-      font-size: 0.86rem;
-      font-weight: 700;
-      color: #cfe0f0;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: var(--navy);
     }
     p {
       margin: 0 0 10px;
-      font-size: 0.85rem;
-      color: var(--txt);
+      font-size: 0.86rem;
+      color: var(--ink-2);
     }
     p:last-child { margin-bottom: 0; }
     ul {
       margin: 4px 0 10px;
       padding-left: 20px;
-      font-size: 0.84rem;
+      font-size: 0.85rem;
+      color: var(--ink-2);
     }
     li { margin-bottom: 5px; }
-    .mute { color: var(--mute); font-size: 0.79rem; }
+    .mute { color: var(--ink-dim); font-size: 0.8rem; }
     kbd {
       display: inline-block;
       min-width: 1.5em;
       text-align: center;
-      background: var(--card-2);
-      border: 1px solid var(--line-2);
+      background: var(--paper-2);
+      border: 1px solid var(--rule-2);
       border-bottom-width: 2px;
       border-radius: 3px;
       padding: 0 5px;
-      font: 700 0.78em/1.5 var(--f-num);
-      color: #fff;
+      font: 700 0.82em/1.45 var(--f-num);
+      color: var(--ink);
       margin: 0 1px;
     }
     .tblWrap {
       overflow-x: auto;
       margin: 8px 0 10px;
-      border: 1px solid var(--line);
-      border-radius: 4px;
+      border: 1px solid var(--rule-2);
+      border-radius: 3px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.82rem;
+      font-size: 0.83rem;
       font-variant-numeric: tabular-nums;
     }
     th, td {
-      padding: 7px 11px;
+      padding: 8px 11px;
       text-align: left;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid var(--rule);
       vertical-align: top;
     }
     th {
-      background: var(--card-2);
-      color: var(--mute);
+      background: var(--paper-2);
+      color: var(--ink-2);
       font-weight: 700;
       font-size: 0.74rem;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
       white-space: nowrap;
     }
     tbody tr:last-child td { border-bottom: none; }
-    .num { font-family: var(--f-num); white-space: nowrap; }
+    .num { font-family: var(--f-num); font-size: 0.94rem; white-space: nowrap; }
     .tag {
       display: inline-block;
-      padding: 1px 6px;
-      border-radius: 3px;
-      font-size: 0.72rem;
+      padding: 1px 7px;
+      border-radius: 2px;
+      font-size: 0.74rem;
       font-weight: 700;
       font-family: var(--f-num);
+      letter-spacing: 0.04em;
     }
-    .tag.init { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); }
-    .tag.rate { background: rgba(235, 184, 0, 0.16); color: #fde047; border: 1px solid rgba(235, 184, 0, 0.4); }
-    .tag.cp { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
+    .tag.init { background: rgba(15, 39, 68, 0.10); color: var(--navy); border: 1px solid rgba(15, 39, 68, 0.28); }
+    .tag.rate { background: rgba(201, 56, 43, 0.10); color: var(--crimson); border: 1px solid rgba(201, 56, 43, 0.32); }
+    .tag.cp { background: var(--paper-2); color: var(--ink-2); border: 1px solid var(--rule-2); }
     .footBack {
       display: flex;
       justify-content: center;
@@ -215,7 +229,7 @@
     }
     @media (max-width: 640px) {
       .wrap { padding: 14px 12px 44px; gap: 14px; }
-      section.sec { padding: 14px 14px; }
+      section.sec { padding: 15px 15px; }
       th, td { padding: 6px 8px; font-size: 0.78rem; }
     }
   </style>
