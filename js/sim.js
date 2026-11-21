@@ -1106,11 +1106,10 @@ export class Boat {
     this.puff += (puffBoost - (this.puff || 0)) * (1 - Math.exp(-dt * 3.8));
     this.localWindKt = localWindKt;
 
-    const hikeSailLoad = clamp(anglePress / 0.65, 0, 1.18) * speedPress;
-    const targetHike = twa > 2.45
-      ? 0.03
-      : clamp((0.06 + Math.pow(windKtNorm, 1.12) * 1.18 + puffBoost * 0.28) * hikeSailLoad, 0.03, 1.52);
-    this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 2.8));
+    const hikeSailLoad = clamp(anglePress / 0.62, 0, 1.24) * speedPress;
+    const hikeTwaGate = 1 - smoothstep(2.22, 2.62, twa);
+    const targetHike = clamp((0.08 + Math.pow(windKtNorm, 1.08) * 1.24 + puffBoost * 0.34) * hikeSailLoad * hikeTwaGate, 0.03, 1.56);
+    this.hike += (targetHike - this.hike) * (1 - Math.exp(-dt * 4.0));
 
     const baseHeelMoment = (0.045 + Math.pow(windKtNorm, 1.24) * 0.46 + puffBoost * 0.145) * clamp(anglePress / 0.65, 0, 1.22) * speedPress;
     const netHeel = Math.max(0.015, baseHeelMoment - this.hike * 0.155);

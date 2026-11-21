@@ -7,25 +7,25 @@
   <meta name="description" content="八景島・江の島沖でスナイプ級ヨットが競う、ドローン/船内視点の3Dヨットレースゲーム。スマホ対応。">
   <meta name="theme-color" content="#0b1015">
   <meta http-equiv="Permissions-Policy" content="autoplay=*">
-  <link rel="stylesheet" href="style.css?v=20261121e">
-  <link rel="stylesheet" href="review.css?v=20261121e">
+  <link rel="stylesheet" href="style.css?v=20261121f">
+  <link rel="stylesheet" href="review.css?v=20261121f">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261121e",
-      "./js/sim.js": "./js/sim.js?v=20261121e",
-      "./js/review.js": "./js/review.js?v=20261121e",
-      "./js/ai.js": "./js/ai.js?v=20261121e",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121e",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261121e",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261121e",
-      "./js/crew.js": "./js/crew.js?v=20261121e",
-      "./js/camera.js": "./js/camera.js?v=20261121e",
-      "./js/course.js": "./js/course.js?v=20261121e",
-      "./js/rules.js": "./js/rules.js?v=20261121e",
-      "./js/audio.js": "./js/audio.js?v=20261121e"
+      "./js/world.js": "./js/world.js?v=20261121f",
+      "./js/sim.js": "./js/sim.js?v=20261121f",
+      "./js/review.js": "./js/review.js?v=20261121f",
+      "./js/ai.js": "./js/ai.js?v=20261121f",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121f",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261121f",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261121f",
+      "./js/crew.js": "./js/crew.js?v=20261121f",
+      "./js/camera.js": "./js/camera.js?v=20261121f",
+      "./js/course.js": "./js/course.js?v=20261121f",
+      "./js/rules.js": "./js/rules.js?v=20261121f",
+      "./js/audio.js": "./js/audio.js?v=20261121f"
     }
   }
   </script>
@@ -34,7 +34,6 @@
   <div id="loading" class="overlay">
     <div class="loadingAnimeWrap" aria-hidden="true">
       <canvas id="loadingPixelCanvas" class="loadingPixelCanvas" width="240" height="150"></canvas>
-      <div id="loadingCaptionBadge" class="loadingCaptionBadge">HAKKEIJIMA OFFSHORE</div>
     </div>
     <p id="loadStatusText">Loading <span id="loadPct">0</span>%</p>
     <div id="loadBarWrap" class="loadBar"><div id="loadFill"></div></div>
@@ -83,8 +82,6 @@
           sessionStorage.setItem('snipe-load-venue', venue);
         } catch (e) { venue = 'hakkeijima'; }
       }
-      var capEl = document.getElementById('loadingCaptionBadge');
-      if (capEl) capEl.textContent = venue === 'hakkeijima' ? 'YOKOHAMA HAKKEIJIMA — JPN 31804' : 'SHONAN ENOSHIMA — JPN 31804';
 
       var W = 240, H = 150;
       var px = function (x, y, w, h, c) {
@@ -819,6 +816,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261121e"></script>
+  <script type="module" src="js/main.js?v=20261121f"></script>
 </body>
 </html>

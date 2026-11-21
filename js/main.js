@@ -158,12 +158,12 @@ function rateToSkill(r) {
   return clamp(1.00 + ((r - 1700) / 100) * 0.042, 0.78, 1.16);
 }
 
-// レートに応じた15艇のCPプロフィール生成:
-// ・犬・猫・柴犬はずっと登場し、各種動物キャラの参戦基準は-50 (アヒル:1550解放/CP1450〜、タヌキ:1650解放/CP1550〜、ウサギ:1750解放/CP1650〜、イルカ:1850解放/CP1750〜)
+// レートに応じた19艇のCPプロフィール生成:
+// ・犬・猫・柴犬はずっと登場し、各種動物キャラのCP参戦基準は解放レート-100 (アヒル:1550解放/CP1450〜、タヌキ:1650解放/CP1550〜、ウサギ:1750解放/CP1650〜、イルカ:1850解放/CP1750〜、ペンギン:1950解放/CP1850〜)
 // ・動物ごとにそのレートの強さ(レベル)を持ち、人間はずっと登場して弱い船から強い船まで様々なレベルが存在
 // ・1500前後では弱いCP3艇と中くらいのレベル1艇がマストトップに黒球(hasBlackBall)を装着
 function buildCpFleetProfiles(effRate) {
-  const nCp = N_BOATS - 1; // 15艇
+  const nCp = N_BOATS - 1;
   const animalEntries = [
     // 犬・猫はずっといる (初級〜中級レベル)
     { type: 'cat', rate: clamp(effRate - 65 + (rng() - 0.5) * 45, 1380, 1620) },
@@ -184,7 +184,11 @@ function buildCpFleetProfiles(effRate) {
   }
   if (effRate >= 1750) {
     animalEntries.push({ type: 'dolphin', rate: 1790 + (rng() - 0.5) * 45 });
-    if (rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1835 + (rng() - 0.5) * 45 });
+    if (effRate < 1900 && rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1835 + (rng() - 0.5) * 45 });
+  }
+  if (effRate >= 1850) {
+    animalEntries.push({ type: 'penguin', rate: 1890 + (rng() - 0.5) * 45 });
+    if (rng() < 0.75) animalEntries.push({ type: 'penguin', rate: 1945 + (rng() - 0.5) * 45 });
   }
 
   const profiles = [];
@@ -698,7 +702,7 @@ function updateNearBoatsHUD(b) {
 // ---------- 接近時の権利主張コール (RRS 10 スタボ / RRS 11 風下権利艇 / RRS 18 3艇身ゾーン) ----------
 let globalHailCD = 0;
 const pairHailUntil = new Map();
-const isAnimalCrew = (t) => t === 'cat' || t === 'dog' || t === 'shiba' || t === 'duck' || t === 'tanuki' || t === 'rabbit' || t === 'dolphin';
+const isAnimalCrew = (t) => t === 'cat' || t === 'dog' || t === 'shiba' || t === 'duck' || t === 'tanuki' || t === 'rabbit' || t === 'dolphin' || t === 'penguin';
 const FALLBACK_HAIL_VOICES = ['shiba', 'cat', 'dog', 'duck'];
 
 function getBoatAnimalVoice(b) {

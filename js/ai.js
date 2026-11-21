@@ -430,7 +430,12 @@ export class AI {
     // 中盤のビーティング用タック判定へ落ちてポートタックへ逆戻りするのを防ぐ
     // (※2マーク等で風下へ流れた際に directDownwind=true でクローズ角が固定され無限に外海へ走り去るバグを防ぐため、directDownwind条件は除外し必ず下のタック判定を通す)
     if (!prestart && Math.abs(relT) <= ca + 0.025) {
-      if (b.pole) b.setPole(false);
+      const Lcur = LEGS[Math.min(b.leg, LEGS.length - 1)];
+      const keepPoleHere = COURSE_MODE === 'trapezoid' && (b.leg === 4 || b.leg === 5 || b.leg === 6) && (!Lcur || Lcur.type !== 'mark' || b.a >= Lcur.mark.a - 4.5);
+      if (b.pole && !keepPoleHere) b.setPole(false);
+      if (keepPoleHere) {
+        return wrap(W - (b.tack || 1) * (POLE_MIN + 0.06));
+      }
       if (!onUpwindBeat && (b.leg === 0 || b.leg === 3) && b.tack === 1 && b.a >= MARKS.m1.a - 4.5 && b.c >= -1.5 && b.c <= 18.0) {
         return wrap(W - (b.tack || 1) * ca);
       }
@@ -775,10 +780,12 @@ export class AI {
         const k = clamp(((dM - rDes) / Math.max(2.2, rDes)) * 1.85, -1.2, 1.15);
         let vc = tc - k * nc, va = ta - k * na; const l = Math.hypot(vc, va) || 1; vc /= l; va /= l;
         // orbit接線が風上ノーゴーゾーン(va > cos(closeAngle))を向いて失速・オーバースタンドしないようクランプ
-        const maxVa = Math.cos(this.closeAngle);
+        // 2マーク・3マークのランチャー展開中はマーク上側で不要に100°未満へ上り込まないよう POLE_MIN 側に抑える
+        const keepPoleOrbit = (L.markKey === 'm2' || L.markKey === 'm3') && b.pole && da >= -1.5;
+        const maxVa = keepPoleOrbit ? Math.cos(POLE_MIN + 0.06) : Math.cos(this.closeAngle);
         if (va > maxVa) {
           va = maxVa;
-          vc = -Math.sin(this.closeAngle);
+          vc = (vc >= 0 ? 1 : -1) * Math.sqrt(Math.max(0.01, 1 - va * va));
         }
         return { c: b.c + vc * 14, a: b.a + va * 14, forceDirect: true };
       }
@@ -1245,18 +1252,35 @@ export class AI {
     return best;
   }
 
-  // ランチャー: 下レグで真風角が十分深く、マークから離れていれば上げる (タック違いや上り角度に変わる時は即座に収納して舵ロックを防ぐ)
+  // ランチャー: 下レグで真風角が十分深ければ上げる。2マーク(leg 4→5)・3マーク(leg 5→6)・フィニッシュ(leg 6)は
+  // 回航後も下り・ブロードリーチが続くためマーク近接や回航中という理由だけでは絶対に下ろさず、上り角へ切り上がる場面のみ収納する
   updatePole(dt, heading, distMark, rounding) {
     const b = this.b;
     const relH = wrap(b.windFrom - heading);
     const twaH = Math.abs(relH);
     const sameTack = Math.sign(relH || 1) === Math.sign(b.rel || b.tack || 1);
     const onUpwindLeg = b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind';
-    const want = !b.ocs && !b.penalty && !b.maneuver && !rounding && !onUpwindLeg && sameTack && distMark > 32 && twaH > 2.14 && b.twa > 2.06;
+    const keepPoleThroughMark = COURSE_MODE === 'trapezoid' && (b.leg === 4 || b.leg === 5 || b.leg === 6);
+    const isGybingNow = !!(b.maneuver && b.maneuver.kind === 'gybe');
+    const markBlocksPole = !keepPoleThroughMark && (rounding || distMark <= 32);
+    const raiseTwaH = keepPoleThroughMark ? 2.04 : 2.14;
+    const raiseTwaNow = keepPoleThroughMark ? 1.98 : 2.06;
+    const want = !b.ocs && !b.penalty && !b.maneuver && !markBlocksPole && !onUpwindLeg && sameTack && twaH > raiseTwaH && b.twa > raiseTwaNow;
     this.poleT = want ? this.poleT + dt : 0;
-    if (!b.pole && this.poleT > 1.2) b.setPole(true);
-    if (b.pole && (!want && (twaH < 1.98 || b.twa < 1.94 || !sameTack || onUpwindLeg || distMark < 28 || rounding || b.penalty || b.maneuver))) {
-      b.setPole(false);
+    if (!b.pole && !b.gybePoleRestore && this.poleT > 1.2) b.setPole(true);
+    if (b.pole && !isGybingNow) {
+      // 2・3マーク回航中やフィニッシュリーチではマーク手前の進入・回航角度の揺れで勝手にランチャーを下ろさず、
+      // 本当にマーク風下へ流されてクローズで上り直す必要がある場合やペナルティ・上りレグ時のみ収納する
+      const Lcur = LEGS[Math.min(b.leg, LEGS.length - 1)];
+      const mustBeatUpToDownwindMark = keepPoleThroughMark && Lcur && Lcur.type === 'mark' && b.a < Lcur.mark.a - 4.5 && twaH < 1.48;
+      const turningDownwindGybe = !sameTack && (keepPoleThroughMark ? b.twa > 1.55 : (twaH > 1.65 && b.twa > 1.65));
+      const dropTwaH = keepPoleThroughMark ? 1.30 : 1.98;
+      const dropTwaNow = keepPoleThroughMark ? POLE_MIN - 0.08 : 1.94;
+      const mustDropAtMark = !keepPoleThroughMark && (distMark < 28 || rounding);
+      const mustDropForTack = !sameTack && !turningDownwindGybe && !keepPoleThroughMark;
+      if (mustBeatUpToDownwindMark || (!keepPoleThroughMark && twaH < dropTwaH) || b.twa < dropTwaNow || mustDropForTack || onUpwindLeg || mustDropAtMark || b.penalty || b.ocs || (b.maneuver && !isGybingNow)) {
+        b.setPole(false);
+      }
     }
   }
 
@@ -1812,7 +1836,7 @@ export class AI {
       }
       this.luffMatch += (wantLuff - (this.luffMatch || 0)) * (1 - Math.exp(-dt * 2.8));
       if (this.luffMatch > 0.015) {
-        const minReachTwa = 1.08; // 62°未満には上りすぎず、最速のリーチング角度帯(62°〜95°)を使って加速する
+        const minReachTwa = b.pole ? (POLE_MIN + 0.08) : 1.08; // ランチャー展開中は100°未満へ上り込んでポールを外さないよう保護
         const maxUp = Math.max(0, twaBrg - minReachTwa);
         const dH = Math.min(this.luffMatch, maxUp);
         heading = wrap(heading + b.tack * dH);
@@ -1907,7 +1931,9 @@ export class AI {
         err = gateTurnDir * Math.max(0.8, Math.abs(err));
       }
     } else if (!prestart && Math.abs(relNow) > 1.65 && Math.abs(relDes) > 1.55 && relNow * relDes < 0) {
-      if (b.pole) b.setPole(false);
+      // 3マーク等の風下ジャイブ回航時は、ここで b.setPole(false) を呼ぶと sim.js 側のジャイブ後自動再アップ(gybePoleRestore)が消えてしまうため、
+      // 目標角がランチャー許容角(POLE_MIN)より浅い場合のみ下ろし、深い場合は sim.js のジャイブ通過処理に任せる
+      if (b.pole && Math.abs(relDes) < POLE_MIN + 0.03) b.setPole(false);
       // relNow > 0 (スタボ)から relDes < 0 (ポート)へ風下経由で回るには左回転(err < 0)
       const gybeDir = relNow > 0 ? -1 : 1;
       if (err * gybeDir < 0) err = gybeDir * Math.max(0.6, Math.abs(err));

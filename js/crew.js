@@ -10,6 +10,7 @@ export const CREW_TYPES = [
   { id: 'tanuki', label: 'タヌキ', icon: '', unlockRate: 1650, splashName: 'Tanuki' },
   { id: 'rabbit', label: 'ウサギ', icon: '', unlockRate: 1750, splashName: 'Rabbit' },
   { id: 'dolphin', label: 'イルカ', icon: '', unlockRate: 1850, splashName: 'Dolphin' },
+  { id: 'penguin', label: 'ペンギン', icon: '', unlockRate: 1950, splashName: 'Penguin' },
 ];
 
 // assets/crew/manifest.json から読み込んだ差し替えモデル
@@ -329,7 +330,7 @@ export function buildFigure(type, style = {}) {
   const bodyM = smat(A.body, 0.72);
   const bellyM = smat(A.belly, 0.75);
 
-  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba' || type === 'duck' || type === 'tanuki' || type === 'rabbit' || type === 'dolphin';
+  const isRoundPet = type === 'cat' || type === 'dog' || type === 'shiba' || type === 'duck' || type === 'tanuki' || type === 'rabbit' || type === 'dolphin' || type === 'penguin';
   g.userData.isRoundPet = isRoundPet;
 
   // 1) 上半身グループ (風速に応じて腰から上を海側へ反らせてハイクアウトする)
@@ -339,13 +340,13 @@ export function buildFigure(type, style = {}) {
   g.userData.upper = upper;
 
   // 2) 下半身・まるっこい足:
-  // ネコ・イヌ・アヒル・タヌキ・ウサギ・イルカ(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
+  // ネコ・イヌ・アヒル・タヌキ・ウサギ・イルカ・ペンギン(isRoundPet)は強風ハイクアウト時に胴体と足が離れて足が長く見えないよう、
   // まるっこいお尻と球状の短いあんよを upper 下部に一体配置し、常に短い丸足の可愛いフォルムを保つ
   if (isRoundPet) {
     ell(upper, bodyM, 0.19, 0.10, 0.16, 0, 0.04, 0.0);
     for (const s of [-1, 1]) {
-      if (type === 'duck') {
-        // アヒルのかわいいオレンジ色の水かきあんよ
+      if (type === 'duck' || type === 'penguin') {
+        // アヒル・ペンギンのかわいいオレンジ色の水かきあんよ
         sph(upper, A.nose, 0.072, 0.036, 0.088, s * 0.102, 0.012, -0.145);
         sph(upper, 0xf2850c, 0.030, 0.022, 0.045, s * 0.102 - 0.028, 0.008, -0.185);
         sph(upper, A.nose, 0.032, 0.024, 0.050, s * 0.102, 0.008, -0.192);
@@ -466,6 +467,14 @@ export function buildFigure(type, style = {}) {
       fl.rotation.z = -s * 0.48; fl.rotation.x = 0.32;
       const flTip = sph(grp, A.nose, 0.032, 0.075, 0.068, s * 0.052, -0.035, -0.085);
       flTip.rotation.z = -s * 0.42; flTip.rotation.x = 0.40;
+    }
+  } else if (type === 'penguin') {
+    // ペンギンのパタパタ動く可愛いフリッパー翼(表は濃紺グレー、内側は白)
+    for (const [grp, s] of [[armL, -1], [armR, 1]]) {
+      const fl = sph(grp, A.body, 0.044, 0.128, 0.084, s * 0.034, -0.015, -0.038);
+      fl.rotation.z = -s * 0.42; fl.rotation.x = 0.26;
+      const flIn = sph(grp, A.belly, 0.026, 0.095, 0.062, s * 0.016, -0.020, -0.056);
+      flIn.rotation.z = -s * 0.40; flIn.rotation.x = 0.26;
     }
   } else if (type === 'tanuki') {
     // タヌキのこげ茶色のおてて
@@ -605,10 +614,28 @@ export function buildFigure(type, style = {}) {
       break;
     }
     case 'penguin': {
-      cone(head, A.nose, 0.04, 0.09, 0, -0.02, -hs[2] - 0.03, -Math.PI / 2, 0);
-      sph(head, A.belly, 0.17, 0.15, 0.1, 0, -0.02, -hs[2] + 0.07);
-      cap(upper, A.body, 0.04, 0.2, -0.27, 0.26, -0.02, 0, 0, 0.5);
-      cap(upper, A.body, 0.04, 0.2, 0.27, 0.26, -0.02, 0, 0, -0.5);
+      // ペンギン: ハート型の白い顔模様 + 黄色いほっぺ/首元のコウテイペンギン風アクセント + 山吹色くちばし + 小さな丸しっぽ
+      sph(head, A.belly, 0.135, 0.138, 0.082, -0.072, -0.015, -hs[2] + 0.062);
+      sph(head, A.belly, 0.135, 0.138, 0.082, 0.072, -0.015, -hs[2] + 0.062);
+      sph(head, A.belly, 0.165, 0.095, 0.088, 0, -0.068, -hs[2] + 0.068);
+      // コウテイペンギン風の淡いレモンイエロー頬アクセント
+      sph(head, 0xfde047, 0.052, 0.068, 0.042, -0.175, -0.045, -hs[2] + 0.115);
+      sph(head, 0xfde047, 0.052, 0.068, 0.042, 0.175, -0.045, -hs[2] + 0.115);
+      // 白い顔マスクの前面に輝く黒目とピンクほっぺをくっきり配置
+      sph(head, 0x111111, 0.035, 0.046, 0.022, -0.092, 0.020, -hs[2] - 0.008);
+      sph(head, 0x111111, 0.035, 0.046, 0.022, 0.092, 0.020, -hs[2] - 0.008);
+      sph(head, 0xffffff, 0.012, 0.015, 0.012, -0.084, 0.038, -hs[2] - 0.022);
+      sph(head, 0xffffff, 0.012, 0.015, 0.012, 0.100, 0.038, -hs[2] - 0.022);
+      sph(head, 0xff9db0, 0.042, 0.026, 0.014, -0.148, -0.034, -hs[2] + 0.032);
+      sph(head, 0xff9db0, 0.042, 0.026, 0.014, 0.148, -0.034, -hs[2] + 0.032);
+      // 丸みのある可愛いオレンジ色のくちばし(上くちばし＋下くちばし)
+      const pBillTop = cone(head, A.nose, 0.054, 0.115, 0, -0.028, -hs[2] - 0.048, -Math.PI / 2 + 0.10, 0);
+      pBillTop.scale.x = 0.064;
+      const pBillBot = sph(head, 0xe8820c, 0.046, 0.024, 0.058, 0, -0.054, -hs[2] - 0.022);
+      pBillBot.rotation.x = 0.12;
+      // ちょこんと尖ったペンギンのしっぽ
+      cone(tailGrp, A.body, 0.072, 0.115, 0, 0.01, 0.02, 1.15, 0);
+      g.scale.setScalar(0.92);
       break;
     }
     case 'bear':

@@ -316,7 +316,23 @@
 
     <section id="weather" class="sec">
       <h2>3. 海面・風・波・潮汐</h2>
-      <p>レース海面は「八景島（横浜八景島沖）」と「江の島（湘南港沖）」の2種類です。スタート画面を開いた際に Open-Meteo API から現地のリアルタイム風向・風速・最大瞬間風速を取得します（通信不可時は基準値 9kt を使用、極端な微風時は最低 5kt・上限 22kt に補正）。スタート画面右上のボタンで「現地風」と「順風（10kt / 最大12kt）」を切り替えられます。</p>
+      <p>レース海面は「八景島（横浜八景島沖）」と「江の島（湘南港沖）」の2種類です。スタート画面右上のボタンで「現地風」と「順風（10kt / 最大12kt）」を切り替えられます。</p>
+
+      <h3>現地風向・風速の取得方法</h3>
+      <ul>
+        <li><strong>取得元</strong>：スタート画面を開いた際およびレース海面を切り替えた際に、ブラウザから直接 <strong>Open-Meteo Forecast API</strong>（<code>https://api.open-meteo.com/v1/forecast</code>、気象庁MSMモデル等を含む数値予報データ）へアクセスし、各海面代表座標の現在値（地上10m風速 <code>wind_speed_10m</code>・風向 <code>wind_direction_10m</code>・最大瞬間風速 <code>wind_gusts_10m</code>、単位 <code>kn</code>）を取得します。</li>
+        <li><strong>対象座標</strong>：八景島沖（北緯 <span class="num">35.337°</span>・東経 <span class="num">139.658°</span>）／江の島沖（北緯 <span class="num">35.292°</span>・東経 <span class="num">139.488°</span>）。</li>
+        <li><strong>補正・タイムアウト・キャッシュ</strong>：レースが成立するよう取得風速は最低 <span class="num">5kt</span>〜上限 <span class="num">22kt</span> の範囲に収め、1回取得した海面データはページ再読み込みまでメモリにキャッシュします。通信タイムアウト（<span class="num">1.4秒</span>）やオフライン時は基準値（風速 <span class="num">9kt</span>・最大 <span class="num">12kt</span>、八景島 <span class="num">15°</span>／江の島 <span class="num">200°</span>）へフォールバックします。</li>
+        <li><strong>赤旗時の自動切替</strong>：取得した最大風速（平均風速と最大瞬間風速の大きい方）が赤旗基準を超える場合は、スタート画面に赤旗を表示したうえでレース風速を自動で「順風（<span class="num">10kt</span> / 最大 <span class="num">12kt</span>）」へ切り替えます。</li>
+      </ul>
+
+      <h3>潮汐・潮流の算出方法</h3>
+      <ul>
+        <li><strong>算出方式</strong>：外部APIではなく、お使いの端末の現在時刻（<code>Date.now()</code>）を用いた<strong>天文潮汐モデル（M2半日周潮計算）</strong>によりゲーム内でリアルタイム算出しています。</li>
+        <li><strong>潮回りの判定</strong>：基準新月（2024年1月11日 UTC）からの経過日数と朔望月周期（<span class="num">29.5306日</span>）から現在の月齢を求め、半周期（<span class="num">14.765日</span>）内の位置に応じて「大潮（係数 <span class="num">1.18</span>）・中潮（<span class="num">0.90</span>）・小潮（<span class="num">0.58</span>）・長潮（<span class="num">0.48</span>）・若潮（<span class="num">0.72</span>）」を決定します。</li>
+        <li><strong>上げ潮・下げ潮と満潮遅れ</strong>：日本標準時（UTC+9）と月齢に伴う南中遅れ（1日あたり約 <span class="num">50.5分</span>）、海域ごとの満潮位相オフセット（東京湾西岸の八景島は相模湾の江の島より約 <span class="num">30分</span> 遅れ）、および主太陰半日周潮周期（<span class="num">12.4206時間</span>）から潮位位相角を算出します。位相の正弦値から「上げ潮」「下げ潮」「満潮／干潮前後（潮止まり）」と現在流速を求めます。</li>
+        <li><strong>海域ごとの流向・最大流速と艇への影響</strong>：八景島沖は上げ潮 <span class="num">335°</span>（北北西）／下げ潮 <span class="num">155°</span>（南南東）・基準最大 <span class="num">0.45kt × 潮回り係数</span>、江の島沖は上げ潮 <span class="num">285°</span>（西北西）／下げ潮 <span class="num">105°</span>（東南東）・基準最大 <span class="num">0.35kt × 潮回り係数</span>（最小 <span class="num">0.04kt</span>）。算出された潮流ベクトルは、実艇と同様にスタート待機などの低速時および微風時（約 <span class="num">10.5kt</span> 未満）ほど強く働く重み付けで全艇の移動に加算されます。</li>
+      </ul>
 
       <div class="tblWrap">
         <table>
@@ -344,7 +360,6 @@
           </tbody>
         </table>
       </div>
-      <p class="mute">※ 現地風が赤旗基準を超えている場合、スタート画面に赤旗を表示したうえでレース風速は自動的に「順風（10kt）」へ切り替わります。また、現在時刻の天文潮汐（大潮〜小潮・上げ潮／下げ潮）に応じた潮流ドリフトが海面全体に働きます。</p>
     </section>
 
     <section id="course" class="sec">
@@ -515,7 +530,13 @@
               <td><strong>イルカ</strong></td>
               <td><span class="tag rate">最高レート 1850 到達</span></td>
               <td class="num">レート 1750 以上で登場</td>
-              <td>最上位レート帯の強豪CP艇として乗船。</td>
+              <td>上位〜最上位レート帯の強豪CP艇として乗船。</td>
+            </tr>
+            <tr>
+              <td><strong>ペンギン</strong></td>
+              <td><span class="tag rate">最高レート 1950 到達</span></td>
+              <td class="num">レート 1850 以上で登場</td>
+              <td>最上位レート帯のトップライバルCP艇として乗船。</td>
             </tr>
           </tbody>
         </table>

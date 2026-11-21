@@ -2486,11 +2486,11 @@ if (typeof window !== 'undefined') {
 }
 
 // ---- 接近時の権利主張コール (動物キャラクターのみ鳴き声を鳴らし、人間は声を出さない) ----
-// crewType: 'cat' | 'dog' | 'duck' | 'tanuki' | 'rabbit' | 'dolphin' (human_m / human_f はスキップ)
+// crewType: 'cat' | 'dog' | 'duck' | 'tanuki' | 'rabbit' | 'dolphin' | 'penguin' (human_m / human_f はスキップ)
 // callKind: 'starboard' (スタボ) | 'leeward' (下)
 export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard', pan = 0) {
   if (!bgmVoiceEnabled || muted) return;
-  if (crewType !== 'cat' && crewType !== 'dog' && crewType !== 'shiba' && crewType !== 'duck' && crewType !== 'tanuki' && crewType !== 'rabbit' && crewType !== 'dolphin') return;
+  if (crewType !== 'cat' && crewType !== 'dog' && crewType !== 'shiba' && crewType !== 'duck' && crewType !== 'tanuki' && crewType !== 'rabbit' && crewType !== 'dolphin' && crewType !== 'penguin') return;
   initAudio();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
@@ -2708,6 +2708,36 @@ export function playRightOfWayHail(crewType = 'human_m', _callKind = 'starboard'
       o.connect(g); g.connect(out);
       o.start(ts); o.stop(ts + dur + 0.025);
     });
+    return;
+  }
+
+  if (crewType === 'penguin') {
+    // ペンギン: 元気で愛嬌のある「クェッ！クェーッ！」(明るい2連トランペット調チャープ)
+    [0, 0.145].forEach((offset, idx) => {
+      const ts = t0 + offset;
+      const dur = idx === 0 ? 0.105 : 0.18;
+      const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+      o1.type = 'sawtooth'; o2.type = 'triangle';
+      const f0 = idx === 0 ? 520 : 580;
+      o1.frequency.setValueAtTime(f0, ts);
+      o1.frequency.exponentialRampToValueAtTime(f0 * 1.42, ts + dur * 0.45);
+      o1.frequency.exponentialRampToValueAtTime(f0 * 1.12, ts + dur);
+      o2.frequency.setValueAtTime(f0 * 2.0, ts);
+      o2.frequency.exponentialRampToValueAtTime(f0 * 2.75, ts + dur * 0.45);
+      o2.frequency.exponentialRampToValueAtTime(f0 * 2.15, ts + dur);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.Q.value = 3.2;
+      bp.frequency.setValueAtTime(1250, ts);
+      bp.frequency.exponentialRampToValueAtTime(1950, ts + dur * 0.5);
+      bp.frequency.exponentialRampToValueAtTime(1400, ts + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, ts);
+      g.gain.linearRampToValueAtTime(0.36, ts + 0.014);
+      g.gain.exponentialRampToValueAtTime(0.0001, ts + dur + 0.02);
+      o1.connect(bp); o2.connect(bp); bp.connect(g); g.connect(out);
+      o1.start(ts); o2.start(ts);
+      o1.stop(ts + dur + 0.03); o2.stop(ts + dur + 0.03);
+    });
   }
 }
 
@@ -2718,7 +2748,7 @@ export function playCrewSelectSound(crewType = 'human_m') {
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
 
-  if (crewType === 'cat' || crewType === 'dog' || crewType === 'shiba' || crewType === 'duck' || crewType === 'tanuki' || crewType === 'rabbit' || crewType === 'dolphin') {
+  if (crewType === 'cat' || crewType === 'dog' || crewType === 'shiba' || crewType === 'duck' || crewType === 'tanuki' || crewType === 'rabbit' || crewType === 'dolphin' || crewType === 'penguin') {
     playRightOfWayHail(crewType, 'starboard', 0);
     return;
   }

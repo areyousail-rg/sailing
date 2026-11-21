@@ -166,7 +166,6 @@ body.touch #miniLog div{font-size:.6rem}
 .spinner{display:none}
 .loadingAnimeWrap{width:min(440px,90vw);border-radius:8px;overflow:hidden;border:1.5px solid rgba(148,197,238,.38);border-top:2.5px solid var(--accent);box-shadow:0 16px 42px rgba(0,0,0,.68),0 0 0 1px rgba(255,255,255,.06);background:#081624;position:relative}
 .loadingPixelCanvas{display:block;width:100%;height:auto;aspect-ratio:16/10;image-rendering:pixelated;image-rendering:crisp-edges}
-.loadingCaptionBadge{position:absolute;left:8px;top:7px;padding:2px 7px;border-radius:3px;background:rgba(7,16,28,.74);border:1px solid rgba(148,197,238,.32);font-family:var(--f-num);font-size:.62rem;font-weight:800;letter-spacing:.12em;color:#e0f2fe;pointer-events:none;text-transform:uppercase}
 #loading p{margin:0;font-family:var(--f-num);font-weight:700;letter-spacing:.2em;font-size:.86rem;color:var(--mute);text-transform:uppercase;font-variant-numeric:tabular-nums}
 #loading p span{color:var(--accent)}
 .loadBar{width:min(300px,74vw);height:5px;background:rgba(148,184,218,.18);border-radius:3px;overflow:hidden}

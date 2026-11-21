@@ -295,6 +295,25 @@ function drawAnimalPairSailLogo(ctx, animalType, colorHex) {
     ctx.lineTo(10, -24);
     ctx.closePath();
     ctx.fill();
+  } else if (animalType === 'penguin') {
+    // ペンギン: 丸い頭・くちばし・フリッパー翼・白いおなか抜きのシルエット
+    ctx.beginPath();
+    ctx.ellipse(0, 12, 27, 34, 0, 0, Math.PI * 2); // 胴体
+    ctx.arc(0, -24, 21, 0, Math.PI * 2); // 頭
+    ctx.ellipse(-28, 12, 8, 21, 0.34, 0, Math.PI * 2); // 左翼
+    ctx.ellipse(28, 12, 8, 21, -0.34, 0, Math.PI * 2); // 右翼
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(16, -28);
+    ctx.lineTo(34, -22);
+    ctx.lineTo(16, -16);
+    ctx.closePath();
+    ctx.fill(); // くちばし
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.ellipse(0, 16, 16, 24, 0, 0, Math.PI * 2); // おなかの白抜き
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
   }
   ctx.restore();
 }
@@ -791,37 +810,37 @@ function makeWaterCutMat() {
         float pln = clamp(uPlaning, 0.0, 1.15);
 
         if (kind < 0.5) {
-          // 1) ハル水線・バウ水切り波リボン ＋ プレーニング時のV字チャインスプレーシート
+          // 1) ハル水線・バウ水切り波リボン（リーチング・プレーニング時も不自然に白く広がらないよう控えめに制御）
           float u = uv.x;
           float v = uv.y;
-          // ヒールしている側(風下チャイン)がより深く水を捉えて強い水切り波を生む
-          float leeBoost = clamp(1.0 - side * uHeel * 2.2, 0.55, 1.55);
+          // ヒールしている側(風下チャイン)がより深く水を捉えて水切り波を生む
+          float leeBoost = clamp(1.0 - side * uHeel * 1.9, 0.60, 1.38);
           vSideBoost = leeBoost;
-          float planeWingEnv = smoothstep(0.10, 0.38, u) * (1.12 - 0.28 * u);
-          float spreadW = (0.052 + (0.16 + 0.48 * pow(u, 0.82)) * (0.20 + 0.76 * spd + 0.38 * wav) + 0.58 * pln * planeWingEnv) * leeBoost;
+          float planeWingEnv = smoothstep(0.14, 0.42, u) * (1.0 - 0.35 * u);
+          float spreadW = (0.046 + (0.14 + 0.36 * pow(u, 0.85)) * (0.18 + 0.64 * spd + 0.32 * wav) + 0.11 * pln * planeWingEnv) * leeBoost;
           // ヒールに伴う水線の横ずれ補正
           float heelShift = -uHeel * 0.14;
           p.x = side * (hx + v * spreadW) + heelShift;
           // バウ〜フォアフット(u < 0.44)で水を左右へ押し分けながら立ち上がる薄い水膜リップ
           float bowEnv = sin(clamp(u / 0.44, 0.0, 1.0) * 3.14159265);
-          float lipH = (1.0 - v) * (1.0 - v * 0.65) * bowEnv * (0.028 + 0.078 * spd + 0.086 * wav) * leeBoost;
-          // プレーニング時はチャイン中腹部〜後方から低く鋭い水膜が横へ張り出す
-          float planeLip = sin(clamp(v * 0.85, 0.0, 1.0) * 3.14159265) * planeWingEnv * 0.105 * pln * leeBoost;
-          float chineLip = (1.0 - smoothstep(0.0, 0.38, v)) * (1.0 - u * 0.55) * (0.016 + 0.028 * spd + 0.024 * pln);
-          float ripple = (0.009 + 0.010 * pln) * sin(u * 24.0 - uTime * (5.5 + 7.5 * spd + 6.0 * pln) + v * 6.5) * spd * v;
+          float lipH = (1.0 - v) * (1.0 - v * 0.68) * bowEnv * (0.024 + 0.064 * spd + 0.072 * wav) * leeBoost;
+          // プレーニング時はチャイン中腹部からごく低く控えめな水膜のみ添える
+          float planeLip = sin(clamp(v * 0.85, 0.0, 1.0) * 3.14159265) * planeWingEnv * 0.026 * pln * leeBoost;
+          float chineLip = (1.0 - smoothstep(0.0, 0.34, v)) * (1.0 - u * 0.58) * (0.014 + 0.022 * spd + 0.008 * pln);
+          float ripple = (0.007 + 0.004 * pln) * sin(u * 24.0 - uTime * (5.5 + 7.2 * spd + 3.2 * pln) + v * 6.5) * spd * v;
           p.y = 0.012 + lipH + planeLip + chineLip + ripple;
-          p.z += v * (0.14 + 0.34 * spd + 0.42 * pln) * u;
+          p.z += v * (0.12 + 0.28 * spd + 0.12 * pln) * u;
         } else {
-          // 2) ラダーブレード＆トランサム水切りストリーム（プレーニング時は船尾ルースターテールが増大）
+          // 2) ラダーブレード＆トランサム水切りストリーム
           float u = uv.x;
           float rSide = side; // -1 .. +1
-          vSideBoost = 1.0 + uRudderDrag * 0.8 + pln * 0.65;
-          float halfW = 0.030 + (0.105 + (0.30 + 0.24 * pln) * pow(u, 0.76)) * (0.30 + 0.68 * spd + 0.50 * uRudderDrag + 0.25 * wav + 0.42 * pln);
-          float deflect = -uSteer * pow(u, 1.28) * (0.32 + 0.24 * spd);
+          vSideBoost = 1.0 + uRudderDrag * 0.72 + pln * 0.20;
+          float halfW = 0.028 + (0.095 + (0.24 + 0.06 * pln) * pow(u, 0.78)) * (0.28 + 0.60 * spd + 0.46 * uRudderDrag + 0.22 * wav + 0.12 * pln);
+          float deflect = -uSteer * pow(u, 1.28) * (0.30 + 0.22 * spd);
           p.x = deflect + rSide * halfW;
-          float collarEnv = exp(-pow((u - 0.08) / (0.09 + 0.07 * pln), 2.0)) * (1.0 - abs(rSide) * 0.72);
-          float roosterEnv = sin(clamp(u / 0.52, 0.0, 1.0) * 3.14159265) * (1.0 - abs(rSide) * 0.68) * pln;
-          float collarH = collarEnv * (0.028 + 0.062 * spd + 0.050 * uRudderDrag + 0.028 * wav) + roosterEnv * 0.068;
+          float collarEnv = exp(-pow((u - 0.08) / (0.09 + 0.03 * pln), 2.0)) * (1.0 - abs(rSide) * 0.74);
+          float roosterEnv = sin(clamp(u / 0.48, 0.0, 1.0) * 3.14159265) * (1.0 - abs(rSide) * 0.72) * pln;
+          float collarH = collarEnv * (0.024 + 0.052 * spd + 0.044 * uRudderDrag + 0.024 * wav) + roosterEnv * 0.020;
           p.y = 0.014 + collarH;
         }
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -852,42 +871,42 @@ function makeWaterCutMat() {
         if (spd < 0.04 && uWave < 0.05) discard;
         float u = vUv.x;
         float v = vUv.y;
-        float flowT = uTime * (2.6 + 5.2 * spd + 5.8 * pln);
+        float flowT = uTime * (2.6 + 5.0 * spd + 2.8 * pln);
 
         if (vKind < 0.5) {
-          // ハル水線・バウ水切り波 ＋ プレーニング時の白いチャインスプレーウィング
+          // ハル水線・バウ水切り波（リーチング時も自然な透過感で控えめに描画）
           float n1 = vn(vec2(v * 5.2, u * 11.0 - flowT));
           float n2 = vn(vec2(v * 12.5 + 3.1, u * 24.0 - flowT * 1.4));
           float streak = 0.52 * n1 + 0.48 * n2;
-          float edgeIn = smoothstep(0.0, 0.08, v);
-          float edgeOut = pow(max(0.0, 1.0 - v), mix(1.65, 1.12, clamp(pln, 0.0, 1.0)));
-          float aftCut = mix(0.68, 0.92, clamp(pln, 0.0, 1.0));
+          float edgeIn = smoothstep(0.0, 0.10, v);
+          float edgeOut = pow(max(0.0, 1.0 - v), mix(1.85, 1.55, clamp(pln, 0.0, 1.0)));
+          float aftCut = mix(0.66, 0.74, clamp(pln, 0.0, 1.0));
           float bowFade = smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(aftCut, 1.0, u));
-          float bowCrest = smoothstep(0.38, 0.04, u) * smoothstep(0.55, 0.08, v) * (0.45 + 0.55 * streak);
-          float kelvinRidge = exp(-pow((v - (0.42 + 0.32 * u)) / 0.18, 2.0)) * (0.4 + 0.6 * n1);
-          float planeSheet = pln * smoothstep(0.10, 0.34, u) * (0.52 + 0.48 * streak) * (1.0 - smoothstep(0.55, 0.98, v));
-          float intensity = (bowCrest * 0.75 + kelvinRidge * 0.52 + edgeOut * streak * 0.38 + planeSheet * 0.78) * edgeIn * bowFade;
-          float act = clamp((spd * 0.75 + uWave * 0.55 + pln * 0.55) * vSideBoost, 0.0, 1.48);
-          float alpha = clamp(intensity * act * 0.68 * uOpacity, 0.0, 0.84);
+          float bowCrest = smoothstep(0.36, 0.04, u) * smoothstep(0.50, 0.08, v) * (0.45 + 0.55 * streak);
+          float kelvinRidge = exp(-pow((v - (0.38 + 0.28 * u)) / 0.16, 2.0)) * (0.4 + 0.6 * n1);
+          float planeSheet = pln * smoothstep(0.14, 0.38, u) * (0.42 + 0.58 * streak) * (1.0 - smoothstep(0.32, 0.82, v));
+          float intensity = (bowCrest * 0.66 + kelvinRidge * 0.40 + edgeOut * streak * 0.28 + planeSheet * 0.18) * edgeIn * bowFade;
+          float act = clamp((spd * 0.68 + uWave * 0.48 + pln * 0.14) * vSideBoost, 0.0, 1.20);
+          float alpha = clamp(intensity * act * 0.52 * uOpacity, 0.0, 0.54);
           if (alpha < 0.01) discard;
-          vec3 waterSheen = vec3(0.58, 0.84, 0.95);
-          vec3 foamWhite = vec3(0.96, 0.99, 1.0);
-          vec3 col = mix(waterSheen, foamWhite, clamp(bowCrest * 0.85 + planeSheet * 0.9 + streak * 0.45 + uWave * 0.3, 0.0, 1.0));
+          vec3 waterSheen = vec3(0.56, 0.82, 0.94);
+          vec3 foamWhite = vec3(0.94, 0.98, 1.0);
+          vec3 col = mix(waterSheen, foamWhite, clamp(bowCrest * 0.72 + planeSheet * 0.35 + streak * 0.35 + uWave * 0.25, 0.0, 0.92));
           gl_FragColor = vec4(col, alpha);
         } else {
-          // ラダー水切り＆トランサムプレーニング航跡
+          // ラダー水切り＆トランサム航跡（過度な白帯を抑えた繊細な水流表現）
           float rDist = abs(v - 0.5) * 2.0;
           float n1 = vn(vec2(rDist * 4.5, u * 10.5 - flowT * 1.25));
           float n2 = vn(vec2(v * 9.5 + 1.7, u * 20.0 - flowT * 1.65));
           float turb = 0.55 * n1 + 0.45 * n2;
-          float collar = smoothstep(0.22 + 0.14 * pln, 0.02, u) * (1.0 - smoothstep(0.0, 0.80, rDist));
-          float twinVortex = exp(-pow((rDist - (0.25 + 0.35 * u)) / 0.24, 2.0));
-          float centerStream = (1.0 - smoothstep(0.0, 0.72, rDist)) * (0.45 + 0.55 * turb);
-          float uEnv = smoothstep(0.0, 0.04, u) * pow(max(0.0, 1.0 - u), mix(1.25, 0.88, clamp(pln, 0.0, 1.0)));
-          float rAct = clamp(spd * 0.72 + uRudderDrag * 0.78 + uWave * 0.28 + pln * 0.68, 0.0, 1.55);
-          float alpha = clamp((collar * 0.82 + (twinVortex * 0.55 + centerStream * (0.55 + 0.32 * pln)) * turb) * uEnv * rAct * 0.72 * uOpacity, 0.0, 0.84);
+          float collar = smoothstep(0.20 + 0.06 * pln, 0.02, u) * (1.0 - smoothstep(0.0, 0.76, rDist));
+          float twinVortex = exp(-pow((rDist - (0.25 + 0.32 * u)) / 0.22, 2.0));
+          float centerStream = (1.0 - smoothstep(0.0, 0.68, rDist)) * (0.45 + 0.55 * turb);
+          float uEnv = smoothstep(0.0, 0.04, u) * pow(max(0.0, 1.0 - u), mix(1.32, 1.12, clamp(pln, 0.0, 1.0)));
+          float rAct = clamp(spd * 0.65 + uRudderDrag * 0.70 + uWave * 0.24 + pln * 0.18, 0.0, 1.25);
+          float alpha = clamp((collar * 0.72 + (twinVortex * 0.44 + centerStream * (0.46 + 0.10 * pln)) * turb) * uEnv * rAct * 0.54 * uOpacity, 0.0, 0.56);
           if (alpha < 0.01) discard;
-          vec3 col = mix(vec3(0.62, 0.86, 0.96), vec3(0.97, 0.995, 1.0), clamp(collar * 0.9 + turb * 0.52 + pln * 0.45 + uRudderDrag * 0.4, 0.0, 1.0));
+          vec3 col = mix(vec3(0.58, 0.84, 0.95), vec3(0.95, 0.985, 1.0), clamp(collar * 0.78 + turb * 0.42 + pln * 0.18 + uRudderDrag * 0.35, 0.0, 0.92));
           gl_FragColor = vec4(col, alpha);
         }
       }
@@ -1684,57 +1703,68 @@ export class BoatModel {
     const poleMoving = pk > 0.03 && pk < 0.97 ? Math.sin(pk * Math.PI) : 0;
     const crewPoleAct = clamp(Math.max(this.crewPoleTimer / 1.15, poleMoving), 0, 1);
 
-    // クルー・スキッパーの乗船・ハイクアウト姿勢 ＆ 風速・ブローに応じた連続的な重心移動:
-    // 肌で風を感じられないゲーム画面でも「風が強くなった/弱くなった・ブローが入った」ことが一目で伝わるよう、
-    // 微風時は船内寄りに座って上体を起こし、順風〜強風・ブロー時は2人ともガンネル外縁へ出て力強くハイクアウトする
+    // クルー・スキッパーの乗船・ハイクアウト姿勢 ＆ 風速・ブロー・実ヒール角に応じた連続的な重心移動:
+    // 肌で風を感じられないゲーム画面でも「風が強くなった/弱くなった・ブローが入った・船がヒールしている」ことが一目で伝わるよう、
+    // ヒール角が大きい場面（クローズ・リーチングの強風/ブロー時を含む）ではクルーが素早く風上ガンネル外縁へ出て力強くハイクアウトする
     const sStep = (e0, e1, val) => {
       const x = clamp((val - e0) / (e1 - e0), 0, 1);
       return x * x * (3 - 2 * x);
     };
-    this.side += (sgn - this.side) * (1 - Math.exp(-dt * 3.5));
+    this.side += (sgn - this.side) * (1 - Math.exp(-dt * 4.2));
     const twaDeg = (twa * 180) / Math.PI;
     const hikeAmt = b.hike !== undefined ? b.hike : 0.35;
+    // 実際の風下側ヒール量(rad): 船体が傾いているのにクルーがハイクアウトしていない不自然さを防ぐ
+    const leewardHeel = Math.max(0, visHeel * sgn);
+    const heelDemand = clamp((leewardHeel - 0.045) / 0.21, 0, 1.40);
+    const helmEffHike = Math.max(hikeAmt, heelDemand * 1.08);
+    const crewEffHike = Math.max(hikeAmt * 1.14, heelDemand * 1.28);
+    // リーチングでヒールしている間はクルーが早々に船内へ戻らず風上ガンネルに留まってフラットを保つ
+    const reachHeelHold = sStep(0.075, 0.20, leewardHeel) * (1 - sStep(136.0, 160.0, twaDeg));
     const cbLift = this.cbBoard ? this.cbBoard.position.y : 0;
     const cbRaiseBlend = sStep(0.015, 0.075, cbLift);
 
-    // クローズ〜リーチ時の風上デッキ乗り出し量を風速・ブロー(hikeAmt)に連動 (微風 ~0.46 → 中風 ~0.68 → ブロー・強風 1.0)
-    const windwardFull = 0.46 + 0.54 * sStep(0.08, 0.72, hikeAmt);
-    const windwardMid = 0.38 + 0.20 * sStep(0.08, 0.60, hikeAmt);
-    const upRise1 = sStep(9.0, 19.0, twaDeg);
-    const upRise2 = sStep(19.0, 28.0, twaDeg);
+    // クローズ〜リーチ時の風上デッキ乗り出し量を風速・ブロー・実ヒール角(crewEffHike)に連動
+    const windwardFull = 0.62 + 0.38 * sStep(0.06, 0.56, crewEffHike);
+    const windwardMid = 0.44 + 0.22 * sStep(0.06, 0.50, crewEffHike);
+    const upRise1 = sStep(8.0, 18.0, twaDeg);
+    const upRise2 = sStep(18.0, 27.0, twaDeg);
     let sideCoeff = upRise1 * (windwardMid + (windwardFull - windwardMid) * upRise2);
 
     // アビーム〜フリー〜ランニング (96°..164°) の連続遷移:
+    // ヒールが出ているリーチング帯では reachHeelHold により風上レール上でのハイクアウトを維持する
     if (twaDeg > 96.0) {
-      const toWindMid = sStep(96.0, 112.0, twaDeg);
-      const toLeeMid = sStep(114.0, 142.0, twaDeg);
-      const toDeepRun = sStep(144.0, 162.0, twaDeg);
-      const fromFull = windwardFull + (0.52 - windwardFull) * toWindMid;
-      const midSpan = 0.52 - 1.04 * toLeeMid; // +0.52 .. -0.52
+      const toWindMid = sStep(96.0, 114.0, twaDeg);
+      const toLeeMid = sStep(116.0, 144.0, twaDeg);
+      const toDeepRun = sStep(146.0, 164.0, twaDeg);
+      const fromFull = windwardFull + (0.56 - windwardFull) * toWindMid;
+      const midSpan = 0.56 - 1.08 * toLeeMid; // +0.56 .. -0.52
       const afterMid = midSpan + (-1.0 - midSpan) * toDeepRun;
-      sideCoeff = toWindMid < 1.0 && twaDeg <= 114.0 ? fromFull : afterMid;
+      const flatCoeff = toWindMid < 1.0 && twaDeg <= 116.0 ? fromFull : afterMid;
+      sideCoeff = flatCoeff + (windwardFull - flatCoeff) * reachHeelHold;
     }
     const targetCrewSide = sideCoeff * sgn;
-    this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 4.8));
+    this.crewSide += (targetCrewSide - this.crewSide) * (1 - Math.exp(-dt * 5.6));
 
-    // スキッパーの横デッキ位置も微風時はコーミング内側寄り、強風・ブロー時はガンネル外縁へスムーズにスライド
-    const activeHikeWindow = sStep(14.0, 29.0, twaDeg) * (1 - sStep(108.0, 145.0, twaDeg));
-    const targetHelmDeck = (1 - activeHikeWindow) * 0.78 + activeHikeWindow * (0.46 + 0.54 * sStep(0.08, 0.72, hikeAmt));
+    // スキッパーの横デッキ位置も微風時はコーミング内側寄り、強風・ブロー・ヒール時はガンネル外縁へスムーズにスライド
+    const baseHikeWindow = sStep(14.0, 28.0, twaDeg) * (1 - sStep(112.0, 148.0, twaDeg));
+    const activeHikeWindow = Math.max(baseHikeWindow, reachHeelHold);
+    const targetHelmDeck = (1 - activeHikeWindow) * 0.78 + activeHikeWindow * (0.48 + 0.52 * sStep(0.06, 0.62, helmEffHike));
     if (this.helmDeckCur === undefined) this.helmDeckCur = targetHelmDeck;
-    this.helmDeckCur += (targetHelmDeck - this.helmDeckCur) * (1 - Math.exp(-dt * 4.8));
+    this.helmDeckCur += (targetHelmDeck - this.helmDeckCur) * (1 - Math.exp(-dt * 5.2));
     const helmDeck = this.helmDeckCur;
 
-    // スキッパー・クルーの上体ハイク角度: 微風時はほぼ直立(0.04 rad)、ブロー・強風時はしっかり上体を反らせる
-    const targetHelmLean = 0.04 + clamp((hikeAmt - 0.06) * 0.96, 0, 1.32) * activeHikeWindow;
+    // スキッパー・クルーの上体ハイク角度: ヒール角・ブロー・風速に応じて力強く外へ反らせる
+    const targetHelmLean = 0.05 + clamp((helmEffHike - 0.04) * 1.02, 0, 1.34) * activeHikeWindow;
     if (this.helmLeanCur === undefined) this.helmLeanCur = targetHelmLean;
-    this.helmLeanCur += (targetHelmLean - this.helmLeanCur) * (1 - Math.exp(-dt * 5.4));
+    this.helmLeanCur += (targetHelmLean - this.helmLeanCur) * (1 - Math.exp(-dt * 5.8));
     const lean = this.helmLeanCur;
 
     const crewSideAbs = Math.abs(this.crewSide);
     const crewDeckFactor = sStep(0.20, 0.65, crewSideAbs);
-    const targetCrewLean = (0.04 + clamp((hikeAmt - 0.06) * 1.02, 0, 1.38) * activeHikeWindow) * sStep(0.16, 0.42, crewSideAbs) * (1 - 0.85 * crewPoleAct);
+    const crewOnWindward = this.crewSide * sgn > 0 ? sStep(0.18, 0.52, this.crewSide * sgn) : 0;
+    const targetCrewLean = (0.06 + clamp((crewEffHike - 0.03) * 1.14, 0, 1.42) * activeHikeWindow) * crewOnWindward * (1 - 0.85 * crewPoleAct);
     if (this.crewLeanCur === undefined) this.crewLeanCur = targetCrewLean;
-    this.crewLeanCur += (targetCrewLean - this.crewLeanCur) * (1 - Math.exp(-dt * 5.4));
+    this.crewLeanCur += (targetCrewLean - this.crewLeanCur) * (1 - Math.exp(-dt * 6.0));
     const crewLean = this.crewLeanCur;
 
     const sideAbs = Math.abs(this.side);
@@ -1793,12 +1823,12 @@ export class BoatModel {
       this.helm.userData.head.rotation.z = helmHeadTilt;
     }
 
-    // クルー: センターボード引き上げ時のクリアランス回避や前後の移動・ハイクアウト量もすべて風速に応じて連続補間
+    // クルー: センターボード引き上げ時のクリアランス回避や前後の移動・ハイクアウト量もすべて風速・ヒール角に応じて連続補間
     const crewPet = !!this.crew.userData.isRoundPet;
-    const fwdShift = clamp(Math.max(pk, sStep(102, 130, twaDeg) * (1 - crewDeckFactor * 0.55)), 0, 1);
-    const baseCrewX = this.crewSide * ((0.56 - 0.17 * fwdShift) + crewLean * (crewPet ? 0.175 : 0.155));
-    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.045 - Math.max(0, crewLean - 0.78) * (crewPet ? 0.015 : 0.042) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
-    const baseCrewZ = -0.04 - 0.38 * fwdShift;
+    const fwdShift = clamp(Math.max(pk * (1 - reachHeelHold * 0.45), sStep(108, 136, twaDeg) * (1 - crewDeckFactor * 0.55) * (1 - reachHeelHold * 0.75)), 0, 1);
+    const baseCrewX = this.crewSide * ((0.58 - 0.16 * fwdShift) + crewLean * (crewPet ? 0.18 : 0.185));
+    const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.045 - Math.max(0, crewLean - 0.76) * (crewPet ? 0.016 : 0.045) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
+    const baseCrewZ = -0.04 - 0.36 * fwdShift;
     const actCrewX = sgn * 0.26;
     const actCrewY = 0.39 + 0.03 * Math.sin(t * 14);
     const actCrewZ = -0.40;
@@ -1817,7 +1847,7 @@ export class BoatModel {
         if (Math.abs(targetCrewX) < minCbClearX) targetCrewX = Math.sign(signSmooth || prefDir) * minCbClearX;
       }
     }
-    const posFollow = 1 - Math.exp(-dt * 6.5);
+    const posFollow = 1 - Math.exp(-dt * 6.8);
     if (this._crewX === undefined) {
       this._crewX = targetCrewX;
       this._crewY = targetCrewY;
@@ -1836,20 +1866,20 @@ export class BoatModel {
     const rawCrewRotY = centerRotY + (deckRotY - centerRotY) * rotBlend;
     const targetCrewRotY = rawCrewRotY + (sgn * 0.22 - rawCrewRotY) * crewPoleAct;
     if (this._crewRotY === undefined) this._crewRotY = targetCrewRotY;
-    else this._crewRotY += (targetCrewRotY - this._crewRotY) * (1 - Math.exp(-dt * 6.0));
+    else this._crewRotY += (targetCrewRotY - this._crewRotY) * (1 - Math.exp(-dt * 6.2));
     this.crewRig.rotation.y = this._crewRotY;
 
     if (this.crew.userData.upper) {
       this.crewRig.rotation.z = 0;
       const cDuck = sStep(0.35, 0.05, crewSideAbs) * 0.45 * boomLow;
-      const cHike = (crewPet ? Math.min(crewLean * 0.88, 1.08) : crewLean * 0.99) * sStep(0.14, 0.40, crewSideAbs);
+      const cHike = crewPet ? Math.min(crewLean * 0.90, 1.12) : Math.min(crewLean * 1.02, 1.42);
       const baseUpperX = cHike - cDuck + crewBreath;
       const actUpperX = -0.52 + 0.14 * Math.sin(t * 16);
       const cu = this.crew.userData.upper;
       cu.rotation.x = baseUpperX + (actUpperX - baseUpperX) * crewPoleAct;
       cu.rotation.z = (-this.crewSide * 0.08 + 0.05 * Math.cos(idleT * 2.1)) * (1 - crewPoleAct);
       if (cu.userData.armL && cu.userData.armR) {
-        const ext = clamp((crewLean - 0.62) / 0.55, 0, 1) * crewSideAbs * (1 - crewPoleAct);
+        const ext = clamp((crewLean - 0.56) / 0.52, 0, 1) * crewSideAbs * (1 - crewPoleAct);
         const lOut = this.crewSide > 0 ? ext : 0;
         const rOut = this.crewSide < 0 ? ext : 0;
         const trimWaveL = 0.15 * Math.sin(idleT * 2.8) * (1 - lOut);
