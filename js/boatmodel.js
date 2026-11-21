@@ -488,20 +488,8 @@ function mainSailTexture(no, color, nat = 'JPN', isPlayer = false, animalPairLog
     drawAnimalPairSailLogo(x, animalPairLogo, letterCol);
   }
 
-  // 9) メインセールのマスト側下部(タック付近)の青いセールメーカー/クラスロゴ(画像準拠・控えめな表現)
-  x.save();
-  x.translate(38, 944);
-  x.beginPath();
-  x.ellipse(0, 0, 12, 9.5, -0.12, 0, Math.PI * 2);
-  x.fillStyle = 'rgba(18, 62, 150, 0.38)';
-  x.fill();
-  x.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-  x.lineWidth = 1.2;
-  x.beginPath();
-  x.moveTo(-7, 5);
-  x.lineTo(7, -5);
-  x.stroke();
-  x.restore();
+  // 9) メインセールのマスト側下部(タック付近)のオリジナルセールロフトマーク (KAZE SAILS: 控えめな印字)
+  drawOriginalSailLoftLogo(x, 40, 942, 0.92, 0.44);
 
   // 10) メインセールのマストとブームの接着部(タック角: 左下コーナー)の三角形の隙間を再現 (実艇画像2・3枚目準拠)
   x.save();
@@ -524,7 +512,54 @@ function mainSailTexture(no, color, nat = 'JPN', isPlayer = false, animalPairLog
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 
-// ジブセールテクスチャ: 実艇写真(画像4枚目)準拠のパネルシーム、前下部の青いNorth Sailsロゴマーク、コンパクトな透明ウインドウ
+// オリジナルセールロフトマーク (KAZE SAILS: 濃紺×クリムゾンのオリジナル海事エンブレム + "KZ")
+function drawOriginalSailLoftLogo(x, cx, cy, scale = 1, alpha = 1) {
+  x.save();
+  x.globalAlpha = alpha;
+  x.translate(cx, cy);
+  x.scale(scale, scale);
+  x.rotate(-0.08);
+
+  // 濃紺のシャープな六角海事シールド
+  x.beginPath();
+  x.moveTo(-13, -7);
+  x.lineTo(0, -12);
+  x.lineTo(13, -7);
+  x.lineTo(13, 5);
+  x.lineTo(0, 12);
+  x.lineTo(-13, 5);
+  x.closePath();
+  x.fillStyle = '#0f2744';
+  x.fill();
+
+  // 左上に信号旗クリムゾンの三角フラッグアクセント
+  x.beginPath();
+  x.moveTo(-11.5, -6);
+  x.lineTo(-1.5, -10);
+  x.lineTo(-1.5, -2.5);
+  x.closePath();
+  x.fillStyle = '#c9382b';
+  x.fill();
+
+  // 下部に白波カーブリボン
+  x.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+  x.lineWidth = 1.4;
+  x.beginPath();
+  x.moveTo(-9, 5.5);
+  x.quadraticCurveTo(-2, 2.5, 4, 5.5);
+  x.quadraticCurveTo(7.5, 7, 10, 4.5);
+  x.stroke();
+
+  // オリジナルモノグラム "KZ"
+  x.fillStyle = '#ffffff';
+  x.font = '800 8.5px "Helvetica Neue", Arial, sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText('KZ', 1.2, 0.5);
+  x.restore();
+}
+
+// ジブセールテクスチャ: パネルシーム、前下部のオリジナルセールロフトマーク、コンパクトな透明ウインドウ
 let jibTex = null;
 function jibTexture() {
   if (jibTex) return jibTex;
@@ -544,33 +579,15 @@ function jibTexture() {
     x.fill();
   }
 
-  // パネルシームライン (画像4枚目のわずかに斜め上へ走るクロスカットシーム)
+  // パネルシームライン (わずかに斜め上へ走るクロスカットシーム)
   x.strokeStyle = 'rgba(208, 216, 226, 0.88)';
   x.lineWidth = 1.5;
   for (let y = 48; y < 500; y += 52) {
     x.beginPath(); x.moveTo(0, y + 6); x.lineTo(256, y - 4); x.stroke();
   }
 
-  // ジブセール前下部(タック角付近)の青いロゴマーク (画像4枚目準拠: ウインドウよりさらに下のタック角近くに配置)
-  x.save();
-  x.translate(32, 480);
-  x.rotate(-0.10);
-  x.beginPath();
-  x.ellipse(0, 0, 14, 10.5, 0, 0, Math.PI * 2);
-  x.fillStyle = '#124098';
-  x.fill();
-  x.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-  x.lineWidth = 1.5;
-  x.beginPath();
-  x.moveTo(-8, 6);
-  x.lineTo(8, -6);
-  x.stroke();
-  x.fillStyle = '#ffffff';
-  x.font = 'bold 7px Arial, sans-serif';
-  x.textAlign = 'center';
-  x.fillText('N', -4, -1);
-  x.fillText('S', 4, 6);
-  x.restore();
+  // ジブセール前下部(タック角付近)のオリジナルセールロフトマーク
+  drawOriginalSailLoftLogo(x, 34, 478, 1.05, 0.96);
 
   // ジブセール下部の透明ウインドウ (実艇写真準拠のコンパクトなクリア窓)
   const wx = 60, wy = 420, ww = 96, wh = 34;
