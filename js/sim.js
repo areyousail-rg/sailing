@@ -951,10 +951,14 @@ export class Boat {
     const poleF = 1 + this.poleK * (0.068 * smoothstep(POLE_MIN, 2.55, twa) - 0.35 * clamp(POLE_MIN - 0.02 - twa, 0, 1));
     const isReachBand = twaDeg >= 58 && twaDeg <= 140;
     const steerDrag = isReachBand ? (steer * this.tack > 0 ? 0.045 : 0.085) : 0.18; // リーチングは水流が速く、特にのぼす舵は失速しにくい
-    // スナイプ級のワンデザイン特性: クローズやランニングのVMG勝負では技量差(skill)が出る一方、直線ハルスピード勝負のリーチングでは不自然な速度差が出ないよう圧縮
+    // 微小な当て舵(|steer| <= 0.22: 風の振れ自動追従や1〜2°の微調整)では層流が保たれラダー抵抗が出ない実艇特性を再現
+    const effSteerMag = Math.max(0, (Math.abs(steer) - 0.22) / 0.78);
+    // スナイプ級のワンデザイン特性: 同一艇種のためCP艇が物理ポーラー上限(1.00)を超えてプレイヤーより速くなるバグを禁止し、
+    // 初級CP艇(skill < 1.0)の減速のみ反映（上位CP艇の強さはAIのスタート精度・最適角度維持・戦術判断のみで表現）
     const reachHullBand = smoothstep(50, 68, twaDeg) * (1 - 0.65 * smoothstep(134, 154, twaDeg));
-    const effSkill = 1 + (this.skill - 1) * (1 - 0.80 * reachHullBand);
-    let target = polarV * Math.pow(w.f, 0.8) * effSkill * eff * poleF * (1 - (turning ? 0.022 : steerDrag) * Math.abs(steer)) * this.throttle;
+    const cappedSkill = Math.min(1.0, this.skill);
+    const effSkill = 1 + (cappedSkill - 1) * (1 - 0.80 * reachHullBand);
+    let target = polarV * Math.pow(w.f, 0.8) * effSkill * eff * poleF * (1 - (turning ? 0.022 : steerDrag) * effSteerMag) * this.throttle;
     // 波: 順風以上のランニング・リーチングでは波に乗ったり(サーフィン加速)、波から下りたり(谷・裏斜面での減速)で艇速が変化する挙動
     {
       const ws = waveSample(this.x, this.z, t, Math.sin(this.h), -Math.cos(this.h));

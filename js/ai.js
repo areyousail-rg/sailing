@@ -155,7 +155,7 @@ export class AI {
   runUpTime(L) {
     const b = this.b;
     const wKt = BASE_WIND_KT * (b.windF || 1);
-    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill * 0.82;
+    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * Math.min(1, b.skill || 1) * 0.82;
     const tau = 2.6, v0 = Math.max(0, b.v * 0.85);
     const dist = (T) => vT * T - (vT - v0) * tau * (1 - Math.exp(-T / tau));
     let lo = 0, hi = 60;
@@ -1489,7 +1489,7 @@ export class AI {
           b.throttle = isComSide ? 0.18 : 0.10;
           b.sheet = isComSide ? 0.26 : 0.16;
         } else {
-          const vT = polar((this.closeAngle * 180) / Math.PI) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * b.skill;
+          const vT = polar((this.closeAngle * 180) / Math.PI) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * Math.min(1, b.skill || 1);
           const goL = Math.min(this.goDist, this.gap0);
           const tGo = this.tc - this.runUpTime(goL / upf);
           const span = Math.max(5, tGo - START_T);

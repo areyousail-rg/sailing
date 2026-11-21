@@ -2138,7 +2138,8 @@ function playerControl(dt) {
   if (Math.abs(err) > 0.12) { hTarget = wrap(b.h + Math.sign(err) * 0.12); err = wrap(hTarget - b.h); } // 目標針路の先行を約7°に制限(舵の慣性を抑える)
   // ランチャー制限などで目標針路へ向けない状態が続いたら目標を現在の針路に合わせる
   if (!L && !R && !closeHoldLock.active && Math.abs(err) > 0.05) { hErrT += dt; if (hErrT > 3) { hTarget = b.h; hErrT = 0; } } else hErrT = 0;
-  if (!b.maneuver) b.steer = clamp(err * 10, -1, 1);
+  const steerGain = (!L && !R && closeHoldLock.active) ? 3.2 : 10;
+  if (!b.maneuver) b.steer = clamp(err * steerGain, -1, 1);
   syncSteerButtonsUI(L, R, closeHoldLock.active && closeHoldLock.holdT > 0 ? closeHoldLock.autoDir : 0);
 
   const up = keys.has('ArrowUp') || keys.has('KeyW'), dn = keys.has('ArrowDown') || keys.has('KeyS');
@@ -2657,6 +2658,7 @@ function showResult() {
 // ---------- メインループ ----------
 const clock = new THREE.Clock();
 let hudAcc = 0;
+let enteredStartMenu = false;
 function togglePause(p) {
   if (state.phase === 'menu') { startOrientation(); return; }
   if (state.phase === 'orientation') { exitOrientation(false); return; }
@@ -2791,7 +2793,7 @@ function loop() {
     }
     world.update(time, camera, dt, (state.phase === 'race' || state.phase === 'orientation') ? state.t : time, player, boats);
     const isReviewOpen = !!document.getElementById('review');
-    const active = (state.phase === 'race' || state.phase === 'menu' || state.phase === 'orientation') && !state.paused && !state.resultShown && !isReviewOpen;
+    const active = enteredStartMenu && (state.phase === 'race' || state.phase === 'menu' || state.phase === 'orientation') && !state.paused && !state.resultShown && !isReviewOpen;
     if (active && state.phase !== 'menu') setWind(clamp(Math.abs(player.v) / 6, 0, 1));
     updateSailingAudio(dt, player, active);
     setCameraAudio(cam.mode === COCKPIT);
@@ -3301,15 +3303,16 @@ function initMenu() {
     cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima',
     cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima',
   ]);
-  if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
-    playBgm('menu');
-  }
-  // ブラウザの自動再生制限で初期状態がsuspendedだった場合のフォールバック（captureフェーズで画面上のどこに触れても即座にアンロック）
+  // ロード中はBGMを鳴らさず、AudioContextのアンロックのみ受け付け、ロード完了後(enteredStartMenu)からBGMを再生する
   const unlockEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const unlockMenuBgm = () => {
+    if (!enteredStartMenu) {
+      unlockAudioNow();
+      return;
+    }
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       unlockAudioNow().then((ok) => {
-        if (ok && state.phase === 'menu' && cfg.bgmMode !== 'off') {
+        if (ok && enteredStartMenu && state.phase === 'menu' && cfg.bgmMode !== 'off') {
           playBgm('menu');
         }
       });
@@ -3317,7 +3320,7 @@ function initMenu() {
     } else {
       unlockAudioNow();
     }
-    if (isAudioRunning() && (state.phase !== 'menu' || cfg.bgmMode === 'off' || isBgmPlaying())) {
+    if (enteredStartMenu && isAudioRunning() && (state.phase !== 'menu' || cfg.bgmMode === 'off' || isBgmPlaying())) {
       unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm, true));
     }
   };
@@ -3373,13 +3376,12 @@ function initMenu() {
   clock.getDelta();
   loop();
 
-  let enteredStartMenu = false;
   const enterStartMenu = () => {
     if (enteredStartMenu) return;
-    enteredStartMenu = true;
-    clock.getDelta();
     const ld = $('loading');
     if (ld) ld.classList.add('hidden');
+    enteredStartMenu = true;
+    clock.getDelta();
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       playBgm('menu');
       unlockAudioNow().then((ok) => {

@@ -217,8 +217,14 @@ function stopMenuHtmlAudio() {
   } catch (e) {}
 }
 
+function isLoadingScreenActive() {
+  if (typeof document === 'undefined') return false;
+  const el = document.getElementById('loading');
+  return !!(el && !el.classList.contains('hidden'));
+}
+
 function syncMenuHtmlAudioPlayback() {
-  if (bgmMode !== 'menu' || !bgmVoiceEnabled || muted) {
+  if (isLoadingScreenActive() || bgmMode !== 'menu' || !bgmVoiceEnabled || muted) {
     stopMenuHtmlAudio();
     return;
   }
@@ -1176,6 +1182,11 @@ function mountBgmBufferSource(buf, mode, isQuick) {
 }
 
 export function playBgm(mode = 'result') {
+  if (isLoadingScreenActive()) {
+    stopMenuHtmlAudio();
+    fadeOutActiveBgmSource(0.05, 150);
+    return;
+  }
   initAudio();
   const isSilentSailing = mode === 'result' || mode === 'review' || mode === 'menu';
   if (isSilentSailing) silenceSailingNow();
@@ -1198,7 +1209,7 @@ export function playBgm(mode = 'result') {
   const reqId = ++bgmReqSeq;
 
   const tryStartWithBuf = (buf, isQuick) => {
-    if (!buf || bgmReqSeq !== reqId || bgmMode !== mode || !bgmVoiceEnabled) return;
+    if (!buf || isLoadingScreenActive() || bgmReqSeq !== reqId || bgmMode !== mode || !bgmVoiceEnabled) return;
     if (mode === 'menu' && !menuWavUrl) {
       menuWavUrl = encodeAudioBufferToWavUrl(buf);
     }
