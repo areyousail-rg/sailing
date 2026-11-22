@@ -1988,14 +1988,33 @@ function signals(prevT, t) {
   const c = Math.ceil(-t);
   if (t < 0 && t > -6 && c !== state.count) { state.count = c; beep(c <= 1 ? 1200 : 880); }
 }
+const BOW_LEN = 2.30; // スナイプ艇中心からバウ先端までの距離[m]
+function boatBowCourse(b) {
+  const cp = toCourse(b.x, b.z);
+  const dh = b.h - W0;
+  return {
+    a: cp.a,
+    c: cp.c,
+    bowA: cp.a + Math.cos(dh) * BOW_LEN,
+    bowC: cp.c + Math.sin(dh) * BOW_LEN,
+  };
+}
 function atGun() {
   let anyOcs = false;
   for (let i = 0; i < boats.length; i++) {
     const b = boats[i];
-    const ai = !b.isPlayer ? ais.find((a) => a.b === b) : null;
-    if (b.a > lineA(b.c) || (ai && ai.willOcs && b.a > lineA(b.c) - 2.5)) {
-      if (b.a <= lineA(b.c)) b.a = lineA(b.c) + 0.5;
+    const pos = boatBowCourse(b);
+    b.a = pos.a;
+    b.c = pos.c;
+    const bowOver = pos.bowA - lineA(pos.bowC);
+    const midOver = pos.a - lineA(pos.c);
+    const hullOver = Math.max(bowOver, midOver);
+    // RRS 29.1準拠: スタート号砲(0:00)時点で艇体の一部(バウ先端を含む)がスタートラインよりコース側に出ていればOCS判定
+    // 自艇のみライン帯の視認誤差(20cm)を僅かに許容し、CP艇はバウ先端がラインを1cmでも出ていれば厳格にリコール判定する
+    const tol = b.isPlayer ? 0.20 : 0.0;
+    if (hullOver > tol) {
       b.ocs = true;
+      b.started = false;
       anyOcs = true;
     }
   }
@@ -2282,7 +2301,12 @@ function simStep(dt) {
       }
     }
     if (!b.dsq) handleProgress(b, updateProgress(b, t));
-    if (b.ocs && t >= 0 && b.a < lineA(b.c) - 2) { b.ocs = false; }
+    if (b.ocs && t >= 0) {
+      const pos = boatBowCourse(b);
+      if (pos.bowA < lineA(pos.bowC) - 0.35 && pos.a < lineA(pos.c) - 0.5) {
+        b.ocs = false;
+      }
+    }
     if (b.penaltyDone) { b.penaltyDone = false; if (b.isPlayer && !state.ff) toast('ペナルティ消化', 'good', 3000); }
   }
   if (recorder) recorder.step(dt, t, boats, progressOf, lineA);

@@ -656,9 +656,9 @@ body.menuOpen .menuPractice{padding-top:12px}
 /* クローズホールド(30°〜50°)風向シフト自動追従中: 舵ボタンが自動で押されている押下表示 */
 .tgrp.left button{
   position:relative;
-  width:104px;
-  height:94px;
-  font-size:1.95rem;
+  width:128px;
+  height:92px;
+  font-size:2.05rem;
   border-radius:8px;
   display:inline-flex;
   align-items:center;
@@ -872,7 +872,7 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   body.touch #miniLog{top:182px;max-width:44vw}
   body.touch #miniLog div{font-size:.5rem}
   body.touch #bigCount{font-size:3.8rem;top:40%}
-  .tgrp.left{left:8px;bottom:10px;gap:8px}.tgrp.left button{width:84px;height:78px;font-size:1.7rem}
+  .tgrp.left{left:8px;bottom:10px;gap:6px}.tgrp.left button{width:clamp(92px,26vw,108px);height:78px;font-size:1.8rem}
   .tgrp.left button.autoSteer::after{bottom:4px;font-size:.5rem;padding:1px 4px}
   .tgrp.mid,body.menuOpen .tgrp.mid{left:8px;top:auto;bottom:96px;flex-direction:row;gap:6px}
   .tgrp.mid button.tbAct{width:auto;min-width:64px;height:38px;padding:0 9px;flex-direction:row;gap:5px;border-radius:8px}
@@ -882,10 +882,10 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   #touch button.tbPole::after{top:4px;right:4px;width:5px;height:5px}
   #touch .tbAct .tbIco svg{width:19px;height:19px}
   #touch .tbAct .tbLbl{font-size:.62rem}
-  .tgrp.right{right:8px;bottom:10px;width:154px;gap:6px}
-  .tgrp.right button.tbTrim{width:74px;height:54px;border-radius:8px;gap:1px}
+  .tgrp.right{right:8px;bottom:10px;width:auto;gap:6px}
+  .tgrp.right button.tbTrim{width:clamp(64px,17.5vw,72px);height:54px;border-radius:8px;gap:1px}
   .tgrp.right button.tbTrim .tbIco svg{width:20px;height:20px}
-  .tgrp.right button.tbTrim .tbLbl{font-size:.64rem}
+  .tgrp.right button.tbTrim .tbLbl{font-size:.62rem}
   body.menuOpen .menuPractice{padding:4px 0 0}
   .menuCard{padding:0 0 6px;gap:0;max-height:calc(100vh - 235px);overflow-y:auto;width:95vw}
   .menuCard > *:not(.menuTitleRow){margin-left:9px;margin-right:9px}

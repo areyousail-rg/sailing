@@ -22,17 +22,62 @@ export class DroneCam {
     this.tmp = new THREE.Vector3(); this.want = new THREE.Vector3(); this.wantLook = new THREE.Vector3();
     this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
     
-    let drag = false, lx = 0, ly = 0, lt = 0;
+    let drag = false, dragId = null, lx = 0, ly = 0, lt = 0;
     let downX = 0, downY = 0, downT = 0, lastTapT = 0, lastTapX = 0, lastTapY = 0;
+    const pointers = new Map();
+    let pinching = false, pinchDist0 = 0, pinchZoom0 = 1, wasPinch = false;
     this.vYaw = 0; this.vPitch = 0; this.dragging = false;
     dom.style.touchAction = 'none';
+
+    const startPinchIfTwo = () => {
+      if (pointers.size < 2) return;
+      const pts = Array.from(pointers.values());
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      pinching = true;
+      wasPinch = true;
+      drag = false;
+      dragId = null;
+      this.dragging = true;
+      this.vYaw = 0;
+      this.vPitch = 0;
+      pinchDist0 = Math.max(10, dist);
+      pinchZoom0 = this.zoom;
+    };
+
     dom.addEventListener('pointerdown', (e) => {
-      drag = true; this.dragging = true; this.vYaw = 0; this.vPitch = 0;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size >= 2) {
+        startPinchIfTwo();
+        return;
+      }
+      wasPinch = false;
+      pinching = false;
+      drag = true; dragId = e.pointerId; this.dragging = true; this.vYaw = 0; this.vPitch = 0;
       lx = e.clientX; ly = e.clientY; lt = e.timeStamp;
       downX = e.clientX; downY = e.clientY; downT = performance.now();
     });
+
     const release = (e) => {
-      if (drag && e) {
+      if (e) pointers.delete(e.pointerId);
+      if (pinching) {
+        if (pointers.size >= 2) {
+          startPinchIfTwo();
+          return;
+        }
+        pinching = false;
+        this.vYaw = 0; this.vPitch = 0;
+        if (pointers.size === 1) {
+          const [remId, remPt] = pointers.entries().next().value;
+          drag = true; dragId = remId; this.dragging = true;
+          lx = remPt.x; ly = remPt.y; lt = e ? e.timeStamp : performance.now();
+          downX = remPt.x; downY = remPt.y; downT = 0;
+          return;
+        }
+        drag = false; dragId = null; this.dragging = false;
+        return;
+      }
+      if (e && dragId !== null && e.pointerId !== dragId) return;
+      if (drag && e && !wasPinch) {
         const now = performance.now();
         const moveDist = Math.hypot(e.clientX - downX, e.clientY - downY);
         if (moveDist < 16 && now - downT < 280) {
@@ -44,14 +89,29 @@ export class DroneCam {
           }
         }
       }
-      drag = false; this.dragging = false;
+      drag = false; dragId = null; this.dragging = false;
       if (e && e.timeStamp - lt > 90) { this.vYaw = 0; this.vPitch = 0; } // 止めてから離した場合は慣性なし
     };
     window.addEventListener('pointerup', release);
     window.addEventListener('pointercancel', release);
     dom.addEventListener('dblclick', () => this.resetAngle());
+    // Safari/Android Chrome で2本指ピンチ時にブラウザ標準ズームが横取りするのを防止
+    dom.addEventListener('touchstart', (e) => { if (e.touches.length >= 2) e.preventDefault(); }, { passive: false });
+    dom.addEventListener('touchmove', (e) => { if (e.touches.length >= 2) e.preventDefault(); }, { passive: false });
     window.addEventListener('pointermove', (e) => {
-      if (!drag) return;
+      if (pointers.has(e.pointerId)) {
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      if (pinching && pointers.size >= 2) {
+        const pts = Array.from(pointers.values());
+        const curDist = Math.max(10, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
+        // 2本指を広げるとズームイン(zoom小)、縮めるとズームアウト(zoom大)
+        this.zoom = clamp(pinchZoom0 * (pinchDist0 / curDist), 0.4, 2.8);
+        this.vYaw = 0;
+        this.vPitch = 0;
+        return;
+      }
+      if (!drag || (dragId !== null && e.pointerId !== dragId)) return;
       const dyaw = (e.clientX - lx) * 0.005;
       const dpitch = (e.clientY - ly) * 0.004;
       const dtm = Math.max(1, e.timeStamp - lt);
@@ -59,10 +119,9 @@ export class DroneCam {
       this.vPitch = clamp(this.vPitch * 0.6 + (dpitch / dtm * 1000) * 0.4, -3, 3);
       this.targetYaw -= dyaw;
       this.targetPitch = clamp(this.targetPitch + dpitch, -0.5, 0.9);
-      if (this.mode === COCKPIT) this.targetYaw = clamp(this.targetYaw, -2.5, 2.5);
       lx = e.clientX; ly = e.clientY; lt = e.timeStamp;
     });
-    dom.addEventListener('wheel', (e) => { this.zoom = clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.4, 3); e.preventDefault(); }, { passive: false });
+    dom.addEventListener('wheel', (e) => { this.zoom = clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.4, 2.8); e.preventDefault(); }, { passive: false });
   }
 
   resetAngle() {
@@ -94,6 +153,7 @@ export class DroneCam {
   // 風上確認 (Look Windward): 風上側の他艇・風の入り方を見る
   lookWindward(tack) {
     if (this.mode !== COCKPIT) this.setMode(COCKPIT);
+    this.yaw = wrap(this.yaw);
     // tack > 0 (右舷タック) は風が右から来る = 右(+x)が風上 → 右を向く(yaw負)
     this.targetYaw = tack > 0 ? -1.2 : 1.2;
     this.targetPitch = -0.05;
@@ -102,6 +162,7 @@ export class DroneCam {
   // 風下確認 (Look Leeward): ブームの下をくぐって風下側の他艇を見る
   lookLeeward(tack) {
     if (this.mode !== COCKPIT) this.setMode(COCKPIT);
+    this.yaw = wrap(this.yaw);
     this.targetYaw = tack > 0 ? 1.35 : -1.35;
     this.targetPitch = 0.2;
   }
@@ -109,6 +170,7 @@ export class DroneCam {
   // 後方/他艇確認 (Look Stern)
   lookStern() {
     if (this.mode !== COCKPIT) this.setMode(COCKPIT);
+    this.yaw = wrap(this.yaw);
     this.targetYaw = Math.PI * 0.85;
     this.targetPitch = 0.05;
   }
@@ -116,16 +178,16 @@ export class DroneCam {
   // 前方/セール集中 (Center Look): ジブのテルテールを見上げる
   lookAhead() {
     if (this.mode !== COCKPIT) this.setMode(COCKPIT);
+    this.yaw = wrap(this.yaw);
     this.targetYaw = 0;
     this.targetPitch = -0.18;
   }
 
   update(dt, t, boat, boats) {
-    // フリック後の慣性(指を離しても滑らかに減衰しながら回り続ける)
+    // フリック後の慣性(指を離しても滑らかに減衰しながら回り続ける・船内カメラでも360度自在に回転)
     if (!this.dragging && (this.vYaw || this.vPitch)) {
       this.targetYaw += this.vYaw * dt;
       this.targetPitch = clamp(this.targetPitch + this.vPitch * dt, -0.5, 0.9);
-      if (this.mode === COCKPIT) this.targetYaw = clamp(this.targetYaw, -2.5, 2.5);
       const k = Math.exp(-dt * 3.2);
       this.vYaw *= k; this.vPitch *= k;
       if (Math.abs(this.vYaw) < 0.01) this.vYaw = 0;
@@ -155,7 +217,8 @@ export class DroneCam {
       );
       this.cam.quaternion.setFromEuler(this.cockpitEul);
 
-      const targetFov = COCKPIT_FOV + planeF * 3.0;
+      // 船内カメラでも2本指ピンチ・ホイールズームで画角(FOV)を滑らかにズームイン/アウト可能
+      const targetFov = clamp(COCKPIT_FOV * this.zoom + planeF * 3.0, 32, 118);
       if (this.cam.near !== 0.16) { this.cam.near = 0.16; this.cam.updateProjectionMatrix(); }
       if (Math.abs(this.cam.fov - targetFov) > 0.04) { this.cam.fov += (targetFov - this.cam.fov) * 0.22; this.cam.updateProjectionMatrix(); }
       return;

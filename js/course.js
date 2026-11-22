@@ -156,7 +156,7 @@ export function updateProgress(b, t) {
     const laNow = lineA(b.c), laPrev = lineA(prevC);
     const cMid = 0.5 * (b.c + prevC);
     const inSpan = Math.abs(cMid) <= LINE_HALF + 0.6 && (Math.abs(b.c) <= LINE_HALF + 0.8 || Math.abs(prevC) <= LINE_HALF + 0.8);
-    if (inSpan && prevA <= laPrev + 1.5 && b.a >= laNow - 0.25) {
+    if (inSpan && prevA <= laPrev + 0.6 && b.a >= laNow - 0.15) {
       b.started = true;
     }
   }

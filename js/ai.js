@@ -1465,8 +1465,10 @@ export class AI {
         const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 4.0, LINE_HALF - 3.8);
         const lineAtTgt = lineA(tgtC);
         const lineHere = Math.min(lineA(b.c), lineA(clamp(b.c, -LINE_HALF, LINE_HALF)));
-        // 0秒時点でスタートラインぎりぎり(リコールしない直前: 手前約0.8〜1.2m)まで寄せて0秒で飛び出せるように設定
-        const ocsSafetyMargin = this.willOcs ? -2.8 : 0.85;
+        // スナイプ艇バウ先端(中心から2.30m前方)のラインに対する突出量を考慮し、通常CP艇はバウ先端がライン手前約0.65mに収まるよう調整
+        const dhBow = b.h - W0;
+        const bowProjA = Math.max(0.6, Math.cos(dhBow) * 2.30 - Math.sin(dhBow) * 2.30 * Math.tan(LINE_SKEW));
+        const ocsSafetyMargin = this.willOcs ? -1.1 : (bowProjA + 0.65);
         const targetLineA = (b.c > LINE_HALF - 7 ? Math.min(lineHere, lineAtTgt) : Math.min(lineHere, lineAtTgt + 0.8)) - ocsSafetyMargin;
         const gap = targetLineA - b.a;
         const posGap = Math.max(0, gap);
@@ -1477,10 +1479,10 @@ export class AI {
         const holdEndT = role === 'gapShooter' ? -5.8 : (role === 'secondRow' ? -1.8 : (this.willOcs ? -5.0 : -4.2));
         if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -10.5 || posGap > holdDist + 1.5)) this.go = true;
         if (gap < holdDist + 0.3 && t < holdEndT) this.go = false; // 加速開始時刻(holdEndT)より前にラインへ寄りすぎるのを防ぐ
-        // willOcsでない通常CP艇は0:00より前にラインを超えないよう、直前でラインを超えそうな場合のみ減速・シバーさせる
-        const projZeroA = b.a + Math.max(0, -t) * Math.max(0, b.v) * upf;
-        const earlyHoldLimitA = t < -14.0 ? lineHere - holdDist - 3.0 : lineHere - 0.95;
-        const tooEarlyForLine = !this.willOcs && (b.a > earlyHoldLimitA || (t > -5.5 && projZeroA > lineHere - 0.55));
+        // willOcsでない通常CP艇は0:00より前にバウ先端がラインを超えないよう、直前でラインを超えそうな場合のみ減速・シバーさせる
+        const projZeroBowA = b.a + bowProjA + Math.max(0, -t) * Math.max(0, b.v) * upf;
+        const earlyHoldLimitA = t < -14.0 ? lineHere - bowProjA - holdDist - 2.0 : lineHere - bowProjA - 0.70;
+        const tooEarlyForLine = !this.willOcs && (b.a > earlyHoldLimitA || (t > -5.5 && projZeroBowA > lineHere - 0.45));
         if (tooEarlyForLine) this.go = false;
         if (tooEarlyForLine) {
           b.throttle = 0;
