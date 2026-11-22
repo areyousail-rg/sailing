@@ -886,47 +886,51 @@ body.touch .blkGauge{top:88px;width:min(190px,48vw);padding:3px 8px 5px}
   .tgrp.right button.tbTrim{width:74px;height:54px;border-radius:8px;gap:1px}
   .tgrp.right button.tbTrim .tbIco svg{width:20px;height:20px}
   .tgrp.right button.tbTrim .tbLbl{font-size:.64rem}
-  body.menuOpen .menuPractice{padding:6px 0 0}
-  .menuCard{padding:0 0 8px;gap:0;max-height:calc(100vh - 208px);overflow-y:auto;width:95vw}
-  .menuCard > *:not(.menuTitleRow){margin-left:10px;margin-right:10px}
-  .menuTitleRow{padding:7px 11px;gap:6px;flex-direction:column;align-items:stretch}
-  .menuEmblem svg{width:36px;height:22px}
-  .menuTitleRow h1{font-size:1.06rem}
-  .menuSubTag{font-size:.52rem;letter-spacing:.14em}
-  .menuWindHeader{justify-content:space-between;width:100%;gap:5px}
-  .mwhMain{padding:3px 7px;gap:5px;flex:1;min-width:0}
-  .mwhVal{font-size:1rem}
-  .mwhMax{font-size:.7rem}
-  .menuCard h2{font-size:.56rem}
-  .menuGroup{padding:6px 8px 7px;gap:3px}
+  body.menuOpen .menuPractice{padding:4px 0 0}
+  .menuCard{padding:0 0 6px;gap:0;max-height:calc(100vh - 235px);overflow-y:auto;width:95vw}
+  .menuCard > *:not(.menuTitleRow){margin-left:9px;margin-right:9px}
+  .menuTitleRow{padding:5px 10px;gap:4px;flex-direction:column;align-items:stretch}
+  .menuEmblem svg{width:30px;height:18px}
+  .menuTitleRow h1{font-size:.92rem}
+  .menuSubTag{font-size:.46rem;letter-spacing:.12em}
+  .menuWindHeader{justify-content:space-between;width:100%;gap:4px}
+  .mwhMain{padding:2px 6px;gap:4px;flex:1;min-width:0}
+  .mwhLbl{font-size:.48rem}
+  .mwhVal{font-size:.86rem}
+  .mwhMax{font-size:.6rem}
+  .mwhModeBtn{padding:2px 6px;font-size:.54rem}
+  .menuCard h2{font-size:.5rem;margin-bottom:1px}
+  .menuGroup{padding:4px 6px 5px;gap:2px}
   .menuGroup:first-child{padding-left:0}
   .menuGroup:last-child{padding-right:0}
   .menuTopRow3{grid-template-columns:1fr 1fr}
-  .menuTopRow3 .menuGroup:first-child{grid-column:1 / -1;border-left:none;border-bottom:1px solid var(--rule);padding:6px 0 7px}
-  .menuTopRow3 .menuGroup:nth-child(2){border-left:none;padding-left:0;padding-right:8px}
-  .menuTopRow3 .menuGroup:nth-child(3){border-left:1px solid var(--rule);padding-left:8px;padding-right:0}
-  .choices{gap:3px}
+  .menuTopRow3 .menuGroup:first-child{grid-column:1 / -1;border-left:none;border-bottom:1px solid var(--rule);padding:4px 0 5px}
+  .menuTopRow3 .menuGroup:nth-child(2){border-left:none;padding-left:0;padding-right:6px}
+  .menuTopRow3 .menuGroup:nth-child(3){border-left:1px solid var(--rule);padding-left:6px;padding-right:0}
+  .choices{gap:2px}
   .venueChoices{gap:2px}
-  .choice{min-width:38px;padding:4px 6px;font-size:.62rem}
-  .venueChoices .choice{padding:4px 3px}
-  .venueChoices .choice .lb{font-size:.57rem}
+  .choice{min-width:30px;padding:3px 5px;font-size:.54rem}
+  .venueChoices .choice{padding:3px 2px}
+  .venueChoices .choice .lb{font-size:.52rem}
   #rateChoices .choice .lb,
   #penaltyChoices .choice .lb,
-  #bgmChoices .choice .lb{font-size:.57rem}
-  .crewPreviewRow{padding:6px 0 7px;gap:7px}
-  .crewRow{gap:5px 7px}
-  .pv{padding:3px 4px 11px}
-  #preview{width:88px;height:60px}
-  .pvCaption{font-size:.46rem;bottom:1px}
-  .sailNat{padding:4px 5px;font-size:.58rem}
-  .colors input[type=text]{width:50px;padding:3px 5px;font-size:.76rem}
-  .startActions{margin-top:7px;gap:5px}
-  .startActions .cta{padding:8px 8px;font-size:.9rem;letter-spacing:.04em;gap:5px}
-  .menuRateBadge{padding:2px 6px;min-width:0}
-  .menuRateBadge .mrbLabel{font-size:.44rem}
-  .menuRateBadge b{font-size:.86rem}
-  .btnPractice{padding:7px 6px;font-size:.7rem}
-  .weatherInfoBottom{font-size:.52rem;padding-top:5px}
+  #bgmChoices .choice .lb{font-size:.52rem}
+  .crewPreviewRow{padding:4px 0 5px;gap:6px}
+  .crewRow{gap:3px 5px}
+  .pv{padding:2px 3px 9px}
+  #preview{width:76px;height:52px}
+  .pvCaption{font-size:.42rem;bottom:1px}
+  .sailNat{padding:3px 4px;font-size:.52rem}
+  .colors input[type=text]{width:46px;padding:2px 4px;font-size:.68rem}
+  .startActions{margin-top:5px;gap:4px}
+  .startActions .cta{padding:6px 7px;font-size:.82rem;letter-spacing:.03em;gap:4px}
+  .menuRateBadge{padding:1px 5px;min-width:0}
+  .menuRateBadge .mrbLabel{font-size:.4rem}
+  .menuRateBadge b{font-size:.78rem}
+  .btnPractice{padding:6px 5px;font-size:.64rem}
+  .menuFooterRow{padding:4px 0 0;margin-top:4px;gap:6px}
+  .weatherInfoBottom{font-size:.48rem;line-height:1.25}
+  .menuSpecLink{font-size:.54rem}
 }
 
 /* ==========================================================================

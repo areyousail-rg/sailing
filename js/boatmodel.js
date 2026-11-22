@@ -650,6 +650,43 @@ const jibSheetMatW = ropeMat(0x94a3b8); // ランチャーポール先端から�
 const JIB_WING = 1.22; // ランチャーで風上側に張り出したジブの角度
 const _Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3(), _root = new THREE.Vector3(), _segDir = new THREE.Vector3();
 const _p0 = new THREE.Vector3(), _p1 = new THREE.Vector3(), _p2 = new THREE.Vector3(), _p3 = new THREE.Vector3(), _p4 = new THREE.Vector3(), _p5 = new THREE.Vector3();
+const _wA = new THREE.Vector3(), _wB = new THREE.Vector3();
+// センターボード＆トランクの干渉判定ボックス: x∈[-0.072,0.072], z∈[-0.56,0.05], y∈[FLOOR_Y-0.02, cbTopY]
+function segHitsCbBox(a, b, cbTopY) {
+  const minX = -0.072, maxX = 0.072, minY = FLOOR_Y - 0.02, maxY = cbTopY, minZ = -0.56, maxZ = 0.05;
+  let t0 = 0, t1 = 1;
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  const clip = (p, q) => {
+    if (Math.abs(p) < 1e-8) return q >= 0;
+    const r = q / p;
+    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else { if (r < t0) return false; if (r < t1) t1 = r; }
+    return true;
+  };
+  return clip(-dx, a.x - minX) && clip(dx, maxX - a.x)
+    && clip(-dy, a.y - minY) && clip(dy, maxY - a.y)
+    && clip(-dz, a.z - minZ) && clip(dz, maxZ - a.z)
+    && t0 <= t1;
+}
+function placeCbCleared3(seg0, seg1, seg2, a, b, cbTopY, mode, fallbackSign) {
+  if (!segHitsCbBox(a, b, cbTopY)) {
+    placeSeg(seg0, a, b);
+    seg1.visible = false;
+    seg2.visible = false;
+    return;
+  }
+  const sA = Math.abs(a.x) > 0.03 ? Math.sign(a.x) : (fallbackSign || 1);
+  const sB = Math.abs(b.x) > 0.03 ? Math.sign(b.x) : -sA;
+  const passZ = mode === 'fwd' ? -0.60 : 0.085;
+  const clearX = 0.135;
+  const yPassA = mode === 'fwd' ? Math.max(0.58, (a.y + b.y) * 0.5) : Math.min(0.47, Math.max(FLOOR_Y + 0.16, a.y * 0.72 + b.y * 0.28));
+  const yPassB = mode === 'fwd' ? Math.max(0.58, (a.y + b.y) * 0.5) : Math.min(0.47, Math.max(FLOOR_Y + 0.16, a.y * 0.28 + b.y * 0.72));
+  _wA.set(sA * Math.max(clearX, Math.min(Math.abs(a.x), 0.22)), yPassA, passZ);
+  _wB.set(sB * Math.max(clearX, Math.min(Math.abs(b.x), 0.22)), yPassB, passZ);
+  placeSeg(seg0, a, _wA);
+  placeSeg(seg1, _wA, _wB);
+  placeSeg(seg2, _wB, b);
+}
 const _spM4 = new THREE.Matrix4(), _spPos = new THREE.Vector3(), _spQuat = new THREE.Quaternion(), _spScale = new THREE.Vector3(), _spEul = new THREE.Euler(), _spCol = new THREE.Color();
 
 // 3方向直交クアッドによる立体しぶきジオメトリ（ドローン視点・艇内カメラ視点のどちらから見ても厚みのある水しぶき粒に見える）
@@ -1076,24 +1113,26 @@ export class BoatModel {
       this.bridleTriSegs.push(bSeg);
     }
 
-    // メインシート(4セグメント: 三角形頂点→ブーム後端ブロック + ブーム下(後端→中央ブロック) + センターブロックへの立ち下がり + スキッパー手元)
+    // メインシート(6セグメント: 三角形頂点→ブーム後端 + ブーム下 + ブーム中央→センターラチェット[最大3分割でセンターボード回避] + スキッパー手元)
     this.mainSheetSegs = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       const seg = new THREE.Mesh(sheetSegGeo, mainSheetMat);
       this.body.add(seg);
       this.mainSheetSegs.push(seg);
     }
-    // ジブシート(水色・連続エンドレスループ構成: 5セグメント) & ランチャーポール先端→ジブセール接続ライン(灰色・やや細め: 1セグメント)
+    // ジブシート(水色・連続エンドレスループ構成: 各区間最大3分割×5区間=15セグメントでセンターボード干渉を完全回避)
     this.rjLoopSegs = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 15; i++) {
       const s = new THREE.Mesh(sheetSegGeo, jibSheetMatL);
       this.body.add(s);
       this.rjLoopSegs.push(s);
     }
     this.poleTipSegs = [];
-    const ps = new THREE.Mesh(poleTipSegGeo, jibSheetMatW);
-    this.body.add(ps);
-    this.poleTipSegs.push(ps);
+    for (let i = 0; i < 3; i++) {
+      const ps = new THREE.Mesh(poleTipSegGeo, jibSheetMatW);
+      this.body.add(ps);
+      this.poleTipSegs.push(ps);
+    }
 
     // ジブセールは下部(タック角)がバウデッキに密接しておらず、ジブタック(Jib Tack)のコードでバウデッキ金具から約15.5cm浮かせて距離を調整している実艇構造を再現
     this.jibPivot = new THREE.Group(); this.jibPivot.position.set(0, JIB_TACK_Y, JIB_TACK_Z); this.body.add(this.jibPivot);
@@ -1538,6 +1577,30 @@ export class BoatModel {
     }
   }
 
+  // オリエンテーションのシーン切替時など、ランチャー・ジブ・センターボード・クルー位置を補間待ちなく即座に確定させる
+  snapRigState() {
+    const b = this.boat;
+    const pk = b.poleK || 0;
+    this._prevPole = b.pole;
+    this.crewPoleTimer = 0;
+    this.boomRotY = undefined;
+    this.jibRotCur = undefined;
+    this.sailSide = undefined;
+    this._crewX = undefined;
+    this._crewY = undefined;
+    this._crewZ = undefined;
+    this._crewRotY = undefined;
+    this._inGybeFlip = false;
+    this._prevTack = b.tack;
+    this.side = b.tack;
+    this.crewSide = b.tack;
+    if (this.cbBoard) {
+      this.cbBoard.position.y = pk * 0.25;
+      if (this.cbBoard.userData.underBlade) this.cbBoard.userData.underBlade.visible = false;
+    }
+    this._firstSyncDone = false;
+  }
+
   sync(dt, t) {
     const b = this.boat;
     this.root.position.set(b.x, 0, b.z);
@@ -1638,11 +1701,9 @@ export class BoatModel {
 
     const pk = b.poleK || 0;
     if (this.cbBoard) {
-      // 実艇スナイプ同様にリーチング(約62°〜)ではダガーボードを半分引き上げ、ランニング・ランチャー展開時はさらに高く引き上げる
-      const reachLift = clamp((twa - 1.08) / 0.52, 0, 1);
-      const runLift = clamp((twa - 2.15) / 0.55, 0, 1);
-      const targetCbY = Math.max(reachLift * 0.20 + runLift * 0.05, pk * 0.25);
-      this.cbBoard.position.y += (targetCbY - this.cbBoard.position.y) * (1 - Math.exp(-dt * 6.5));
+      // ランチャーUP時にクルーがランチャーと一緒にセンターボードを引き上げ、ランチャーDOWN時に戻す
+      const targetCbY = pk * 0.25;
+      this.cbBoard.position.y += (targetCbY - this.cbBoard.position.y) * (1 - Math.exp(-dt * 8.5));
       if (this.cbBoard.userData.underBlade) {
         this.cbBoard.userData.underBlade.visible = false;
       }
@@ -1870,8 +1931,8 @@ export class BoatModel {
     const baseCrewY = 0.36 - (1 - crewSideAbs) * 0.045 - Math.max(0, crewLean - 0.76) * (crewPet ? 0.016 : 0.045) + 0.009 * Math.sin(idleT * 2.7 + 1.4);
     const baseCrewZ = -0.04 - 0.36 * fwdShift;
     const actCrewX = sgn * 0.26;
-    const actCrewY = 0.39 + 0.03 * Math.sin(t * 14);
-    const actCrewZ = -0.40;
+    const actCrewY = 0.39 + (b.pole ? 0.045 * pk : 0) + 0.025 * Math.sin(t * 14);
+    const actCrewZ = -0.32; // センターボードとランチャーシートの中間位置で両方同時に操作
     let targetCrewX = baseCrewX + (actCrewX - baseCrewX) * crewPoleAct;
     const targetCrewY = baseCrewY + (actCrewY - baseCrewY) * crewPoleAct;
     const targetCrewZ = baseCrewZ + (actCrewZ - baseCrewZ) * crewPoleAct;
@@ -1904,7 +1965,7 @@ export class BoatModel {
     const deckRotY = this.crewSide * 1.35;
     const rotBlend = sStep(0.06, 0.34, crewSideAbs);
     const rawCrewRotY = centerRotY + (deckRotY - centerRotY) * rotBlend;
-    const targetCrewRotY = rawCrewRotY + (sgn * 0.22 - rawCrewRotY) * crewPoleAct;
+    const targetCrewRotY = rawCrewRotY + (sgn * 0.28 - rawCrewRotY) * crewPoleAct;
     if (this._crewRotY === undefined) this._crewRotY = targetCrewRotY;
     else this._crewRotY += (targetCrewRotY - this._crewRotY) * (1 - Math.exp(-dt * 6.2));
     this.crewRig.rotation.y = this._crewRotY;
@@ -1914,7 +1975,7 @@ export class BoatModel {
       const cDuck = sStep(0.35, 0.05, crewSideAbs) * 0.45 * boomLow;
       const cHike = crewPet ? Math.min(crewLean * 0.90, 1.12) : Math.min(crewLean * 1.02, 1.42);
       const baseUpperX = cHike - cDuck + crewBreath;
-      const actUpperX = -0.52 + 0.14 * Math.sin(t * 16);
+      const actUpperX = (b.pole ? -0.44 + 0.26 * pk : -0.58 + 0.16 * (1 - pk)) + 0.10 * Math.sin(t * 14);
       const cu = this.crew.userData.upper;
       cu.rotation.x = baseUpperX + (actUpperX - baseUpperX) * crewPoleAct;
       cu.rotation.z = (-this.crewSide * 0.08 + 0.05 * Math.cos(idleT * 2.1)) * (1 - crewPoleAct);
@@ -1924,8 +1985,25 @@ export class BoatModel {
         const rOut = this.crewSide < 0 ? ext : 0;
         const trimWaveL = 0.15 * Math.sin(idleT * 2.8) * (1 - lOut);
         const trimWaveR = 0.15 * Math.cos(idleT * 2.8 + 0.9) * (1 - rOut);
-        cu.userData.armL.rotation.set(-0.55 * lOut + trimWaveL, 0.06 * Math.sin(idleT * 2.0), -0.82 * lOut - 0.08 * (1 - lOut));
-        cu.userData.armR.rotation.set(-0.55 * rOut + trimWaveR, -0.06 * Math.cos(idleT * 2.0), 0.82 * rOut + 0.08 * (1 - rOut));
+        // ランチャーUP/DOWN時: 片手でセンターボードハンドルを一緒に引き上げ(または押し下げ)、もう片手でランチャーシートを引く動作
+        const liftDir = b.pole ? (-0.75 - 0.55 * pk) : (-0.35 + 0.25 * (1 - pk));
+        const pullWave = 0.18 * Math.sin(t * 15);
+        const baseLx = -0.55 * lOut + trimWaveL;
+        const baseLz = -0.82 * lOut - 0.08 * (1 - lOut);
+        const baseRx = -0.55 * rOut + trimWaveR;
+        const baseRz = 0.82 * rOut + 0.08 * (1 - rOut);
+        const cbArmL = sgn > 0 ? (liftDir + pullWave * 0.6) : (-0.65 - pullWave);
+        const cbArmR = sgn > 0 ? (-0.65 - pullWave) : (liftDir + pullWave * 0.6);
+        cu.userData.armL.rotation.set(
+          baseLx + (cbArmL - baseLx) * crewPoleAct,
+          0.06 * Math.sin(idleT * 2.0) * (1 - crewPoleAct) + (sgn > 0 ? 0.22 : -0.12) * crewPoleAct,
+          baseLz + (-0.28 - baseLz) * crewPoleAct
+        );
+        cu.userData.armR.rotation.set(
+          baseRx + (cbArmR - baseRx) * crewPoleAct,
+          -0.06 * Math.cos(idleT * 2.0) * (1 - crewPoleAct) + (sgn > 0 ? 0.12 : -0.22) * crewPoleAct,
+          baseRz + (0.28 - baseRz) * crewPoleAct
+        );
       }
       if (cu.userData.tail) {
         cu.userData.tail.rotation.y = 0.30 * Math.sin(idleT * 5.6 + 1.2);
@@ -2061,13 +2139,15 @@ export class BoatModel {
   //   メインシートを出している時は、その三角形がスターンデッキ近くの下の方になり、頂点から1本のメインシートがブーム後端ブロックへ伸びる(画像3枚目)
   // ・ブーム後端ブロックからはブーム下に沿って中央ブロック(bz=1.22)へ走り、センターケース後端のラチェットブロックを経由してスキッパーの手元へ戻る(画像2・3枚目)
   syncMainSheet(sgn, lean, sideAbs) {
-    if (!this.mainSheetSegs || this.mainSheetSegs.length < 4) return;
+    if (!this.mainSheetSegs || this.mainSheetSegs.length < 6) return;
     const pm = this.boomRotY !== undefined ? this.boomRotY : -sgn * this.boomA;
     const sinP = Math.sin(pm), cosP = Math.cos(pm);
     const bzAft = 2.52, bzMid = 1.22;
     const boomAftX = bzAft * sinP;
     const boomAftY = 1.35;
     const boomAftZ = -0.9 + bzAft * cosP;
+    const cbLift = this.cbBoard ? this.cbBoard.position.y : 0;
+    const cbTopY = FLOOR_Y + 0.33 + cbLift;
 
     // メインシートの出し具合(easeF: 0=クローズ引き込み時 → 1=メインシートを出している時)
     const easeF = clamp((this.boomA - 0.12) / 0.58, 0, 1);
@@ -2094,22 +2174,25 @@ export class BoatModel {
     // seg[1]: ブーム後端ブロック(bz=2.52) → ブーム中央ブロック(bz=1.22)
     _p3.set(bzMid * sinP, 1.35, -0.9 + bzMid * cosP);
     placeSeg(this.mainSheetSegs[1], _p1, _p3);
-    // seg[2]: ブーム中央ブロック → センターケース後端ラチェットブロック(0, FLOOR_Y + 0.16, 0.10)
-    _p4.set(0, FLOOR_Y + 0.16, 0.10);
-    placeSeg(this.mainSheetSegs[2], _p3, _p4);
-    // seg[3]: ラチェットブロック → スキッパーの前手
+    // seg[2..4]: ブーム中央ブロック → センターケース後端ラチェットブロック(0, FLOOR_Y + 0.16, 0.13)（センターボード貫通を完全回避）
+    _p4.set(0, FLOOR_Y + 0.16, 0.13);
+    placeCbCleared3(this.mainSheetSegs[2], this.mainSheetSegs[3], this.mainSheetSegs[4], _p3, _p4, cbTopY, 'aft', Math.sign(_p3.x) || -sgn);
+    // seg[5]: ラチェットブロック → スキッパーの前手
     _p5.set(this.side * (0.30 + lean * 0.20), 0.62 - lean * 0.04 - (1 - sideAbs) * 0.12, 0.72);
-    placeSeg(this.mainSheetSegs[3], _p4, _p5);
+    placeSeg(this.mainSheetSegs[5], _p4, _p5);
   }
 
   // 走る索:
   // 1) ジブシート(水色・連続エンドレスループ構成):
   //    ジブセールの手前側(クリュー _p0) → 引き込み側ジブカム(_p1) → クルー手元(_p2) → 反対舷ジブカム(_p3) → マスト前フェアリード(_p4) → ジブクリュー(_p0) へ一周
+  //    ※センターボード＆トランクと交差する区間はトランク後方(z=+0.085)または前方(z=-0.60)へ自動迂回し貫通を防止
   // 2) ランチャーポールの先端(_p5)からジブセール(_p0)へつながる細い灰色のライン(マストへ行く不要な水色シートは廃止)
   syncRopes(sgn, clewY = 0.73, pk = 0) {
     const pj = this.jibRot;
     const clewX = JIB_CLEW_LEN * Math.sin(pj);
     const clewZ = JIB_TACK_Z + JIB_CLEW_LEN * Math.cos(pj);
+    const cbLift = this.cbBoard ? this.cbBoard.position.y : 0;
+    const cbTopY = FLOOR_Y + 0.33 + cbLift;
     _p0.set(clewX, clewY, clewZ); // ジブセールの手前側(クリュー角)
 
     // 通常航行時は風下(-sgn)のジブカム、ランチャー展開時(pk>0.5)は風上(sgn)のジブカムが引き込み側
@@ -2118,9 +2201,13 @@ export class BoatModel {
     const xCamOpp = -sheetSide * 0.54;
     const yCam = deckY(zCam, 0.54) + 0.026;
     _p1.set(xCamAct, yCam, zCam); // 引き込み側ジブカム
-    const handX = this.crewRig.position.x - Math.sign(this.crewRig.position.x || sgn) * 0.11;
+    const crewSign = Math.sign(this.crewRig.position.x || sgn) || 1;
+    let handX = this.crewRig.position.x - crewSign * 0.11;
     const handY = Math.max(yCam + 0.04, this.crewRig.position.y + 0.21);
     const handZ = this.crewRig.position.z - 0.02;
+    if (handZ > -0.56 && handZ < 0.05 && Math.abs(handX) < 0.14) {
+      handX = crewSign * 0.14;
+    }
     _p2.set(handX, handY, handZ); // クルー手元
     _p3.set(xCamOpp, yCam, zCam); // 反対舷のジブカム
 
@@ -2145,21 +2232,21 @@ export class BoatModel {
       0.66 * (1 - pk) + _p5.y * pk,
       -0.72 * (1 - pk) + _p5.z * pk
     );
-    if (this.rjLoopSegs && this.rjLoopSegs.length >= 5) {
-      placeSeg(this.rjLoopSegs[0], _p0, _p1); // ジブクリュー → 引き込み側ジブカム
-      placeSeg(this.rjLoopSegs[1], _p1, _p2); // 引き込み側ジブカム → クルー手元
-      placeSeg(this.rjLoopSegs[2], _p2, _p3); // クルー手元 → 反対舷ジブカム
-      placeSeg(this.rjLoopSegs[3], _p3, _p4); // 反対舷ジブカム → マスト前/ランチャーチップ中継点
-      placeSeg(this.rjLoopSegs[4], _p4, _p0); // 中継点 → ジブクリュー(手前側)へ戻って一周完結
+    if (this.rjLoopSegs && this.rjLoopSegs.length >= 15) {
+      placeCbCleared3(this.rjLoopSegs[0], this.rjLoopSegs[1], this.rjLoopSegs[2], _p0, _p1, cbTopY, 'fwd', sheetSide);   // ジブクリュー → 引き込み側ジブカム
+      placeCbCleared3(this.rjLoopSegs[3], this.rjLoopSegs[4], this.rjLoopSegs[5], _p1, _p2, cbTopY, 'aft', sheetSide);   // 引き込み側ジブカム → クルー手元
+      placeCbCleared3(this.rjLoopSegs[6], this.rjLoopSegs[7], this.rjLoopSegs[8], _p2, _p3, cbTopY, 'aft', crewSign);    // クルー手元 → 反対舷ジブカム
+      placeCbCleared3(this.rjLoopSegs[9], this.rjLoopSegs[10], this.rjLoopSegs[11], _p3, _p4, cbTopY, 'fwd', -sheetSide); // 反対舷ジブカム → マスト前/ランチャーチップ中継点
+      placeCbCleared3(this.rjLoopSegs[12], this.rjLoopSegs[13], this.rjLoopSegs[14], _p4, _p0, cbTopY, 'fwd', sheetSide); // 中継点 → ジブクリュー(手前側)へ戻って一周完結
     }
 
     // ランチャーポール先端(_p5)からジブセール(_p0)へつながるやや細めの灰色ライン
-    if (this.poleTipSegs && this.poleTipSegs.length >= 1) {
+    if (this.poleTipSegs && this.poleTipSegs.length >= 3) {
       if (pk < 0.96) {
-        placeSeg(this.poleTipSegs[0], _p5, _p0);
+        placeCbCleared3(this.poleTipSegs[0], this.poleTipSegs[1], this.poleTipSegs[2], _p5, _p0, cbTopY, 'fwd', sheetSide);
       } else {
         _p4.set((clewX + xCamAct) * 0.5, (clewY + yCam) * 0.5, (clewZ + zCam) * 0.5);
-        placeSeg(this.poleTipSegs[0], _p5, _p4);
+        placeCbCleared3(this.poleTipSegs[0], this.poleTipSegs[1], this.poleTipSegs[2], _p5, _p4, cbTopY, 'fwd', sheetSide);
       }
     }
   }

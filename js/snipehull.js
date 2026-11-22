@@ -614,9 +614,9 @@ function buildStaticHullParts() {
   g.add(rope([[0, deckY(-2.24, 0) + 0.012, -2.24], [0, deckY(-1.65, 0) + 0.012, -1.65]], 0xfacc15, 0.0035));
   g.add(rope([[0, deckY(-1.65, 0) + 0.012, -1.65], [0, deckY(-1.12, 0) + 0.018, -1.12]], 0x4ade80, 0.0035));
 
-  // センターケース後端(z=0.10)のメインシートラチェットブロック & カムクリート
-  const msc = camCleat(1.0); msc.position.set(0, FLOOR_Y + 0.11, 0.10); g.add(msc);
-  const tb = block(0.022); tb.position.set(0, FLOOR_Y + 0.15, 0.10); g.add(tb);
+  // センターケース後端(z=0.13)のメインシートラチェットブロック & カムクリート
+  const msc = camCleat(1.0); msc.position.set(0, FLOOR_Y + 0.11, 0.13); g.add(msc);
+  const tb = block(0.022); tb.position.set(0, FLOOR_Y + 0.15, 0.13); g.add(tb);
 
   // コンソール周りのコントロールライン
   const tail = (sx, z0, color) => {

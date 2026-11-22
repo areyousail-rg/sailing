@@ -173,12 +173,12 @@ export class DroneCam {
     const vib = 0.08 + spdRatio * 0.22;
     const wob = (a) => (Math.sin(t * 1.4 * a + a) * 0.28 + Math.sin(t * 4.2 * a) * 0.14) * vib;
 
-    // ドローンカメラ視点 (スタート画面表示中はメニューカードの下の海面にヨット全体が大きく立体的に見えるよう斜め後方3/4画角に調整)
-    const menuYaw = (this.menuOffset && !this.isMoved()) ? 0.44 : 0;
+    // ドローンカメラ視点 (スタート画面表示中は真後ろからの視点で、メニューカード下の海面にマスト先端〜船尾までヨット全体が収まるよう調整)
+    const menuYaw = 0;
     const ang = (this.menuOffset ? boat.h : this.chaseH) + this.yaw + menuYaw;
-    const menuLift = this.menuOffset ? (SMALL ? 3.6 : 3.5) : 0;
-    const menuDistAdd = this.menuOffset ? (SMALL ? -0.3 : -0.5) : 0;
-    const menuHgtAdd = this.menuOffset ? (SMALL ? -1.4 : -1.2) : 0;
+    const menuLift = this.menuOffset ? (SMALL ? 5.15 : 4.85) : 0;
+    const menuDistAdd = this.menuOffset ? (SMALL ? 2.6 : 1.6) : 0;
+    const menuHgtAdd = this.menuOffset ? (SMALL ? 0.45 : -0.15) : 0;
     const d = (DRONE_D + menuDistAdd - spdRatio * 0.9) * this.zoom;
     const hgt = (DRONE_H + menuHgtAdd + this.pitch * 10) * this.zoom;
     // ヒールや回頭に合わせてカメラがわずかに外側へスイングし、船体とセールの迫力を見せる
@@ -186,7 +186,7 @@ export class DroneCam {
     const rx = Math.cos(ang), rz = Math.sin(ang);
     w.set(boat.x - Math.sin(ang) * d + rx * latOffset, hgt, boat.z + Math.cos(ang) * d + rz * latOffset);
     const yawAlign = Math.max(0, Math.cos(this.yaw));
-    const lookAhead = (this.menuOffset ? 3.6 : (9.5 + spdRatio * 3.5)) * yawAlign;
+    const lookAhead = (this.menuOffset ? 3.2 : (9.5 + spdRatio * 3.5)) * yawAlign;
     lk.set(boat.x + Math.sin(boat.h) * lookAhead, 1.85 + (1 - yawAlign) * 0.45 + menuLift, boat.z - Math.cos(boat.h) * lookAhead);
 
     w.x += wob(1); w.y += wob(1.7) * 0.7; w.z += wob(2.3);
@@ -201,7 +201,7 @@ export class DroneCam {
     this.bank += (targetBank - this.bank) * (1 - Math.exp(-dt * 6));
     this.cam.rotateZ(this.bank + Math.sin(t * 0.9) * 0.003 + Math.sin(t * 3.1) * 0.002 * (0.5 + spdRatio));
 
-    const fov = (this.menuOffset ? DRONE_FOV - 4 : DRONE_FOV) + spdRatio * 12.5;
+    const fov = (this.menuOffset ? DRONE_FOV + (SMALL ? 2 : -2) : DRONE_FOV) + spdRatio * 12.5;
     if (Math.abs(this.cam.fov - fov) > 0.01) { this.cam.fov += (fov - this.cam.fov) * 0.08; this.cam.updateProjectionMatrix(); }
   }
 }

@@ -1160,13 +1160,13 @@ const ORIENT_STEPS = [
   {
     en: '',
     title: '0:00に合わせてクローズホールドで加速しスタート！',
-    body: 'スタート数秒前には<strong>クローズホールド（真風角約42°）</strong>の角度に合わせてしっかり艇速を乗せ、<strong>0:00の号砲</strong>と同時にスタートラインぎりぎりから飛び出そう！',
+    body: 'スタート数秒前には<strong>クローズホールド</strong>の角度に合わせてしっかり艇速を乗せ、<strong>0:00の号砲</strong>と同時にスタートラインぎりぎりから飛び出そう！',
     dur: 10.2,
   },
   {
     en: '',
-    title: 'クローズホールドは真風角38°〜44°でVMGを維持！',
-    body: 'スタート後のクローズホールドでは<strong>計器バーの「真風角」</strong>を確認！ 風速や波の高さにもよるが<strong>38°〜44°</strong>がベスト。<strong>ブローに入ったら「◀ ▶」で少し上し、抜けたら少し落とし気味</strong>で走ってVMGを維持しよう！',
+    title: '真風角38°〜44°で最適な上り角度とスピードを維持しよう！',
+    body: 'スタート後のクローズホールドでは<strong>計器バーの「真風角」</strong>を確認！ 風速や波の高さにもよるが<strong>38°〜44°</strong>がベスト。<strong>ブローに入ったら「◀ ▶」で少し上し、抜けたら少し落とし気味</strong>で走って最適な上り角度とスピードを維持しよう！',
     dur: 11.2,
   },
   {
@@ -1184,7 +1184,7 @@ const ORIENT_STEPS = [
   {
     en: '',
     title: '3マーク回航後はリーチングでフィニッシュラインへ走り切ろう！',
-    body: '2・3マークを回航した最終レグはランチャーを上げて<strong>リーチング</strong>で加速！ チェッカーフラッグの<strong>「FINISH」ライン</strong>（青い旗のフィニッシュ船とブイの間）を目指して最後まで走り切ろう！',
+    body: '2・3マークを回航した最終レグはランチャーを上げた状態で<strong>リーチング</strong>で加速！ チェッカーフラッグの<strong>「FINISH」ライン</strong>（青い旗のフィニッシュ船とブイの間）を目指して最後まで走り切ろう！',
     dur: 10.8,
   },
   {
@@ -1643,6 +1643,10 @@ function setupOrientStepScene(stepIdx, prevStep = -1) {
   state.lastTack = player.tack;
   state.lastPole = player.pole;
   const nowSec = performance.now() / 1000;
+  if ((stepIdx === 6 || stepIdx === 7) && models[0] && models[0].snapRigState) {
+    models[0].snapRigState();
+    models[0].sync(1 / 60, nowSec);
+  }
   if (!seamlessStart) cam.update(0, nowSec, player, boats);
   world.update(nowSec, camera, 0, state.t, player, boats);
   camera.updateMatrixWorld(true);

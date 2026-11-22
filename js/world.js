@@ -222,14 +222,14 @@ float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix
 void main(){
   vec2 p=vW.xz;
   vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
-  // 1ピクセルが海面上で覆う実空間サイズ[m]を算出。手前〜中景(70m以内)は元の鮮やかな凹凸を一切変えず、奥の遠景ノイズのみ滑らかに減衰する
+  // 1ピクセルが海面上で覆う実空間サイズ[m]を算出。手前〜中景(240m以内)は元の鮮やかな凹凸を一切変えず、かなり奥の遠景ノイズのみ滑らかに減衰する
   vec2 dxW=dFdx(p);
   vec2 dyW=dFdy(p);
   float pxFoot=max(length(dxW),length(dyW));
   float geomFoot=dist*0.00145/max(V.y,0.022);
   float foot=max(pxFoot,geomFoot);
-  float farMask=smoothstep(70.0,220.0,dist);
-  float farFoot=max(0.0,foot-0.35)*farMask;
+  float farMask=smoothstep(240.0,560.0,dist);
+  float farFoot=max(0.0,foot-1.2)*farMask;
   // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd0)へ流れるブローを算出する
   // 海面テクスチャの座標軸(wd0, wp0)は時間変化しない基準風向(uW0)に完全固定することで、シフト変化時に海面の流れが横滑りしたり風向とずれる現象を根絶する
   vec2 uDir=vec2(sin(uW0),-cos(uW0));
