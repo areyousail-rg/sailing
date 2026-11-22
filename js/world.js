@@ -4003,32 +4003,28 @@ function buildHakkeijima(root, surfStrip, fgeo, movingShips = []) {
   metroLand.position.set(-1400, 0.8, -14500); metro.add(metroLand);
 
   // 横浜みなとみらい21・横浜ランドマークタワーと周辺建物:
-  // クレーンと重なる奥の過密な都会ビル群は削除し、クレーン右側の控えめな規模感の港湾建物のみ残しつつ、
-  // ランドマークタワーとその直近のみなとみらい建物(クイーンズスクエアA/B/C・インターコンチネンタル・ランドマークプラザ等)だけを水平線上に「ほんのうっすら」霞んで見えるように配置
-  const lmkX = -760, lmkZ = -6850;
-  const hazedTowerMat = new THREE.MeshLambertMaterial({ color: 0xc9daec, emissive: 0x384d63, transparent: true, opacity: 0.19, depthWrite: false });
+  // 八景島沖から見て紅白ガントリークレーン列の「右側」にランドマークタワーとみなとみらい(クイーンズスクエア・インターコンチネンタル)がうっすら霞んで見える実景位置へ配置
+  const lmkX = 580, lmkZ = -7150;
+  const hazedTowerMat = new THREE.MeshLambertMaterial({ color: 0xc9daec, emissive: 0x384d63, transparent: true, opacity: 0.20, depthWrite: false });
   const hazedSubMat = new THREE.MeshLambertMaterial({ color: 0xc2d5e8, emissive: 0x33475c, transparent: true, opacity: 0.17, depthWrite: false });
   // 1) 横浜ランドマークタワー (296m: 上に向かって段状に細くなる四角柱シルエット)
-  const lmkBase = new THREE.Mesh(new THREE.CylinderGeometry(36, 50, 225, 4), hazedTowerMat);
-  lmkBase.rotation.y = Math.PI / 4; lmkBase.position.set(lmkX, 112.5, lmkZ); metro.add(lmkBase);
-  const lmkTop = new THREE.Mesh(new THREE.CylinderGeometry(26, 36, 72, 4), hazedTowerMat);
-  lmkTop.rotation.y = Math.PI / 4; lmkTop.position.set(lmkX, 261, lmkZ); metro.add(lmkTop);
-  // ランドマークプラザ・三菱重工横浜ビル(左隣の中層棟)
-  const mhiBldg = new THREE.Mesh(new THREE.BoxGeometry(58, 145, 48), hazedSubMat);
-  mhiBldg.position.set(lmkX - 95, 72.5, lmkZ - 20); metro.add(mhiBldg);
+  const lmkBase = new THREE.Mesh(new THREE.CylinderGeometry(34, 48, 220, 4), hazedTowerMat);
+  lmkBase.rotation.y = Math.PI / 4; lmkBase.position.set(lmkX, 110, lmkZ); metro.add(lmkBase);
+  const lmkTop = new THREE.Mesh(new THREE.CylinderGeometry(24, 34, 70, 4), hazedTowerMat);
+  lmkTop.rotation.y = Math.PI / 4; lmkTop.position.set(lmkX, 255, lmkZ); metro.add(lmkTop);
   // 2) クイーンズスクエア横浜 3連棟 (A棟172m・B棟138m・C棟109m: ランドマークのすぐ右隣に階段状に並ぶ実在配置)
   const queensHeights = [172, 138, 109];
   for (let i = 0; i < 3; i++) {
     const qh = queensHeights[i];
-    const qb = new THREE.Mesh(new THREE.BoxGeometry(46, qh, 46), hazedSubMat);
-    qb.position.set(lmkX + 125 + i * 68, qh / 2, lmkZ + 35 + i * 22); metro.add(qb);
+    const qb = new THREE.Mesh(new THREE.BoxGeometry(44, qh, 44), hazedSubMat);
+    qb.position.set(lmkX + 120 + i * 64, qh / 2, lmkZ + 35 + i * 22); metro.add(qb);
   }
   // 3) ヨコハマ グランド インターコンチネンタル ホテル (140m: クイーンズスクエア右海側の半月ヨットセール型シルエット)
-  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(68, 68, 20, 20, 1, false, 0, Math.PI), hazedTowerMat);
-  interCon.rotation.z = Math.PI / 2; interCon.rotation.y = 0.35; interCon.position.set(lmkX + 355, 52, lmkZ + 95); interCon.scale.set(2.0, 1, 1); metro.add(interCon);
+  const interCon = new THREE.Mesh(new THREE.CylinderGeometry(58, 58, 24, 20, 1, false, 0, Math.PI), hazedTowerMat);
+  interCon.rotation.x = Math.PI / 2; interCon.rotation.z = -0.15; interCon.position.set(lmkX + 345, 58, lmkZ + 95); interCon.scale.set(0.85, 1.0, 1.85); metro.add(interCon);
 
-  // 4) 横浜ベイブリッジ (本牧ふ頭右奥にほんのうっすら見える斜張橋)
-  const bbX = 480, bbZ = -6350;
+  // 4) 横浜ベイブリッジ (本牧ふ頭・みなとみらいのさらに右奥にほんのうっすら見える斜張橋)
+  const bbX = 1360, bbZ = -6550;
   const bbDeck = new THREE.Mesh(new THREE.BoxGeometry(1950, 7, 20), hazedSubMat);
   bbDeck.position.set(bbX, 56, bbZ); bbDeck.rotation.y = -0.22; metro.add(bbDeck);
   for (const s of [-360, 360]) {
@@ -4758,10 +4754,8 @@ function addHakkeiScenery(root, movingShips = []) {
   distantLand(sc, -1650, 950, 300, 220, 58, 0.3, 14);
   sCyl(sc, -1650, 40, 950, 3, 4, 14, 0xf1f5f9, 8);
 
-  // ---- 2) 北側: 磯子火力発電所(扁平な200m煙突)・根岸製油所(タンク群と紅白煙突) ----
-  sCyl(sc, -1900, 1, -4400, 12, 15, 200, 0xd9dde2, 12, 1, 0.55);
-  sCyl(sc, -1900, 186, -4400, 12.2, 12.4, 14, 0x9aa5b1, 12, 1, 0.55);
-  sBox(sc, -2010, 1, -4330, 70, 72, 55, 0xe5e7eb); sBox(sc, -2090, 1, -4440, 65, 64, 50, 0xd6dbe0);
+  // ---- 2) 北側: 磯子・根岸の工業建屋・タンク群と紅白煙突（不自然に目立っていた200m超の高煙突は削除） ----
+  sBox(sc, -2010, 1, -4330, 70, 56, 55, 0xe5e7eb); sBox(sc, -2090, 1, -4440, 65, 50, 50, 0xd6dbe0);
   for (const dz of [-80, 0]) sCyl(sc, -1790, 1, -4560 + dz, 26, 28, 48, 0xcbd5e1, 14);
   for (let i = 0; i < 18; i++) sCyl(sc, -2250 - (i % 6) * 70, 1, -5000 - Math.floor(i / 6) * 75, 27, 27, 16 + (i % 3) * 4, i % 4 ? 0xeef0f2 : 0xd1d5db, 12);
   sBanded(sc, -2350, 1, -5300, 3.5, 5, 120, 6, 0xdc2626, 0xf8fafc, 8);

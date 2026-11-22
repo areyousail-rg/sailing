@@ -153,42 +153,43 @@ function makeCpPairForType(primaryType, effRate) {
   };
 }
 
-// レート(1700＝現在のCP平均レベル1.00想定)からCPの艇速・操船スキル倍率への換算
+// レート(1700＝CP標準レベル1.00)からCPの操船・戦術スキル倍率への換算（2000〜2300+帯でも戦術・スタート精度が伸び続けるように設定）
 function rateToSkill(r) {
-  return clamp(1.00 + ((r - 1700) / 100) * 0.042, 0.78, 1.16);
+  return clamp(1.00 + ((r - 1700) / 100) * 0.048, 0.78, 1.28);
 }
 
 // レートに応じた19艇のCPプロフィール生成:
 // ・犬・猫・柴犬はずっと登場し、各種動物キャラのCP参戦基準は解放レート-100 (アヒル:1550解放/CP1450〜、タヌキ:1650解放/CP1550〜、ウサギ:1750解放/CP1650〜、イルカ:1850解放/CP1750〜、ペンギン:1950解放/CP1850〜)
-// ・動物ごとにそのレートの強さ(レベル)を持ち、人間はずっと登場して弱い船から強い船まで様々なレベルが存在
+// ・高レート帯(1850〜2000+)では動物艇・人間艇ともにレートに応じた上位戦術レベルへ引き上げ、2000超えでもしっかり手強いフリートを構成する
 // ・1500前後では弱いCP3艇と中くらいのレベル1艇がマストトップに黒球(hasBlackBall)を装着
 function buildCpFleetProfiles(effRate) {
   const nCp = N_BOATS - 1;
+  const hiLift = Math.max(0, effRate - 1800) * 0.72;
   const animalEntries = [
-    // 犬・猫はずっといる (初級〜中級レベル)
-    { type: 'cat', rate: clamp(effRate - 65 + (rng() - 0.5) * 45, 1380, 1620) },
-    { type: 'dog', rate: clamp(effRate - 40 + (rng() - 0.5) * 45, 1410, 1650) },
-    { type: 'shiba', rate: clamp(effRate - 15 + (rng() - 0.5) * 45, 1440, 1680) },
+    // 犬・猫はずっといる (高レート帯では中位〜上位戦術帯まで追随)
+    { type: 'cat', rate: clamp(effRate - 75 + (rng() - 0.5) * 45, 1380, 1620 + hiLift * 0.85) },
+    { type: 'dog', rate: clamp(effRate - 50 + (rng() - 0.5) * 45, 1410, 1650 + hiLift * 0.90) },
+    { type: 'shiba', rate: clamp(effRate - 25 + (rng() - 0.5) * 45, 1440, 1680 + hiLift * 0.95) },
   ];
   if (effRate >= 1450) {
-    animalEntries.push({ type: 'duck', rate: 1475 + (rng() - 0.5) * 40 });
+    animalEntries.push({ type: 'duck', rate: 1475 + hiLift * 0.80 + (rng() - 0.5) * 40 });
     if (effRate < 1600 && rng() < 0.65) animalEntries.push({ type: 'duck', rate: 1505 + (rng() - 0.5) * 36 });
   }
   if (effRate >= 1550) {
-    animalEntries.push({ type: 'tanuki', rate: 1580 + (rng() - 0.5) * 40 });
+    animalEntries.push({ type: 'tanuki', rate: 1580 + hiLift * 0.88 + (rng() - 0.5) * 40 });
     if (effRate < 1700 && rng() < 0.65) animalEntries.push({ type: 'tanuki', rate: 1610 + (rng() - 0.5) * 36 });
   }
   if (effRate >= 1650) {
-    animalEntries.push({ type: 'rabbit', rate: 1680 + (rng() - 0.5) * 40 });
+    animalEntries.push({ type: 'rabbit', rate: 1680 + hiLift * 0.96 + (rng() - 0.5) * 40 });
     if (effRate < 1800 && rng() < 0.65) animalEntries.push({ type: 'rabbit', rate: 1715 + (rng() - 0.5) * 36 });
   }
   if (effRate >= 1750) {
-    animalEntries.push({ type: 'dolphin', rate: 1790 + (rng() - 0.5) * 45 });
+    animalEntries.push({ type: 'dolphin', rate: 1790 + hiLift * 1.04 + (rng() - 0.5) * 45 });
     if (effRate < 1900 && rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1835 + (rng() - 0.5) * 45 });
   }
   if (effRate >= 1850) {
-    animalEntries.push({ type: 'penguin', rate: 1890 + (rng() - 0.5) * 45 });
-    if (rng() < 0.75) animalEntries.push({ type: 'penguin', rate: 1945 + (rng() - 0.5) * 45 });
+    animalEntries.push({ type: 'penguin', rate: Math.max(1890, effRate - 15) + (rng() - 0.5) * 45 });
+    if (rng() < 0.80) animalEntries.push({ type: 'penguin', rate: Math.max(1955, effRate + 55) + (rng() - 0.5) * 45 });
   }
 
   const profiles = [];
@@ -204,12 +205,13 @@ function buildCpFleetProfiles(effRate) {
     });
   }
 
-  // 残りの枠は人間クルー艇で、effRateを中心に弱いレベル〜強いレベルまで幅広く配置
+  // 残りの枠は人間クルー艇で、effRateを中心に弱いレベル〜強いレベルまで幅広く配置（高レート帯では上位陣をさらに強化）
   const rem = nCp - profiles.length;
+  const hiTopBoost = Math.max(0, effRate - 1850) * 0.18;
   for (let i = 0; i < rem; i++) {
     const u = rem > 1 ? i / (rem - 1) : 0.5; // 0(上位) .. 1(下位)
     const spread = (0.5 - u) * 2.0; // +1.0 .. -1.0
-    const humanRate = effRate + spread * 185 + (rng() - 0.5) * 32;
+    const humanRate = effRate + spread * 185 + (u < 0.45 ? hiTopBoost : 0) + (rng() - 0.5) * 32;
     const pair = makeCpPairForType(rng() < 0.5 ? 'human_m' : 'human_f', effRate);
     profiles.push({
       rate: humanRate,
@@ -220,11 +222,11 @@ function buildCpFleetProfiles(effRate) {
     });
   }
 
-  // CP全体の平均レベル(meanSkill)は一切変えず、1マークでの密集を防ぐため平均周りのばらつきのみをわずかに拡大(1.24倍)
+  // CP全体の平均レベル(meanSkill)は維持しつつ、1マークでの密集を防ぐため平均周りのばらつきのみをわずかに拡大
   if (profiles.length > 1) {
     const meanSkill = profiles.reduce((acc, p) => acc + p.skill, 0) / profiles.length;
     for (const p of profiles) {
-      p.skill = clamp(meanSkill + (p.skill - meanSkill) * 1.24, 0.74, 1.20);
+      p.skill = clamp(meanSkill + (p.skill - meanSkill) * 1.20, 0.74, 1.30);
     }
   }
 
@@ -264,55 +266,56 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   globalHailCD = 0;
   pairHailUntil.clear();
   if (world.setCourseVisible) world.setCourseVisible(state.phase !== 'menu');
-  // スタートライン半幅 LINE_HALF = 75 (全幅150m): 実レース同様に有利サイド(上有利=本部船側+c / 下有利=アウター側-c)へ傾斜角に応じてCP艇が集まる配置
+  const effRate = cfg.rateMode !== 'off' ? (state.raceStartRate || rateData.rate || DEFAULT_RATE) : DEFAULT_RATE;
+  // スタートライン半幅 LINE_HALF = 75 (全幅150m): 有利サイドへ自然に寄せつつ極端な一極集中を避け、中央〜反対側にも適度にばらけさせる
   const skewDeg = Math.abs((LINE_SKEW * 180) / Math.PI);
-  const favBias = clamp(0.45 + skewDeg / 16, 0.45, 1.0);
+  const favBias = clamp(0.38 + skewDeg / 18, 0.38, 0.92);
   const endTargets = FAVORED === 'pin'
-    ? [-70.5, -67.0, -63.5, -59.5, -55.5, -51.0, -46.5, -41.5]
+    ? [-69.5, -62.5, -55.5, -48.0, -40.5]
     : FAVORED === 'com'
-      ? [70.5, 67.0, 63.5, 59.5, 55.5, 51.0, 46.5, 41.5]
-      : [-68.0, -61.0, -53.5, 69.0, 62.0, 54.5];
+      ? [69.5, 62.5, 55.5, 48.0, 40.5]
+      : [-66.0, -56.0, 66.0, 56.0];
   for (let i = endTargets.length - 1; i > 0; i--) {
     const j = (rng() * (i + 1)) | 0;
     [endTargets[i], endTargets[j]] = [endTargets[j], endTargets[i]];
   }
   const midTargets = [];
   const nMid = N_BOATS - 1 - endTargets.length;
-  const skewExp = 1.55 + 0.85 * favBias;
+  const skewExp = 1.18 + 0.46 * favBias;
   for (let i = 0; i < nMid; i++) {
     const t = i / Math.max(1, nMid - 1);
     let u, minC, maxC;
     if (FAVORED === 'pin') {
-      // 下有利: t^skewExp で minC(-37) 側へ高密度に寄せ、上側(+c)へ出る艇は少数にとどめる
+      // 下有利: 有利側へ穏やかに厚みを出しつつ、中央〜上側にも自然な間隔で分散
       u = Math.pow(t, skewExp);
-      minC = -37;
-      maxC = 56 - 20 * favBias;
+      minC = -36;
+      maxC = 64 - 14 * favBias;
     } else if (FAVORED === 'com') {
-      // 上有利: 1 - (1 - t)^skewExp で maxC(+37) 側へ高密度に寄せ、下側(-c)へ出る艇は少数にとどめる
+      // 上有利: 有利側へ穏やかに厚みを出しつつ、中央〜下側にも自然な間隔で分散
       u = 1 - Math.pow(1 - t, skewExp);
-      minC = -56 + 20 * favBias;
-      maxC = 37;
+      minC = -64 + 14 * favBias;
+      maxC = 36;
     } else {
       // イーブンライン: 海面の地理的有利サイド(SIDE_BIAS)をわずかに加味しつつ全域へ分散
-      const geoExp = SIDE_BIAS < -0.15 ? 1.18 : SIDE_BIAS > 0.15 ? 0.85 : 1.0;
+      const geoExp = SIDE_BIAS < -0.15 ? 1.14 : SIDE_BIAS > 0.15 ? 0.88 : 1.0;
       u = Math.pow(t, geoExp);
-      minC = -46;
-      maxC = 46;
+      minC = -50;
+      maxC = 50;
     }
-    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 3.0);
+    midTargets.push(minC + u * (maxC - minC) + (rng() - 0.5) * 3.5);
   }
-  for (let i = midTargets.length - 1; i > 0; i--) {
-    const j = (rng() * (i + 1)) | 0;
-    [midTargets[i], midTargets[j]] = [midTargets[j], midTargets[i]];
-  }
-  const allTargets = [...endTargets, ...midTargets];
+  // 高レート帯では上位スキル艇が有利サイド〜好位置の第一列を優先して取り、下位艇が第2列へ回るよう軽く整列（過度にならないようノイズ混在）
+  const favSign = FAVORED === 'pin' ? -1 : FAVORED === 'com' ? 1 : (SIDE_BIAS >= 0 ? 1 : -1);
+  const allTargetsRaw = [...endTargets, ...midTargets];
+  allTargetsRaw.sort((a, b) => (b * favSign + (rng() - 0.5) * 48) - (a * favSign + (rng() - 0.5) * 48));
+  const allTargets = allTargetsRaw;
   const slots = allTargets.map((targetC, i) => {
     const kIdx = i + 1;
-    // 20艇フリート(CP19艇): 上有利・イーブン時のみ本部船上待機(highComFail: 1艇)を置き、下有利時は第二線スタートへ回す
+    // 20艇フリート(CP19艇): 上位艇は第一列(firstRow)中心、下位艇を第2列・ギャップ狙いへ配置。レート1950+では本部船裏のスタック待機(highComFail)を除外
     const startRole =
-      (kIdx === 19 && FAVORED !== 'pin') ? 'highComFail' :
-      (kIdx === 15 || kIdx === 18 || (kIdx === 19 && FAVORED === 'pin')) ? 'secondRow' :
-      (kIdx === 5 || kIdx === 10 || kIdx === 14) ? 'gapShooter' :
+      (kIdx === 19 && FAVORED !== 'pin' && effRate < 1950) ? 'highComFail' :
+      (kIdx === 16 || kIdx === 18 || (kIdx === 19 && (FAVORED === 'pin' || effRate >= 1950))) ? 'secondRow' :
+      (kIdx === 9 || kIdx === 13 || kIdx === 15) ? 'gapShooter' :
       'firstRow';
     if (startRole === 'highComFail') {
       const a0 = -22 - (i % 2) * 2.5;
@@ -337,7 +340,6 @@ function makeFleet(onlyPlayer = state.phase === 'menu') {
   const pslot = { a: -64, c: 28, targetC: 0, startRole: 'firstRow' };
   const used = new Set([cfg.sailNo]);
   const count = onlyPlayer ? 1 : N_BOATS;
-  const effRate = cfg.rateMode !== 'off' ? (state.raceStartRate || rateData.rate || DEFAULT_RATE) : DEFAULT_RATE;
   const cpProfiles = onlyPlayer ? [] : buildCpFleetProfiles(effRate);
 
   for (let k = 0; k < count; k++) {

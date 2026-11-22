@@ -13,36 +13,41 @@ export class AI {
 
   initParams() {
     const b = this.b, rng = this.rng;
-    // スキル差に応じたクローズ角度・スタート精度・レイライン余白のばらつき(1マークでの密集を防ぐ)
+    // スキル差に応じたクローズ角度・スタート精度・レイライン余白・戦術判断力
     const skillGap = clamp(1.10 - (b.skill || 1), 0, 0.28);
-    // クローズホールド角度: 上位艇はベスト角度に近く、中〜下位艇は少し角度が甘くなる個性差
-    this.closeAngleOffset = (((rng() - 0.25) * 2.1 + skillGap * (5.2 + rng() * 4.5)) * Math.PI) / 180;
+    // aceLevel: レート1700(skill=1.00)=0 → レート2000(skill≈1.14)=0.64 → レート2160+(skill>=1.22)=1.0
+    const aceLevel = clamp(((b.skill || 1) - 1.00) / 0.22, 0, 1);
+    this.aceLevel = aceLevel;
+    // クローズホールド角度: 高レート上位艇は最適VMG角へほぼ誤差なく張り付く
+    const angleNoise = (rng() - 0.25) * (2.1 - 1.55 * aceLevel);
+    this.closeAngleOffset = ((angleNoise + skillGap * (5.2 + rng() * 4.5)) * Math.PI) / 180;
     this.closeAngle = (bestCloseDeg(BASE_WIND_KT) * Math.PI) / 180 + this.closeAngleOffset;
-    // ランニング角度(下レグで180°の真後ろではなく164°〜170°付近を走行してVMGを稼ぐ)
-    this.runAngle = ((164.0 + rng() * 6.0) * Math.PI) / 180;
+    // ランニング角度(下レグでVMG最大帯の160°〜167°付近、上位艇ほどタイトに攻める)
+    this.runAngle = ((164.0 - 4.0 * aceLevel + rng() * (6.0 - 2.6 * aceLevel)) * Math.PI) / 180;
     this.targetStartC = b.startTargetC ?? b.c;
-    // コースのばらつき: 有利サイド(SIDE_BIAS)も考慮しつつ、RRSプロパーコース(レイライン円錐)から大きく外れない適度な回廊幅に制限
-    // スタート狙い位置(targetStartC)と逆側へ極端に引っ張られないようバランスよく配置
+    // コース引き: 上位艇ほど海面の地理的有利サイド(SIDE_BIAS)を的確に重視し、不利海面への無駄な遠回りを減らす
     const slotSpread = (((b.id * 3) % 7) - 3) / 3; // -1 .. +1
-    const biasShift = clamp((SIDE_BIAS || 0) * 18, -16, 16);
-    this.prefSideC = clamp(slotSpread * 34 + biasShift + (rng() - 0.5) * 16, -54, 54);
-    this.corridorHalf = 22 + rng() * 14;
+    const biasGain = 18 + 26 * aceLevel;
+    const biasShift = clamp((SIDE_BIAS || 0) * biasGain, -42, 42);
+    const spreadAmp = 34 - 18 * aceLevel;
+    this.prefSideC = clamp(slotSpread * spreadAmp + biasShift + (rng() - 0.5) * (16 - 8 * aceLevel), -54, 54);
+    this.corridorHalf = (22 - 5 * aceLevel) + rng() * (14 - 5 * aceLevel);
     this.cLim = 76 + rng() * 10;
-    this.tackCool = 18 + rng() * 13; // 中盤の戦術タック間隔(レイライン到達時は別途即座にタック可能)
+    this.tackCool = (18 - 8.5 * aceLevel) + rng() * (13 - 7.5 * aceLevel); // 上位艇は振れ・ブローへ素早く戦術タック
     this.lastTack = -99;
     // ラインを切る目標時刻(号砲=0秒の後):
-    // 1分前は後ろの待機位置からアプローチし、0秒時点で大体の艇が「スタートラインぎりぎり(リコールしない直前)」から0秒で飛び出せるように設定
+    // 高レート上位艇はスタートラインぎりぎりから0:00ちょうどでフル加速スタートを決める
     const isStrong = (b.skill || 1) >= 1.03;
     const role = b.startRole || 'firstRow';
     // CP艇がスタートラインをフライング(OCS)する確率は約1割(10%)に制御し、残りのCP艇は0:00時点でラインぎりぎり手前に収める
     this.willOcs = (b.id === 2 && rng() < 0.12);
     if (role === 'gapShooter') {
-      this.tc = 0.35 + rng() * 0.55;
+      this.tc = Math.max(0.08, 0.35 - 0.22 * aceLevel) + rng() * (0.55 - 0.28 * aceLevel);
       this.goDist = 9.2 + rng() * 2.2;
       this.baseStartC = this.targetStartC;
       this.nextGapScanT = -26 + rng() * 2.0;
     } else if (role === 'secondRow') {
-      this.tc = 1.65 + rng() * 1.35;
+      this.tc = (1.65 - 0.55 * aceLevel) + rng() * (1.35 - 0.45 * aceLevel);
       this.goDist = 10.5 + rng() * 2.8;
     } else if (role === 'highComFail') {
       this.tc = 3.2 + rng() * 1.8;
@@ -52,33 +57,37 @@ export class AI {
       this.goDist = 4.5 + rng() * 1.2;
     } else {
       this.tc = isStrong
-        ? 0.12 + rng() * 0.38
+        ? Math.max(0.01, 0.12 - 0.10 * aceLevel) + rng() * (0.38 - 0.24 * aceLevel)
         : 0.25 + rng() * 0.55 + skillGap * 0.8;
-      // 加速開始距離: ライン手前 6.0〜8.2m からフル加速し、0秒でラインぎりぎり手前に到達する
-      this.goDist = 6.0 + rng() * 2.2;
+      // 加速開始距離: 上位CP艇ほど約2艇身強(10〜12.5m)の助走距離を確保してフルスピードで0:00にラインを切る
+      this.goDist = (6.2 + 4.4 * aceLevel) + rng() * (2.2 - 0.5 * aceLevel);
     }
     this.go = false;
     this.pinBailout = false;
-    // レイライン余白を最小限に抑え、オーバースタンド(レイラインを大きく超えて不利な位置を走り続ける現象)を防止
-    this.layMargin = 0.004 + rng() * 0.016 + skillGap * 0.018;
+    // レイライン余白を最小限に抑え、上位艇はオーバースタンドを極小化
+    this.layMargin = (0.004 - 0.002 * aceLevel) + rng() * (0.016 - 0.010 * aceLevel) + skillGap * 0.018;
     this.penDir = rng() < 0.5 ? 1 : -1;
-    this.jit = (rng() - 0.5) * 14;
-    this.vmgAt = 12 + rng() * 16;
+    this.jit = (rng() - 0.5) * (14 - 8 * aceLevel);
+    this.vmgAt = (12 - 6.5 * aceLevel) + rng() * (16 - 10 * aceLevel);
     this.creepExp = 1.15 + rng() * 0.45;
     this.gap0 = null;
     this.avoidUntil = -999; this.avoidH = 0;
-    this.roundR = 6.4 + rng() * 1.1; // マーク進入半径(ワイドイン)
-    this.roundROut = 2.50;            // マーク脱出半径(タイトアウト)
+    this.roundR = (6.4 - 1.1 * aceLevel) + rng() * (1.1 - 0.4 * aceLevel); // 上位艇はより鋭いマーク回航
+    this.roundROut = 2.50 - 0.28 * aceLevel;                               // マーク脱出半径(タイトアウト)
     this.rp = null;
-    // 4ゲート(4S=gL / 4P=gR)
-    this.gateKey = b.id % 2 === 0 ? 'gL' : 'gR';
+    // 4ゲート(4S=gL / 4P=gR): 上位艇は次の上レグで有利な海面側ゲートを戦略的に選択
+    if (aceLevel >= 0.35 && Math.abs(SIDE_BIAS || 0) >= 0.15) {
+      this.gateKey = (SIDE_BIAS < 0 ? (rng() < 0.78 ? 'gL' : 'gR') : (rng() < 0.78 ? 'gR' : 'gL'));
+    } else {
+      this.gateKey = b.id % 2 === 0 ? 'gL' : 'gR';
+    }
     this.gateRp = null;
     this.poleT = 0;
     this.coverTime = 0;
     // 戦術的に賢い上位〜中上位CP艇かどうか(上レグの抑えのタック・下レグのブランケット意識を実行)
     this.isTacticalStrong = (b.skill || 1) >= 0.99;
     // リーチングで前後に密着した際に後ろから上してブランケットを仕掛けたり対抗する積極性(一部CP艇が積極的に仕掛ける)
-    this.luffAggro = (b.id % 3 !== 0 || rng() < 0.65) ? 0.58 + rng() * 0.42 : 0.20;
+    this.luffAggro = (b.id % 3 !== 0 || rng() < 0.65 + 0.25 * aceLevel) ? 0.58 + rng() * 0.42 : 0.20;
     this.luffMatch = 0;
     this.mustReturnBelowLine = false;
   }
@@ -154,9 +163,10 @@ export class AI {
   // 静止状態から距離L(m)を走破するのに必要な時間(秒)
   runUpTime(L) {
     const b = this.b;
+    const ace = this.aceLevel || 0;
     const wKt = BASE_WIND_KT * (b.windF || 1);
-    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * Math.min(1, b.skill || 1) * 0.82;
-    const tau = 2.6, v0 = Math.max(0, b.v * 0.85);
+    const vT = polar((this.closeAngle * 180) / Math.PI, wKt) * SPEED_SCALE * Math.pow(b.windF || 1, 0.8) * Math.min(1, b.skill || 1) * (0.78 + 0.02 * ace);
+    const tau = 2.65 + 0.25 * ace, v0 = Math.max(0, b.v * 0.88);
     const dist = (T) => vT * T - (vT - v0) * tau * (1 - Math.exp(-T / tau));
     let lo = 0, hi = 60;
     for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (dist(mid) < L) lo = mid; else hi = mid; }
@@ -515,17 +525,20 @@ export class AI {
         if (tackNow === -1 && b.c > corridorR && dc > -layLeft * 0.88) { wantTack = true; inCorridorTurn = true; }
         // 風が弱い不利海面を逆方向へ走り続けている場合や、シフトで反対タックが明確にリフトしている場合は戦術タック(プロパーコース選択)
         if (t > this.vmgAt && canTacticalTack) {
-          this.vmgAt = t + 11 + this.rng() * 9;
+          const ace = this.aceLevel || 0;
+          this.vmgAt = t + (11 - 6.0 * ace) + this.rng() * (9 - 4.5 * ace);
           const hs = W - ca, hp = W + ca;
           const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
-          const aheadX = b.x + Math.sin(b.h) * 45, aheadZ = b.z - Math.cos(b.h) * 45;
+          const lookD = 45 + 45 * ace;
+          const aheadX = b.x + Math.sin(b.h) * lookD, aheadZ = b.z - Math.cos(b.h) * lookD;
           const oppH = wrap(W + tackNow * ca);
-          const oppX = b.x + Math.sin(oppH) * 45, oppZ = b.z - Math.cos(oppH) * 45;
+          const oppX = b.x + Math.sin(oppH) * lookD, oppZ = b.z - Math.cos(oppH) * lookD;
           const wAhead = windAt(aheadX, aheadZ, this.wt ?? t).f;
           const wOpp = windAt(oppX, oppZ, this.wt ?? t).f;
-          const windGain = (wOpp - wAhead) * 0.68;
-          if (tackNow === 1 && (cp - cs + windGain) > 0.11) wantTack = true;
-          if (tackNow === -1 && (cs - cp + windGain) > 0.11) wantTack = true;
+          const windGain = (wOpp - wAhead) * (0.68 + 0.36 * ace);
+          const tackThresh = 0.11 - 0.052 * ace;
+          if (tackNow === 1 && (cp - cs + windGain) > tackThresh) wantTack = true;
+          if (tackNow === -1 && (cs - cp + windGain) > tackThresh) wantTack = true;
         }
       }
     }
@@ -547,7 +560,7 @@ export class AI {
         }
       } else if ((isMustTack || inCorridorTurn || this.canTackCleanly('tack', true)) && this.canExecuteTackNow()) {
         this.lastTack = t;
-        if (!isMustTack) this.prefSideC = clamp(b.c + b.tack * 32, -42, 42);
+        if (!isMustTack) this.prefSideC = clamp(b.c + b.tack * (32 - 8 * (this.aceLevel || 0)), -42, 42);
         b.startManeuver('tack');
       }
     }
@@ -560,7 +573,12 @@ export class AI {
         b.throttle = Math.min(b.throttle, clamp(0.86 - overDist * 0.085, 0.10, 0.80));
       }
     }
-    return wrap(W - b.tack * ca);
+    // 上位艇はブローで少し上し・ラルで少し落として局所風速ごとの最適クローズVMGを維持する
+    const ace = this.aceLevel || 0;
+    const dynCa = ace > 0.05
+      ? ca * (1 - ace) + ((bestCloseDeg(BASE_WIND_KT * (b.windF || 1)) * Math.PI) / 180 + this.closeAngleOffset * 0.5) * ace
+      : ca;
+    return wrap(W - b.tack * dynCa);
   }
 
   crowded(rad = 8.5, ignoreAwayOnTack = false) {
@@ -1465,30 +1483,40 @@ export class AI {
         const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 4.0, LINE_HALF - 3.8);
         const lineAtTgt = lineA(tgtC);
         const lineHere = Math.min(lineA(b.c), lineA(clamp(b.c, -LINE_HALF, LINE_HALF)));
-        // スナイプ艇バウ先端(中心から2.30m前方)のラインに対する突出量を考慮し、通常CP艇はバウ先端がライン手前約0.65mに収まるよう調整
+        // スナイプ艇バウ先端(中心から2.30m前方)のラインに対する突出量を考慮し、上位CP艇ほど0:00でバウ先端がラインぎりぎり(手前約0.25〜0.65m)でフル加速通過
+        const ace = this.aceLevel || 0;
         const dhBow = b.h - W0;
         const bowProjA = Math.max(0.6, Math.cos(dhBow) * 2.30 - Math.sin(dhBow) * 2.30 * Math.tan(LINE_SKEW));
-        const ocsSafetyMargin = this.willOcs ? -1.1 : (bowProjA + 0.65);
+        const ocsSafetyMargin = this.willOcs ? -1.1 : (bowProjA + (0.65 - 0.38 * ace));
         const targetLineA = (b.c > LINE_HALF - 7 ? Math.min(lineHere, lineAtTgt) : Math.min(lineHere, lineAtTgt + 0.8)) - ocsSafetyMargin;
         const gap = targetLineA - b.a;
         const posGap = Math.max(0, gap);
         const tw = Math.min(b.twa, 1.1);
         const upf = Math.max(0.48, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
         if (this.gap0 === null) this.gap0 = Math.max(24, posGap);
-        const holdDist = role === 'gapShooter' ? 7.2 : (role === 'secondRow' ? 8.2 : (this.willOcs ? 2.0 : 4.2));
-        const holdEndT = role === 'gapShooter' ? -5.8 : (role === 'secondRow' ? -1.8 : (this.willOcs ? -5.0 : -4.2));
-        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -10.5 || posGap > holdDist + 1.5)) this.go = true;
+        const holdDist = role === 'gapShooter' ? 7.8 : (role === 'secondRow' ? 9.2 : (this.willOcs ? 2.0 : (4.4 + 4.8 * ace)));
+        const holdEndT = role === 'gapShooter' ? -6.0 : (role === 'secondRow' ? -2.0 : (this.willOcs ? -5.0 : (-4.2 - 2.3 * ace)));
+        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -11.5 || posGap > holdDist + 1.5)) this.go = true;
         if (gap < holdDist + 0.3 && t < holdEndT) this.go = false; // 加速開始時刻(holdEndT)より前にラインへ寄りすぎるのを防ぐ
         // willOcsでない通常CP艇は0:00より前にバウ先端がラインを超えないよう、直前でラインを超えそうな場合のみ減速・シバーさせる
         const projZeroBowA = b.a + bowProjA + Math.max(0, -t) * Math.max(0, b.v) * upf;
-        const earlyHoldLimitA = t < -14.0 ? lineHere - bowProjA - holdDist - 2.0 : lineHere - bowProjA - 0.70;
-        const tooEarlyForLine = !this.willOcs && (b.a > earlyHoldLimitA || (t > -5.5 && projZeroBowA > lineHere - 0.45));
-        if (tooEarlyForLine) this.go = false;
+        const earlyHoldLimitA = t < holdEndT - 1.2 ? lineHere - bowProjA - holdDist - 0.8 : lineHere - bowProjA - (0.60 - 0.36 * ace);
+        const overHoldA = b.a > earlyHoldLimitA;
+        const projMargin = 0.40 - 0.28 * ace;
+        const projExcess = (t > -4.5) ? (projZeroBowA - (lineHere - projMargin)) : -1;
+        const tooEarlyForLine = !this.willOcs && (overHoldA || projExcess > 0);
+        if (overHoldA) this.go = false;
         if (tooEarlyForLine) {
-          b.throttle = 0;
-          b.sheet = 0.05;
-          if (b.a > earlyHoldLimitA + 0.25) {
-            b.v = Math.min(b.v, Math.max(0.05, (earlyHoldLimitA + 0.65 - b.a) * 0.45));
+          if (overHoldA || projExcess > 2.6) {
+            b.throttle = 0;
+            b.sheet = 0.05;
+            if (b.a > earlyHoldLimitA + 0.25) {
+              b.v = Math.min(b.v, Math.max(0.05, (earlyHoldLimitA + 0.65 - b.a) * 0.45));
+            }
+          } else {
+            // わずかに早着気味の時はフル失速させず、スロットルとシートを微調整して0:00で高速通過を維持
+            b.throttle = clamp(0.86 - projExcess * 0.26, 0.24, 0.86);
+            b.sheet += (sheetOpt(b.twa) * (0.80 + 0.16 * b.throttle) - b.sheet) * (1 - Math.exp(-dt * 4.5));
           }
         } else if (this.go) {
           b.throttle = 1;
