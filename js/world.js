@@ -222,12 +222,14 @@ float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix
 void main(){
   vec2 p=vW.xz;
   vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
-  // 1ピクセルが海面上で覆う実空間サイズ[m]をスクリーン空間微分＋低仰角補正で算出(遠景のザラつき・ノイズ・モアレを根絶)
+  // 1ピクセルが海面上で覆う実空間サイズ[m]を算出。手前〜中景(70m以内)は元の鮮やかな凹凸を一切変えず、奥の遠景ノイズのみ滑らかに減衰する
   vec2 dxW=dFdx(p);
   vec2 dyW=dFdy(p);
   float pxFoot=max(length(dxW),length(dyW));
   float geomFoot=dist*0.00145/max(V.y,0.022);
   float foot=max(pxFoot,geomFoot);
+  float farMask=smoothstep(70.0,220.0,dist);
+  float farFoot=max(0.0,foot-0.35)*farMask;
   // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd0)へ流れるブローを算出する
   // 海面テクスチャの座標軸(wd0, wp0)は時間変化しない基準風向(uW0)に完全固定することで、シフト変化時に海面の流れが横滑りしたり風向とずれる現象を根絶する
   vec2 uDir=vec2(sin(uW0),-cos(uW0));
@@ -255,16 +257,16 @@ void main(){
   float wH=0.0;
   float farCrestField=0.0;
   float subRough=0.0;
-  // 1) 風下方向(wd)へ伝播する立体的なベース波浪(自然な角度ばらつき＋遠景フットプリント減衰で平行縞やザラつきを防止)
+  // 1) 風下方向(wd)へ伝播する立体的なベース波浪(近〜中景は元のまま、遠景のみフットプリント減衰)
   for(int i=0;i<NWAVE;i++){
     float fi=float(i);
-    float spread=(fi-1.5)*0.24;
+    float spread=(fi-1.5)*mix(0.12,0.22,farMask);
     vec2 d=normalize(wd*cos(spread)+wp*sin(spread));
     float k=0.14*pow(1.72,fi); float A=0.62*pow(0.54,fi);
     float w=sqrt(9.81*k)*0.95;
-    float fade=exp(-dist*k*0.0042-foot*k*0.72);
+    float fade=exp(-dist*k*0.0032-farFoot*k*0.72);
     float ak=A*k*uGen;
-    subRough+=ak*ak*(1.0-fade)*0.16;
+    subRough+=ak*ak*(1.0-fade)*0.16*farMask;
     if(fade<0.015) continue;
     float ph=mod(dot(d,p)*k-uWT*w+fi*1.7,628.3185);
     float s=sin(ph), co=cos(ph);
@@ -272,29 +274,29 @@ void main(){
     float sharp=1.0+0.28*s;
     g+=d*(A*k*co*sharp)*fade*uGen*1.45;
     wH+=A*s*fade*uGen;
-    farCrestField+=max(0.0,s+0.35*co)*pow(0.68,fi)*fade;
+    farCrestField+=max(0.0,s+0.35*co)*pow(0.68,fi)*mix(1.0,fade,farMask);
   }
   // 2) 海況(三角波・うねり・短周期の風浪): sim.js waveSample と完全に同じ成分・同じ進行方向で法線と高さを算出
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float fd=exp(-dist*A.z*0.0052-foot*A.z*0.72);
+    float fd=exp(-dist*A.z*0.0040-farFoot*A.z*0.72);
     float az=A.w*A.z*1.35;
-    subRough+=az*az*(1.0-fd)*0.16;
+    subRough+=az*az*(1.0-fd)*0.16*farMask;
     if(fd>0.015){
       float ph=mod(A.z*dot(A.xy,p)-B.x*uWT+B.y,6.2831853);
       float s=sin(ph), co=cos(ph);
       float sharp=1.0+0.30*s;
       g+=A.xy*(A.w*A.z*co*sharp)*fd*1.90;
       wH+=A.w*s*fd;
-      farCrestField+=max(0.0,s+0.40*co)*clamp(A.w*A.z*3.2,0.15,0.95)*fd;
+      farCrestField+=max(0.0,s+0.40*co)*clamp(A.w*A.z*3.2,0.15,0.95)*mix(1.0,fd,farMask);
     }
   }
   vec2 gBase=g;
-  // 3) 実海面の風浪スペクトル: 風向まわりに広がる短い風浪を重ね、近〜中景のリアルな凹凸を保ちつつ
-  //    ピクセル幅(foot)より細かくなった遠景の波はナイキスト基準で滑らかに法線から外し「見えない微細粗さ(subRough)」へ変換する
+  // 3) 実海面の風浪スペクトル: 手前は元のざらざらとした自然な水面凹凸を完全維持し、
+  //    遠景(70m以遠)でピクセルより細かくなった波だけをナイキスト基準で滑らかな反射ボケへ変換する
   float windAmp=clamp(uWindKt/11.0,0.50,1.25)*(0.66+0.55*gust);
   // 波群(ウェーブグループ): 場所ごとに波の立ち方が変化し、均一なタイル感をなくす
-  float grpAA=exp(-foot*0.035);
+  float grpAA=exp(-farFoot*0.04);
   float grp=mix(1.0,0.72+0.56*vn(vec2(wu*0.018+3.1,wv*0.014-uWT*0.06)),grpAA);
   float lam0=mix(7.5,3.4,uChop);
   float spreadA=mix(0.95,1.30,uChop);
@@ -307,9 +309,9 @@ void main(){
     float ang=sin(fi*2.39996+0.6)*spreadA;
     vec2 d=normalize(wd*cos(ang)+wp*sin(ang));
     float stp=stpBase*(0.80+0.40*fract(fi*0.618+0.3))*windAmp*grp;
-    // 画素フットプリント(foot)基準のナイキスト低域フィルタ(遠景のザラつき・ノイズを完全に除去し自然な反射ボケへ変換)
-    float fk=exp(-dist*k*0.0014-foot*k*0.58);
-    subRough+=stp*stp*(1.0-fk)*0.48;
+    // 近〜中景は元の exp(-dist*k*0.0010) そのまま、遠景のみ farFoot でナイキスト減衰
+    float fk=exp(-dist*k*0.0010-farFoot*k*0.62);
+    subRough+=stp*stp*(1.0-fk)*0.5;
     if(fk<0.012) continue;
     float om=sqrt(9.81*k);
     float ph=mod(dot(d,p)*k-om*uWT+fi*4.13,6.2831853);
@@ -322,7 +324,7 @@ void main(){
   float ndv=max(dot(n,V),0.0);
   float sig=sqrt(subRough);
   // フレネル反射(水の屈折率1.33: 真上から見ると約2%、浅い角度ほど空を強く映す)。細かい粗さがあるほど反射は弱く・青くなる
-  float ndvR=clamp(ndv+sig*0.52,0.0,1.0);
+  float ndvR=clamp(ndv+sig*0.55,0.0,1.0);
   float F=min(0.02+0.98*pow(1.0-ndvR,5.0),0.82);
   vec3 R=reflect(-V,n); R.y=abs(R.y);
   // 空の映り込み(ほんのわずかに抑えめ)
@@ -344,16 +346,16 @@ void main(){
   body+=vec3(0.020,0.150,0.140)*sssAmt;
   // 順光・側光でも海面下へ透過した光が波の斜面や浅層で青緑に澄んで見える水中散乱(近〜中景中心にうっすら付与)
   float sunPen=pow(sunLit,1.35)*(0.42+0.58*smoothstep(-0.32,0.55,elev));
-  float rippleClarity=clamp(length(gs)*2.2,0.0,1.0)*exp(-dist*0.006-foot*0.35);
+  float rippleClarity=clamp(length(gs)*2.2,0.0,1.0)*exp(-dist*0.006-farFoot*0.35);
   body+=vec3(0.016,0.115,0.125)*offSun*(0.30*sunPen+0.14*rippleClarity)*exp(-dist*0.0016);
   body*=0.82+0.28*sunLit;
 
   vec3 col=mix(body,refl,F);
-  // 太陽のきらめき(サングリッター): 近くは鋭い粒状のきらめき、遠くはピクセル粗さで滑らかに広がった光の道になる
-  float roughK=clamp(sig*4.8+smoothstep(0.9,11.0,foot)*0.52,0.0,1.0);
-  float shin=mix(900.0,48.0,roughK);
+  // 太陽のきらめき(サングリッター): 手前は元の鋭い粒状のきらめき、遠くはピクセル粗さで滑らかに広がった光の道になる
+  float roughK=clamp(sig*5.0+smoothstep(0.8,10.0,farFoot)*0.50,0.0,1.0);
+  float shin=mix(900.0,52.0,roughK);
   float sd=max(dot(R,uSun),0.0);
-  float farSpecCalm=mix(1.0,0.62,smoothstep(1.5,14.0,foot));
+  float farSpecCalm=mix(1.0,0.65,smoothstep(1.2,12.0,farFoot));
   float spec=(pow(sd,shin)*(shin*0.012)+pow(sd,shin*0.12)*0.035)*farSpecCalm;
   col+=vec3(1.0,0.94,0.82)*spec*clamp(F*6.0,0.15,1.0);
   // 太陽側のサングリッターはそのまま維持し、太陽と逆方向(sunAz < 0)では不自然な白い点々を出さず、
@@ -368,39 +370,39 @@ void main(){
   float sdSky=max(dot(Rglint,skyGlintDir),0.0);
   float frontFace=smoothstep(0.11,0.28,ndv);
   float solarCoronaAz=smoothstep(-0.02,0.56,sunAz)*offSun;
-  float shinSky=mix(920.0,180.0,roughK);
+  float shinSky=mix(920.0,220.0,clamp(sig*4.2+farMask*0.35,0.0,1.0));
   float specSky=pow(sdSky,shinSky)*(shinSky*0.0020);
-  float skyGlintMask=solarCoronaAz*frontFace*(0.35+0.65*sunLit)*(0.25+0.75*smoothstep(-0.05,0.58,elev))*exp(-dist*0.012-foot*0.42);
+  float skyGlintMask=solarCoronaAz*frontFace*(0.35+0.65*sunLit)*(0.25+0.75*smoothstep(-0.05,0.58,elev))*exp(-dist*0.0115-farFoot*0.42);
   vec3 skyGlintCol=mix(vec3(0.88,0.95,1.0),vec3(1.0,0.95,0.84),sunLit);
   col+=skyGlintCol*min(specSky*skyGlintMask*0.11,0.16);
   // 太陽と逆方向〜横方向では白い点ではなく、波の表斜面が空の青みを柔らかく拾う控えめなツヤのみ付与
-  float shinBroad=mix(76.0,26.0,roughK);
-  float broadSheen=pow(sdSky,shinBroad)*0.024*offSun*frontFace*(0.35+0.65*smoothstep(-0.08,0.52,elev))*exp(-dist*0.0065-foot*0.18);
+  float shinBroad=mix(76.0,28.0,clamp(sig*4.0+farMask*0.30,0.0,1.0));
+  float broadSheen=pow(sdSky,shinBroad)*0.024*offSun*frontFace*(0.35+0.65*smoothstep(-0.08,0.52,elev))*exp(-dist*0.0065-farFoot*0.18);
   col+=vec3(0.46,0.68,0.86)*broadSheen;
 
-  // ブロー(風の強い海面のさざ波): 遠景では細かいノイズ(catpaw/streak)を滑らかに平均化しつつ、タクティカルなブロー帯の明暗コントラストは維持
-  float catpawAA=exp(-foot*0.18);
+  // ブロー(風の強い海面のさざ波): 近〜中景は元のまま、遠景のみ細かいノイズ(catpaw/streak)を滑らかに平均化
+  float catpawAA=exp(-farFoot*0.20);
   float catpaw=mix(0.76,0.55+0.45*vn(vec2(wu*0.35,adv*0.16)),catpawAA);
   col*=mix(1.02,0.91,smoothstep(0.76,1.22,wf));
   col=mix(col,col*vec3(0.82,0.87,0.93),blow*(0.16+0.16*catpaw)*exp(-dist*0.0006));
-  if(dist<2200.0){
-    float streakAA=exp(-dist*0.0014-foot*0.24);
+  if(dist<2600.0){
+    float streakAA=exp(-dist*0.0012-farFoot*0.28);
     if(streakAA>0.01){
       float streak=smoothstep(0.75,0.94,vn(vec2(wu*0.28,adv*0.10)));
       col+=vec3(0.22,0.38,0.50)*streak*0.035*(0.4+gust)*streakAA;
     }
   }
   col=min(col,vec3(1.6));
-  // 14knot超の強風白波(遠景の細かな泡ノイズはフットプリントに応じて滑らかに減衰し、砂嵐状のザラつきを防止)
-  if(dist<2400.0 && whitecapIntensity>0.001){
-    float wcFarFade=exp(-dist*0.00095-foot*0.14);
+  // 14knot超の強風白波(手前は元のまま、遠景の細かい泡ノイズのみ farFoot で滑らかに減衰)
+  if(dist<2600.0 && whitecapIntensity>0.001){
+    float wcFarFade=exp(-dist*0.00075-farFoot*0.16);
     if(wcFarFade>0.012){
       float wci=clamp(whitecapIntensity,0.0,1.95);
       float fwdSlope=max(0.0,dot(gBase,wd));
       float wcCrestSlope=length(gBase)*2.15+fwdSlope*1.85+max(0.0,elev)*0.95+farCrestField*0.28;
-      float wcAA1=exp(-foot*0.16);
-      float wcAA2=exp(-foot*0.48);
-      float wcAA3=exp(-foot*1.40);
+      float wcAA1=exp(-farFoot*0.18);
+      float wcAA2=exp(-farFoot*0.52);
+      float wcAA3=exp(-farFoot*1.50);
       float wcN1=mix(0.50,vn(vec2(wu*0.34,wv*0.78-uWT*2.15)),wcAA1);
       float wcN2=mix(0.50,vn(vec2(wu*1.35+3.7,wv*2.15-uWT*3.05)),wcAA2);
       float wcN3=mix(0.50,vn(vec2(wu*3.80-6.2,wv*4.60-uWT*3.90)),wcAA3);

@@ -947,6 +947,7 @@ function updateHUD(sorted) {
     const st = b.pole ? (b.poleK < 1 ? 'UP…' : 'UP') : b.poleK > 0 ? 'DOWN…' : 'DOWN';
     hud.pole.textContent = st; hud.pole.className = b.pole ? 'on' : '';
     const tp = $('tPole'); if (tp) tp.classList.toggle('on', b.pole);
+    const tpLbl = $('tPoleLbl'); if (tpLbl) tpLbl.textContent = b.pole ? 'ランチャーDOWN' : 'ランチャーUP';
   }
   // ブランケット/バックウインド表示: 風上艇の風影=ブランケット、風下艇のリーチからの吹き返し=バックウインド (両方同時もあり得る)
   const blkPct = Math.round(b.cover * 100);
@@ -1153,14 +1154,14 @@ const ORIENT_STEPS = [
   {
     en: '',
     title: '角度を上したりセールを出してスピードを調整しよう',
-    body: '早くラインに着きすぎたら、<strong>左下の「◀ ▶」ボタン（←→キー）</strong>で風上へ頭を上したり、<strong>右下の「出す」ボタン（↓キー）</strong>でセールを緩めて減速・待機しよう！ スタート前は再び落としてセールを引き加速する。',
-    dur: 11.5,
+    body: '早くラインに着きすぎたら、<strong>左下の「◀ ▶」ボタン（←→キー）</strong>で風上へ頭を上したり、<strong>右下の「出す」ボタン（↓キー）</strong>でセールを緩めて減速・待機しよう！ スタート直前は再びクローズホールドの角度に落として加速体勢に入ろう。',
+    dur: 9.5,
   },
   {
     en: '',
     title: '0:00に合わせてクローズホールドで加速しスタート！',
     body: 'スタート数秒前には<strong>クローズホールド（真風角約42°）</strong>の角度に合わせてしっかり艇速を乗せ、<strong>0:00の号砲</strong>と同時にスタートラインぎりぎりから飛び出そう！',
-    dur: 10.6,
+    dur: 10.2,
   },
   {
     en: '',
@@ -1177,13 +1178,13 @@ const ORIENT_STEPS = [
   {
     en: '',
     title: '上マーク回航後はランチャーUP！ 下マーク(4S)回航前はDOWNして回航！',
-    body: '<strong>上マーク回航後</strong>の風下レグでは、<strong>画面左の「ランチャー」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>4Sマーク回航前</strong>にはランチャーを下げ、クローズに上した時にマークが真横になる軌道できれいに回航しよう。',
+    body: '<strong>上マーク回航後</strong>の風下レグでは、<strong>画面左の「ランチャーUP / DOWN」ボタン（[L]キー）</strong>でランチャーを上げて加速しよう！ そして<strong>4Sマーク回航前</strong>にはランチャーを下げ、クローズに上した時にマークが真横になる軌道できれいに回航しよう。',
     dur: 13.6,
   },
   {
     en: '',
     title: '3マーク回航後はリーチングでフィニッシュラインへ走り切ろう！',
-    body: '2・3マークを回航した最終レグは<strong>リーチング</strong>で加速！ チェッカーフラッグの<strong>「FINISH」ライン</strong>（青い旗のフィニッシュ船とブイの間）を目指して最後まで走り切ろう！',
+    body: '2・3マークを回航した最終レグはランチャーを上げて<strong>リーチング</strong>で加速！ チェッカーフラッグの<strong>「FINISH」ライン</strong>（青い旗のフィニッシュ船とブイの間）を目指して最後まで走り切ろう！',
     dur: 10.8,
   },
   {
@@ -1410,12 +1411,11 @@ function updateOrientVisualPointer(targets) {
 function applyOrientStepHighlights(stepIdx, elapsed) {
   const onButtons = new Set();
   if (stepIdx === 1) {
-    if (elapsed < 4.6) {
+    if (elapsed < 5.8) {
       onButtons.add('tRight');
       onButtons.add('tDown');
     } else if (elapsed < 8.4) {
       onButtons.add('tLeft');
-      onButtons.add('tUp');
     }
   } else if (stepIdx === 3) {
     if (elapsed >= 2.5 && elapsed < 3.8) onButtons.add('tRight');
@@ -1445,7 +1445,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
       { worldObj: world.startLabel, u0: 0.032, u1: 0.968, v0: 0.035, v1: 0.945, arrowDir: 'left' },
     ]);
   } else if (stepIdx === 1) {
-    if (elapsed < 4.6) {
+    if (elapsed < 5.8) {
       updateOrientVisualPointer([
         { sel: '#touch .tgrp.left', arrowDir: 'down' },
         { sel: '#tDown', arrowDir: 'down' },
@@ -1453,7 +1453,6 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
     } else {
       updateOrientVisualPointer([
         { sel: '#touch .tgrp.left', arrowDir: 'down' },
-        { sel: '#tUp', arrowDir: 'down' },
       ]);
     }
   } else if (stepIdx === 2) {
@@ -1530,7 +1529,7 @@ function applyOrientStepHighlights(stepIdx, elapsed) {
   }
 }
 
-function setupOrientStepScene(stepIdx) {
+function setupOrientStepScene(stepIdx, prevStep = -1) {
   orientState.subDone = false;
   orientState.poleUpDone = false;
   orientState.phase2 = false;
@@ -1538,9 +1537,10 @@ function setupOrientStepScene(stepIdx) {
   clearOrientHighlight();
 
   if (!player) return;
+  const seamlessStart = (stepIdx === 2 && prevStep === 1 && state.t > -8.0 && state.t < -0.5);
   player.maneuver = null; player.tacking = false; player.ocs = false; player.penalty = null; player.finished = false; player.postFinishStop = false;
   player.pullingSheet = false; player.easingSheet = false; player.luff = 0;
-  cam.inited = false;
+  if (!seamlessStart) cam.inited = false;
   const closeRad = 0.735; // 真風角 約42.1° (標準クローズホールド)
   const cruiseCloseV = 2.22 * SPEED_SCALE; // 約4.3kt (9kt風での自然なスナイプ級クローズ艇速)
 
@@ -1552,28 +1552,43 @@ function setupOrientStepScene(stepIdx) {
     const p = toWorld(-46, 40);
     player.place(p.x, p.z, wrap(W0 - closeRad));
     player.v = cruiseCloseV; player.sheet = sheetOpt(closeRad); player.pole = false; player.poleK = 0; player.leg = 0; player.started = false;
-    cam.yaw = cam.targetYaw = -0.04; cam.pitch = cam.targetPitch = -0.02;
+    cam.yaw = cam.targetYaw = -0.06; cam.pitch = cam.targetPitch = -0.01;
   } else if (stepIdx === 1) {
-    // STEP 2: クローズホールド(42°)から頭を風上へ上し＆セールを出して減速 → 再び42°クローズへ落として加速
-    state.t = -22;
-    const p = toWorld(-28, 24);
+    // STEP 2: スタート14秒前からライン手前で頭を上し＆セールを出して減速・待機 → -8.2秒から再びクローズ(42°)へ落として加速開始（そのままSTEP 3へシームレスに繋がる）
+    state.t = -14.0;
+    state.count = 15;
+    const cStart2 = 45.5;
+    const aStart2 = lineA(cStart2) - 35.5;
+    const p = toWorld(aStart2, cStart2);
     player.place(p.x, p.z, wrap(W0 - closeRad));
     player.v = cruiseCloseV; player.sheet = sheetOpt(closeRad); player.pole = false; player.poleK = 0; player.leg = 0; player.started = false;
-    cam.yaw = cam.targetYaw = -0.26; cam.pitch = cam.targetPitch = -0.02;
+    // CP艇もライン風下の自然な位置へ整列させ、STEP 2→3で不自然に重ならないようにする
+    for (let i = 1; i < boats.length; i++) {
+      const cb = boats[i];
+      const frac = (i - 1) / Math.max(1, boats.length - 2);
+      const cc = -54 + frac * 78;
+      if (Math.abs(cc - 24) < 11) continue;
+      const ca = lineA(cc) - (18 + (i % 4) * 5.5);
+      const cp = toWorld(ca, cc);
+      cb.place(cp.x, cp.z, wrap(W0 - closeRad));
+      cb.v = 1.15 * SPEED_SCALE; cb.sheet = sheetOpt(closeRad); cb.pole = false; cb.poleK = 0; cb.leg = 0; cb.started = false; cb.ocs = false;
+    }
+    cam.yaw = cam.targetYaw = -0.08; cam.pitch = cam.targetPitch = 0.01;
   } else if (stepIdx === 2) {
-    // STEP 3: 号砲3.8秒前 → クローズホールド(42°・約4.5kt)で加速し、0:00直後に有利な本部船寄りのスタートラインを切る
-    state.t = -3.8; state.count = 4;
-    const startV = 2.34 * SPEED_SCALE; // 約4.55kt
-    const vA = startV * Math.cos(closeRad);
-    const vC = -startV * Math.sin(closeRad);
-    const cCross = 22;
-    const aCross = lineA(cCross) - 3.9; // 0:00時点でバウ先端がライン手前約2.2m
-    const aStart = aCross + state.t * vA;
-    const cStart = cCross + state.t * vC;
-    const p = toWorld(aStart, cStart);
-    player.place(p.x, p.z, wrap(W0 - closeRad));
-    player.v = startV; player.sheet = sheetOpt(closeRad); player.pole = false; player.poleK = 0; player.leg = 0; player.started = false;
-    cam.yaw = cam.targetYaw = 0.06; cam.pitch = cam.targetPitch = 0.03;
+    // STEP 3: STEP 2からの完全シームレス連続シーン（ワープ・カメラジャンプなし）で-4.5秒から加速し、0:00の号砲と同時にスタートラインを切る
+    if (seamlessStart) {
+      state.count = Math.max(1, Math.ceil(-state.t));
+      player.pole = false; player.poleK = 0; player.leg = 0; player.started = false;
+      cam.targetYaw = 0.02; cam.targetPitch = 0.02;
+    } else {
+      state.t = -4.5; state.count = 5;
+      const cStart3 = 33.5;
+      const aStart3 = lineA(cStart3) - 16.0;
+      const p = toWorld(aStart3, cStart3);
+      player.place(p.x, p.z, wrap(W0 - closeRad));
+      player.v = 1.72 * SPEED_SCALE; player.sheet = sheetOpt(closeRad); player.pole = false; player.poleK = 0; player.leg = 0; player.started = false;
+      cam.yaw = cam.targetYaw = 0.02; cam.pitch = cam.targetPitch = 0.02;
+    }
   } else if (stepIdx === 3) {
     // STEP 4: クローズホールド 39°〜43° VMG走行
     state.t = 28;
@@ -1598,7 +1613,7 @@ function setupOrientStepScene(stepIdx) {
     player.v = 2.68 * SPEED_SCALE; player.sheet = sheetOpt(2.66); player.pole = false; player.poleK = 0; player.leg = Math.min(2, LEGS.length - 1); player.started = true;
     cam.yaw = cam.targetYaw = 0.52; cam.pitch = cam.targetPitch = 0.03;
   } else if (stepIdx === 6) {
-    // STEP 7: トラペゾイド最終レグ(leg 6: 3マーク→フィニッシュ) — 3マーク側からポートタックのリーチング(TWA約130°)でフィニッシュライン中央へ進入
+    // STEP 7: トラペゾイド最終レグ(leg 6: 3マーク→フィニッシュ) — 3マーク側からランチャーUP＋ポートタックのリーチング(TWA約130°)でフィニッシュライン中央へ進入
     state.t = 215;
     const m3 = MARKS.m3;
     const F = MARKS.fcom, G = MARKS.fm;
@@ -1609,7 +1624,7 @@ function setupOrientStepScene(stepIdx) {
     const c0 = finCrossC - Math.sin(thetaFin) * 34.0;
     const p = toWorld(a0, c0);
     player.place(p.x, p.z, wrap(W0 + thetaFin));
-    player.v = 2.72 * SPEED_SCALE; player.sheet = sheetOpt(Math.abs(thetaFin)); player.pole = false; player.poleK = 0; player.leg = LEGS.length - 1; player.started = true;
+    player.v = 2.78 * SPEED_SCALE; player.sheet = sheetOpt(Math.abs(thetaFin)); player.pole = true; player.poleK = 1; player.leg = LEGS.length - 1; player.started = true;
     orientState.finTheta = thetaFin;
     orientState.finSign0 = Math.sign((G.a - F.a) * (c0 - F.c) - (G.c - F.c) * (a0 - F.a)) || 1;
     cam.yaw = cam.targetYaw = 0.02; cam.pitch = cam.targetPitch = 0.03;
@@ -1622,13 +1637,13 @@ function setupOrientStepScene(stepIdx) {
     const thetaFin = Math.atan2(finCrossC - m3.c, finCrossA - m3.a);
     const p = toWorld(finCrossA + Math.cos(thetaFin) * 4, finCrossC + Math.sin(thetaFin) * 4);
     player.place(p.x, p.z, wrap(W0 + thetaFin));
-    player.v = 2.2 * SPEED_SCALE; player.sheet = sheetOpt(Math.abs(thetaFin)); player.pole = false; player.poleK = 0; player.leg = LEGS.length - 1; player.started = true;
+    player.v = 2.2 * SPEED_SCALE; player.sheet = sheetOpt(Math.abs(thetaFin)); player.pole = true; player.poleK = 1; player.leg = LEGS.length - 1; player.started = true;
     cam.yaw = cam.targetYaw = 0.10; cam.pitch = cam.targetPitch = 0.10;
   }
   state.lastTack = player.tack;
   state.lastPole = player.pole;
   const nowSec = performance.now() / 1000;
-  cam.update(0, nowSec, player, boats);
+  if (!seamlessStart) cam.update(0, nowSec, player, boats);
   world.update(nowSec, camera, 0, state.t, player, boats);
   camera.updateMatrixWorld(true);
   applyOrientStepHighlights(stepIdx, orientState.elapsed);
@@ -1648,7 +1663,7 @@ function renderOrientStepUI() {
   if (flash) { flash.classList.remove('slash'); void flash.offsetWidth; flash.classList.add('slash'); }
 }
 
-function setOrientStep(idx) {
+function setOrientStep(idx, prevIdx = -1) {
   if (idx >= ORIENT_STEPS.length) {
     // 最後まで終わったらループせずスタート画面(#menu)に戻る
     exitOrientation(false);
@@ -1658,7 +1673,7 @@ function setOrientStep(idx) {
   orientState.elapsed = 0;
   orientStepSfx(orientState.step === 0 || orientState.step === ORIENT_STEPS.length - 1);
   renderOrientStepUI();
-  setupOrientStepScene(orientState.step);
+  setupOrientStepScene(orientState.step, prevIdx);
 }
 
 function toggleOrientPause() {
@@ -1692,7 +1707,7 @@ function startOrientation() {
   document.body.classList.add('orientOpen');
   cam.menuOffset = false; cam.mode = 0; cam.inited = false;
   $('menu').classList.add('hidden'); $('result').classList.add('hidden'); $('hud').classList.remove('hidden'); $('orientation').classList.remove('hidden');
-  setOrientStep(0);
+  setOrientStep(0, -1);
 }
 
 function exitOrientation(toRace = false) {
@@ -1737,13 +1752,13 @@ function orientationStep(dt, time) {
     player.steer = clamp(wrap(tgtH - player.h) * 3.0, -0.7, 0.7);
     player.sheet = sheetOpt(player.twa);
     player.throttle = 0.95;
-    cam.yaw = cam.targetYaw = -0.04 + Math.sin(orientState.elapsed * 0.30) * 0.03;
-    cam.pitch = cam.targetPitch = -0.02;
+    cam.targetYaw = -0.06 + Math.sin(orientState.elapsed * 0.30) * 0.025;
+    cam.targetPitch = -0.01;
   } else if (idx === 1) {
-    // STEP 2: 前半(0〜4.6s)はクローズ(42°)から風上(約22°)へ上してセールを出して減速、後半(4.6s〜)はベアして再びクローズ(42°)へ加速
+    // STEP 2: 前半(0〜5.8s)は頭を上し＆セールを出して減速・待機、後半(5.8s〜9.5s)はクローズ(42°)へ落として加速開始（シートは自動トリムで戻る）
     const luffRad = 0.385; // 約22°
-    if (orientState.elapsed < 4.6) {
-      const uLuff = clamp(orientState.elapsed / 1.6, 0, 1);
+    if (orientState.elapsed < 5.8) {
+      const uLuff = clamp(orientState.elapsed / 1.5, 0, 1);
       const sLuff = uLuff * uLuff * (3 - 2 * uLuff);
       const tgtAngle = closeRad + (luffRad - closeRad) * sLuff;
       const tgtH = wrap(player.windFrom - tgtAngle);
@@ -1753,33 +1768,36 @@ function orientationStep(dt, time) {
       player.easingSheet = true;
       player.pullingSheet = false;
       player.throttle = 0.22;
-      player.v = Math.max(player.v, 0.72 * SPEED_SCALE); // 約1.4ktで待機しラダー効きを維持
+      player.v = Math.max(player.v, 0.68 * SPEED_SCALE); // 約1.3ktで待機しラダー効きを維持
     } else {
-      const uBear = clamp((orientState.elapsed - 4.6) / 1.35, 0, 1);
+      const uBear = clamp((orientState.elapsed - 5.8) / 1.4, 0, 1);
       const sBear = uBear * uBear * (3 - 2 * uBear);
       const tgtAngle = luffRad + (closeRad - luffRad) * sBear;
       const tgtH = wrap(player.windFrom - tgtAngle);
-      // 低速からのベアアウェイでも実艇のラダー操作のように滑らかに42°クローズへ落とせるよう回頭をアシスト
       player.h = wrap(player.h + wrap(tgtH - player.h) * (1 - Math.exp(-dt * 4.2)));
       player.steer = clamp(wrap(tgtH - player.h) * 3.0, -0.75, 0.75);
+      // シートは自動トリムでクローズ最適量へスムーズに戻る（手動で「引く」ボタンは使わない）
       const tgtSheet = 0.08 + (sheetOpt(closeRad) - 0.08) * sBear;
       player.sheet += (tgtSheet - player.sheet) * (1 - Math.exp(-dt * 6.5));
       player.easingSheet = false;
-      player.pullingSheet = orientState.elapsed < 8.4;
+      player.pullingSheet = false;
       player.throttle = 1.0;
-      if (uBear > 0.55 && player.v < 2.18 * SPEED_SCALE) {
-        player.v = Math.min(2.18 * SPEED_SCALE, player.v + dt * 1.15 * SPEED_SCALE);
+      const targetAccV = (1.15 + 0.62 * sBear) * SPEED_SCALE;
+      if (player.v < targetAccV) {
+        player.v = Math.min(targetAccV, player.v + dt * 0.75 * SPEED_SCALE);
       }
     }
-    cam.yaw = cam.targetYaw = -0.26 + Math.sin(orientState.elapsed * 0.35) * 0.06;
-    cam.pitch = cam.targetPitch = -0.02;
+    cam.targetYaw = -0.08;
+    cam.targetPitch = 0.01;
   } else if (idx === 2) {
-    // STEP 3: カウントダウン → クローズホールド(42°・約4.55kt)を維持して0:00に合わせてスタート！
+    // STEP 3: STEP 2からシームレスに継続し、クローズホールド(42°)で加速して0:00直後にスタートラインを切る（ワープなし）
     player.throttle = 1.0;
-    player.sheet = sheetOpt(closeRad);
-    player.steer = clamp(wrap((player.windFrom - closeRad) - player.h) * 4.0, -1, 1);
-    cam.yaw = cam.targetYaw = 0.06;
-    cam.pitch = cam.targetPitch = 0.03;
+    player.easingSheet = false;
+    player.pullingSheet = false;
+    player.sheet += (sheetOpt(closeRad) - player.sheet) * (1 - Math.exp(-dt * 7.0));
+    player.steer = clamp(wrap((player.windFrom - closeRad) - player.h) * 3.6, -0.9, 0.9);
+    cam.targetYaw = 0.02;
+    cam.targetPitch = 0.02;
   } else if (idx === 3) {
     // STEP 4: クローズホールド 39°〜43° + ブローで少し上す動き
     const inPuff = orientState.elapsed > 2.5 && orientState.elapsed < 7.2;
@@ -1872,9 +1890,10 @@ function orientationStep(dt, time) {
       cam.pitch = cam.targetPitch = 0.05;
     }
   } else if (idx === 6) {
-    // STEP 7: 3マーク回航後のポートタック・リーチング(TWA約131°)でフィニッシュラインを切る
+    // STEP 7: 3マーク回航後のランチャーUP＋ポートタック・リーチング(TWA約131°)でフィニッシュラインを切る
     const thetaFin = orientState.finTheta || 2.28;
     const tgtH = wrap(W0 + thetaFin);
+    player.pole = true;
     player.steer = clamp(wrap(tgtH - player.h) * 3.2, -1, 1);
     player.sheet = sheetOpt(player.twa);
     player.throttle = 1.0;
@@ -1884,32 +1903,29 @@ function orientationStep(dt, time) {
     // STEP 8: フィニッシュ通過後の惰性リーチング（カメラはフィニッシュ船からの実戦リザルトアングル）
     const thetaFin = orientState.finTheta || 2.28;
     const tgtH = wrap(W0 + thetaFin);
+    player.pole = true;
     player.steer = clamp(wrap(tgtH - player.h) * 2.5, -1, 1);
     player.sheet = sheetOpt(player.twa);
     player.throttle = 0.35;
   }
 
   if (player.tack !== state.lastTack) { if (state.lastTack !== undefined) sailFlog(0.85); state.lastTack = player.tack; }
-  computeBlanket(idx === 1 ? [player] : boats);
+  computeBlanket(idx === 1 || idx === 2 ? [player] : boats);
   for (const b of boats) {
     b.update(dt, state.t, boats);
-    if (idx === 2) {
-      // STEP 3: スナイプ級の自然なクローズ全開艇速(約4.55kt)で0:00直後にスタートラインを切る軌道に同期
-      const startV = 2.34 * SPEED_SCALE;
-      b.v = startV;
-      if (b.isPlayer && state.t <= 0.05) {
-        const vA = startV * Math.cos(closeRad);
-        const vC = -startV * Math.sin(closeRad);
-        const cCross = 22;
-        const aCross = lineA(cCross) - 3.9;
-        const desiredA = aCross + state.t * vA;
-        const desiredC = cCross + state.t * vC;
-        const pSync = toWorld(desiredA, desiredC);
-        b.x = pSync.x;
-        b.z = pSync.z;
-        b.a = desiredA;
-        b.c = desiredC;
+    if (idx === 2 && b.isPlayer) {
+      // STEP 3: 位置ワープを一切行わず、0:00ちょうどでライン手前約2.2mに到達するよう艇速のみ滑らかにタイミング調整
+      if (state.t < 0) {
+        const tRem = Math.max(0.30, -state.t);
+        const estCrossC = b.c - Math.sin(closeRad) * Math.max(b.v, 1.8 * SPEED_SCALE) * tRem;
+        const aGoal = lineA(estCrossC) - 2.6;
+        const dRem = Math.max(0, (aGoal - b.a) / Math.max(0.4, Math.cos(closeRad)));
+        const wantV = clamp(dRem / tRem, 1.55 * SPEED_SCALE, 2.48 * SPEED_SCALE);
+        b.v += (wantV - b.v) * (1 - Math.exp(-dt * 4.2));
         b.ocs = false;
+      } else {
+        const cruiseStartV = 2.34 * SPEED_SCALE;
+        b.v += (cruiseStartV - b.v) * (1 - Math.exp(-dt * 2.5));
       }
     } else if (idx === 5 && orientState.phase2 && b.isPlayer && orientState._m3Sync) {
       const ms = orientState._m3Sync;
@@ -1952,7 +1968,7 @@ function orientationStep(dt, time) {
   if (idx === 2) signals(prev, state.t);
 
   if (orientState.elapsed >= st.dur) {
-    if (orientState.step < ORIENT_STEPS.length - 1) setOrientStep(orientState.step + 1);
+    if (orientState.step < ORIENT_STEPS.length - 1) setOrientStep(orientState.step + 1, orientState.step);
     else exitOrientation(false); // 最後まで終わったらスタート画面へ戻る
   }
 }
@@ -3462,6 +3478,11 @@ function initMenu() {
     isAudioRunning,
     isBgmPlaying,
     enterStartMenu,
+    orientState,
+    setOrientStep,
+    orientationStep,
+    startOrientation,
+    exitOrientation,
     resetHailCooldowns: () => { globalHailCD = 0; pairHailUntil.clear(); for (const b of boats) b.hailCD = 0; },
   };
 

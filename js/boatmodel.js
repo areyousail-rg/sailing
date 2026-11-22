@@ -488,8 +488,8 @@ function mainSailTexture(no, color, nat = 'JPN', isPlayer = false, animalPairLog
     drawAnimalPairSailLogo(x, animalPairLogo, letterCol);
   }
 
-  // 9) メインセールのマスト側下部(タック付近)のオリジナルセールロフトマーク (KAZE SAILS: 控えめな印字)
-  drawOriginalSailLoftLogo(x, 40, 942, 0.92, 0.44);
+  // 9) メインセールのマスト側下部(タック付近)のオリジナルセールロフトマーク (KAZE SAILS: 控えめなサイズ)
+  drawOriginalSailLoftLogo(x, 34, 948, 0.62, 0.42);
 
   // 10) メインセールのマストとブームの接着部(タック角: 左下コーナー)の三角形の隙間を再現 (実艇画像2・3枚目準拠)
   x.save();
@@ -586,8 +586,8 @@ function jibTexture() {
     x.beginPath(); x.moveTo(0, y + 6); x.lineTo(256, y - 4); x.stroke();
   }
 
-  // ジブセール前下部(タック角付近)のオリジナルセールロフトマーク
-  drawOriginalSailLoftLogo(x, 34, 478, 1.05, 0.96);
+  // ジブセール前下部(タック角付近)のオリジナルセールロフトマーク (控えめサイズ)
+  drawOriginalSailLoftLogo(x, 26, 484, 0.62, 0.92);
 
   // ジブセール下部の透明ウインドウ (実艇写真準拠のコンパクトなクリア窓)
   const wx = 60, wy = 420, ww = 96, wh = 34;
@@ -1941,8 +1941,8 @@ export class BoatModel {
       this.crew.userData.head.rotation.z = crewHeadTilt * (1 - crewPoleAct);
     }
 
-    // カメラ位置：スキッパーのハイクアウト量に合わせて船内視点でも風上外側への乗り出しが体感できるように調整
-    this.mount.position.set(this.side * (0.36 + 0.18 * helmDeck + lean * 0.68), 1.19 - lean * 0.055, 0.95);
+    // カメラ位置：船尾寄りのオンボード(GoPro風)引き画角に配置し、クルーが画面を占有せずコクピット・セール・前方海面が見渡せるように調整
+    this.mount.position.set(this.side * (0.26 + 0.14 * helmDeck + lean * 0.34), 1.50 - lean * 0.04, 2.02);
 
     // パフォーマンス最適化(24艇対応): CP艇の細かいロープ・リーチリボン更新は3フレームに1回間引いてCPU負荷を軽減
     this._ropeTick = ((this._ropeTick || 0) + 1) % 3;

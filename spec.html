@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ゲームの仕様 | スナイプ級ヨットレース</title>
-  <meta name="description" content="スナイプ級ヨットレースゲームの操作方法、気象・海況、コース、帆走物理、RRS競技規則判定、レートと登場キャラクターの仕様一覧。">
+  <meta name="description" content="スナイプ級ヨットレースゲームの操作方法、気象・海況、コース、帆走物理、RRS競技規則判定、レート制度の仕様一覧。">
   <meta name="theme-color" content="#0f2744">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -253,7 +253,7 @@
       <a href="#course">4. コースと進行</a>
       <a href="#physics">5. 帆走物理と他艇干渉</a>
       <a href="#rules">6. RRS規則判定とペナルティ</a>
-      <a href="#rate">7. レート制度と登場キャラクター</a>
+      <a href="#rate">7. レート制度</a>
       <a href="#review">8. 戦績記録と振り返り分析</a>
     </nav>
 
@@ -454,7 +454,7 @@
     </section>
 
     <section id="rate" class="sec">
-      <h2>7. レート制度と登場キャラクター</h2>
+      <h2>7. レート制度</h2>
       <h3>レートの計算方式</h3>
       <p>初期レートは <span class="num">1500</span> です。「レート：ON」で出走するとレースごとに参加レートを支払い、完走順位に応じたボーナスが加算されます（DSQ・DNF のボーナスは 0）。「レート：OFF」ではレート変動がなく、CP艇の強さも 1500 基準に固定されます。</p>
       <div class="tblWrap">
@@ -483,79 +483,9 @@
           </tbody>
         </table>
       </div>
-      <p class="mute">※ 計算式（20艇時）：順位 p 位のボーナス ＝ round(最大報酬 × (20 − p) / 19)。キャラクター解放は「過去最高到達レート」で判定されるため、一度解放したキャラクターはその後レートが下がっても引き続き選択できます。</p>
-
-      <h3>レート別の登場・解放キャラクター一覧</h3>
-      <p>動物キャラクターは、プレイヤーが自艇で選択できるようになる解放レートより <span class="num">100</span> 低いレート帯から、一足先にライバルCP艇としてレース海面に登場します。</p>
-      <div class="tblWrap">
-        <table>
-          <thead>
-            <tr>
-              <th>キャラクター</th>
-              <th>自艇での選択解放条件</th>
-              <th>CP艇としての登場レート帯</th>
-              <th>備考</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>男性・女性</strong></td>
-              <td><span class="tag init">初期から選択可</span></td>
-              <td class="num">全レート帯で常時登場</td>
-              <td>プレイヤーレートを中心に初級〜上位レベルまで幅広く乗船。</td>
-            </tr>
-            <tr>
-              <td><strong>ネコ</strong></td>
-              <td><span class="tag init">初期から選択可</span></td>
-              <td class="num">全レート帯で常時登場</td>
-              <td>初期設定のクルー。CP艇では初級〜中級帯を中心に常時登場。</td>
-            </tr>
-            <tr>
-              <td><strong>イヌ</strong></td>
-              <td><span class="tag init">初期から選択可</span></td>
-              <td class="num">全レート帯で常時登場</td>
-              <td>CP艇でも全レート帯で常時登場。</td>
-            </tr>
-            <tr>
-              <td><strong>柴犬</strong></td>
-              <td><span class="tag cp">CP専用</span></td>
-              <td class="num">全レート帯で常時登場</td>
-              <td>CPライバル艇専用の動物キャラクター。</td>
-            </tr>
-            <tr>
-              <td><strong>アヒル</strong></td>
-              <td><span class="tag rate">最高レート 1550 到達</span></td>
-              <td class="num">レート 1450 以上で登場</td>
-              <td>1450〜1599帯では複数艇登場する場合あり。</td>
-            </tr>
-            <tr>
-              <td><strong>タヌキ</strong></td>
-              <td><span class="tag rate">最高レート 1650 到達</span></td>
-              <td class="num">レート 1550 以上で登場</td>
-              <td>フィニッシュ運営船のカメラマン等としても乗船。</td>
-            </tr>
-            <tr>
-              <td><strong>ウサギ</strong></td>
-              <td><span class="tag rate">最高レート 1750 到達</span></td>
-              <td class="num">レート 1650 以上で登場</td>
-              <td>中上位〜上位レート帯の高速CP艇として乗船。</td>
-            </tr>
-            <tr>
-              <td><strong>イルカ</strong></td>
-              <td><span class="tag rate">最高レート 1850 到達</span></td>
-              <td class="num">レート 1750 以上で登場</td>
-              <td>上位〜最上位レート帯の強豪CP艇として乗船。</td>
-            </tr>
-            <tr>
-              <td><strong>ペンギン</strong></td>
-              <td><span class="tag rate">最高レート 1950 到達</span></td>
-              <td class="num">レート 1850 以上で登場</td>
-              <td>最上位レート帯のトップライバルCP艇として乗船。</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <p class="mute">※ 計算式（20艇時）：順位 p 位のボーナス ＝ round(最大報酬 × (20 − p) / 19)。</p>
       <ul>
+        <li>レートが上がるほどライバルCP艇の操船精度・風読み・スタート技術が段階的に高くなります。</li>
         <li>スキッパーとクルーに同じ種類の動物がペアで乗っている艇は、メインセール中下部にその動物のシルエットマークが入ります。</li>
         <li>レート帯に応じた下位〜中位のCP艇（レート1640以下では4艇、1780以下では3艇、それ以上では2艇）は、実艇の初心者・練習艇にならってマストトップに黒い球体フロート（沈防止の黒球）を装着しています。</li>
       </ul>

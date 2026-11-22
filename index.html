@@ -10,25 +10,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Shippori+Mincho:wght@700;800&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap">
-  <link rel="stylesheet" href="style.css?v=20261121j">
-  <link rel="stylesheet" href="review.css?v=20261121j">
+  <link rel="stylesheet" href="style.css?v=20261121k">
+  <link rel="stylesheet" href="review.css?v=20261121k">
   <script type="importmap">
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "./js/world.js": "./js/world.js?v=20261121j",
-      "./js/sim.js": "./js/sim.js?v=20261121j",
-      "./js/review.js": "./js/review.js?v=20261121j",
-      "./js/ai.js": "./js/ai.js?v=20261121j",
-      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121j",
-      "./js/snipehull.js": "./js/snipehull.js?v=20261121j",
-      "./js/powerboats.js": "./js/powerboats.js?v=20261121j",
-      "./js/crew.js": "./js/crew.js?v=20261121j",
-      "./js/camera.js": "./js/camera.js?v=20261121j",
-      "./js/course.js": "./js/course.js?v=20261121j",
-      "./js/rules.js": "./js/rules.js?v=20261121j",
-      "./js/audio.js": "./js/audio.js?v=20261121j"
+      "./js/world.js": "./js/world.js?v=20261121k",
+      "./js/sim.js": "./js/sim.js?v=20261121k",
+      "./js/review.js": "./js/review.js?v=20261121k",
+      "./js/ai.js": "./js/ai.js?v=20261121k",
+      "./js/boatmodel.js": "./js/boatmodel.js?v=20261121k",
+      "./js/snipehull.js": "./js/snipehull.js?v=20261121k",
+      "./js/powerboats.js": "./js/powerboats.js?v=20261121k",
+      "./js/crew.js": "./js/crew.js?v=20261121k",
+      "./js/camera.js": "./js/camera.js?v=20261121k",
+      "./js/course.js": "./js/course.js?v=20261121k",
+      "./js/rules.js": "./js/rules.js?v=20261121k",
+      "./js/audio.js": "./js/audio.js?v=20261121k"
     }
   }
   </script>
@@ -581,16 +581,24 @@
       <div class="tgrp mid">
         <button id="tPole" class="tbAct tbPole" type="button" aria-label="ランチャー切替">
           <span class="tbIco" aria-hidden="true">
-            <svg viewBox="0 0 28 28" fill="none">
-              <path d="M14 3.5V22.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="M14 5.5C19.8 7.6 22.8 12.6 21.8 19.5L14 18.4V5.5Z" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-              <path d="M14 7.2C8.4 9.0 5.4 13.6 6.6 19.2L14 17.6" fill="#f59e0b" fill-opacity=".35" stroke="#fbbf24" stroke-width="1.6" stroke-linejoin="round"/>
-              <path d="M14 15.2L5.0 18.8" stroke="#fde047" stroke-width="2.5" stroke-linecap="round"/>
-              <circle cx="5.0" cy="18.8" r="1.8" fill="#fde047"/>
-              <path d="M5.5 23.6C9.5 24.9 18.5 24.9 22.5 23.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity=".75"/>
+            <!-- 船の後方(トランサム側)から見た、クルーがランチャーシートを引いてランチャーを上げている構図 -->
+            <svg viewBox="0 0 32 28" fill="none">
+              <!-- マストと左へ張り出したジブ＆ランチャーポール -->
+              <path d="M16 3.0V21.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M16 5.2C10.5 7.4 6.2 11.4 5.2 16.5L16 14.8Z" fill="#f59e0b" fill-opacity=".28" stroke="#fbbf24" stroke-width="1.3" stroke-linejoin="round"/>
+              <path d="M16 13.8L4.8 16.4" stroke="#fde047" stroke-width="2.4" stroke-linecap="round"/>
+              <circle cx="4.8" cy="16.4" r="1.5" fill="#fde047"/>
+              <!-- 船尾側(右舷)で身を乗り出してランチャーシートを手前に引く人 -->
+              <circle cx="22.8" cy="11.2" r="2.2" fill="currentColor"/>
+              <path d="M22.2 13.8L21.0 19.6M21.8 15.2L18.2 16.2L15.8 15.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+              <!-- マスト側から手元へピンと張られたランチャーシート＋引く矢印 -->
+              <path d="M15.8 15.2L25.4 17.6" stroke="#fde047" stroke-width="1.4" stroke-dasharray="2.2 1.4" stroke-linecap="round"/>
+              <path d="M23.8 15.6L26.2 17.8L23.2 19.2" stroke="#fde047" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <!-- 船尾トランサム(後ろから見たスナイプ船体) -->
+              <path d="M7.5 21.0H24.5L22.2 24.8C19.2 25.7 12.8 25.7 9.8 24.8L7.5 21.0Z" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span class="tbLbl">ランチャー</span>
+          <span class="tbLbl" id="tPoleLbl">ランチャーUP</span>
         </button>
         <button id="tCam" class="tbAct tbCam" type="button" aria-label="視点切替">
           <span class="tbIco" aria-hidden="true">
@@ -603,12 +611,22 @@
               <rect x="10.4" y="10.8" width="7.2" height="6.4" rx="2.4" fill="currentColor" fill-opacity=".28" stroke="currentColor" stroke-width="1.6"/>
               <circle cx="14" cy="14" r="1.7" fill="#38bdf8"/>
             </svg>
+            <!-- GoPro風アクションカメラアイコン (船内オンボード視点用) -->
             <svg class="icoCockpit" viewBox="0 0 28 28" fill="none">
-              <path d="M14 4.2L22.5 21.8C19.8 23.2 8.2 23.2 5.5 21.8L14 4.2Z" fill="currentColor" fill-opacity=".16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-              <path d="M14 4.2V18.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-              <path d="M14 7.5C17.4 9.2 19.2 12.5 18.8 16.5L14 15.6" fill="#2dd4bf" fill-opacity=".35" stroke="#5eead4" stroke-width="1.4" stroke-linejoin="round"/>
-              <circle cx="14" cy="20.2" r="2.2" fill="#5eead4"/>
-              <path d="M3.5 24.4C7 25.5 21 25.5 24.5 24.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-opacity=".65"/>
+              <!-- 上部シャッターボタン -->
+              <rect x="16.8" y="4.8" width="4.8" height="2.4" rx="1" fill="currentColor"/>
+              <!-- カメラ本体(角丸横長ボディ) -->
+              <rect x="3.4" y="7.2" width="21.2" height="15.2" rx="3.2" fill="currentColor" fill-opacity=".20" stroke="currentColor" stroke-width="1.7"/>
+              <!-- 左側の大型広角レンズハウジング -->
+              <rect x="5.4" y="9.0" width="9.4" height="9.4" rx="2.4" fill="#0d2238" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="10.1" cy="13.7" r="3.1" fill="#143c54" stroke="#5eead4" stroke-width="1.5"/>
+              <circle cx="10.1" cy="13.7" r="1.2" fill="#99f6e4"/>
+              <circle cx="8.9" cy="12.5" r="0.6" fill="#ffffff"/>
+              <!-- 右側ステータス液晶画面＆録画赤LED -->
+              <rect x="16.8" y="10.2" width="5.4" height="4.8" rx="1" fill="currentColor" fill-opacity=".24" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="19.5" cy="18.2" r="1.3" fill="#ef4444"/>
+              <!-- 下部マウントフィンガー -->
+              <path d="M11.6 22.4V24.8M16.4 22.4V24.8M10.2 24.4H17.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </span>
           <span class="tbLbl" id="tCamLbl">船内</span>
@@ -882,6 +900,6 @@
     </div>
   </section>
 
-  <script type="module" src="js/main.js?v=20261121j"></script>
+  <script type="module" src="js/main.js?v=20261121k"></script>
 </body>
 </html>
