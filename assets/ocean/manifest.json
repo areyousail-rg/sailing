@@ -1,0 +1,26 @@
+{
+  "resolution": 512,
+  "format": "opaque-rgb-png",
+  "cascades": [
+    {
+      "file": "fft_swell_nh.png",
+      "tileMeters": 42.0,
+      "peakWavelength": 10.5
+    },
+    {
+      "file": "fft_chop_nh.png",
+      "tileMeters": 13.7,
+      "peakWavelength": 2.9
+    },
+    {
+      "file": "fft_ripple_nh.png",
+      "tileMeters": 3.37,
+      "peakWavelength": 0.52
+    },
+    {
+      "file": "fft_foam_jwr.png",
+      "tileMeters": 13.7,
+      "channels": "R=jacobian,G=lacyWeb,B=microFoam"
+    }
+  ]
+}

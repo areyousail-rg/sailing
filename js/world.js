@@ -195,6 +195,19 @@ void main(){
   vH=h;
   vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w;
 }`;
+// ---------- JONSWAP / Tessendorf 2D IFFT 海面テクスチャ (Colab生成: assets/ocean/) ----------
+function makeNeutralOceanTex(r, g, b) {
+  const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.NoColorSpace;
+  t.needsUpdate = true;
+  return t;
+}
+const fftTexSwell = makeNeutralOceanTex(128, 128, 128);
+const fftTexChop = makeNeutralOceanTex(128, 128, 128);
+const fftTexRipple = makeNeutralOceanTex(128, 128, 128);
+const fftTexFoam = makeNeutralOceanTex(0, 0, 0);
+
 const waterMat = new THREE.ShaderMaterial({
   defines: { NWAVE: MOBILE ? 3 : 4, NSPEC: MOBILE ? 7 : 11 },
   stencilWrite: true,
@@ -211,18 +224,56 @@ const waterMat = new THREE.ShaderMaterial({
     uPatchC: { value: new THREE.Vector3() }, uPatchR: { value: 192 }, uBaseY: { value: 0 },
     uBoatPos: { value: new THREE.Vector4(0, -9999, -9999, 0) },
     uNearBoats: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, -9999, -9999, 0)) },
+    uTexSwell: { value: fftTexSwell },
+    uTexChop: { value: fftTexChop },
+    uTexRipple: { value: fftTexRipple },
+    uTexFoam: { value: fftTexFoam },
+    uFftReady: { value: 0.0 },
   },
   vertexShader: SEA_VS,
   fragmentShader: `
 precision highp float;
-varying vec3 vW; varying float vH; uniform float uTime; uniform float uWT; uniform float uW0; uniform float uWindKt; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform float uChop; uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
+varying vec3 vW; varying float vH;
+uniform float uTime; uniform float uWT; uniform float uW0; uniform float uWindKt; uniform float uSideBias; uniform float uShift; uniform float uGen; uniform float uChop;
+uniform vec4 uSeaA[4]; uniform vec4 uSeaB[4]; uniform vec4 uNearBoats[8];
+uniform sampler2D uTexSwell; uniform sampler2D uTexChop; uniform sampler2D uTexRipple; uniform sampler2D uTexFoam; uniform float uFftReady;
 ${SKY_FN}
 float hh(vec2 p){ p=mod(p,289.0); return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
+
+// 回転させたFFT法線勾配(sl.x=横風, sl.y=風下)をワールドXZ勾配へ変換
+vec2 rotSlope(vec2 sl, float cs, float sn, vec2 wp, vec2 wd){
+  vec2 rx = wp * cs + wd * sn;
+  vec2 ry = -wp * sn + wd * cs;
+  return rx * sl.x + ry * sl.y;
+}
+
+// 1カスケードの2位相クロスドリフトFFTサンプリング(タイル反復感を消し、波が自然に立ち上がり崩れる動きを再現)
+void sampleCascade(
+  sampler2D tex, vec2 wuv, float tileL, float speedA, float speedB,
+  float angA, float angB, float scaleB, float amp, float distFade,
+  vec2 wp, vec2 wd,
+  out vec2 outG, out float outH, out vec2 uvA, out vec2 uvB
+){
+  float cA = cos(angA), sA = sin(angA);
+  float cB = cos(angB), sB = sin(angB);
+  vec2 pA = vec2(wuv.x * cA + wuv.y * sA, -wuv.x * sA + wuv.y * cA);
+  vec2 pB = vec2(wuv.x * cB + wuv.y * sB, -wuv.x * sB + wuv.y * cB);
+  uvA = vec2(pA.x, pA.y - uWT * speedA) / tileL;
+  uvB = (vec2(pB.x, pB.y - uWT * speedB) / (tileL * scaleB)) + vec2(0.37, 0.61);
+  vec3 sA3 = texture2D(tex, uvA).rgb;
+  vec3 sB3 = texture2D(tex, uvB).rgb;
+  vec2 slA = (sA3.rg * 2.0 - 1.0);
+  vec2 slB = (sB3.rg * 2.0 - 1.0);
+  vec2 gA = rotSlope(slA, cA, sA, wp, wd);
+  vec2 gB = rotSlope(slB, cB, sB, wp, wd);
+  outG = (gA * 0.58 + gB * 0.42) * amp * distFade;
+  outH = ((sA3.b - 0.5) * 0.58 + (sB3.b - 0.5) * 0.42) * 2.0 * distFade;
+}
+
 void main(){
   vec2 p=vW.xz;
   vec3 V=normalize(cameraPosition-vW); float dist=length(cameraPosition-vW);
-  // 1ピクセルが海面上で覆う実空間サイズ[m]を算出。手前〜中景(240m以内)は元の鮮やかな凹凸を一切変えず、かなり奥の遠景ノイズのみ滑らかに減衰する
   vec2 dxW=dFdx(p);
   vec2 dyW=dFdy(p);
   float pxFoot=max(length(dxW),length(dyW));
@@ -230,8 +281,8 @@ void main(){
   float foot=max(pxFoot,geomFoot);
   float farMask=smoothstep(240.0,560.0,dist);
   float farFoot=max(0.0,foot-1.2)*farMask;
-  // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd0)へ流れるブローを算出する
-  // 海面テクスチャの座標軸(wd0, wp0)は時間変化しない基準風向(uW0)に完全固定することで、シフト変化時に海面の流れが横滑りしたり風向とずれる現象を根絶する
+
+  // 風: sim.js windAt と完全に同じ式で、風上(uDir)から風下(wd)へ流れるブローを算出
   vec2 uDir=vec2(sin(uW0),-cos(uW0));
   vec2 rDir=vec2(cos(uW0),sin(uW0));
   float ca=dot(p,uDir), cc=dot(p,rDir);
@@ -242,125 +293,121 @@ void main(){
   float puff=smoothstep(-0.15,0.72,0.50*p1+0.32*p2+0.18*p3);
   float sideNorm=clamp(cc/160.0,-1.2,1.2);
   float wf=clamp(0.86+0.34*puff+uSideBias*sideNorm*0.065,0.72,1.32);
-  // wd0 = 風が吹いていく風下方向単位ベクトル(-uDir)、wp0 = 風に直交する横方向単位ベクトル
   vec2 wd=vec2(-sin(uW0),cos(uW0));
   vec2 wp=vec2(-wd.y,wd.x);
   float wu=dot(p,wp), wv=dot(p,wd);
+  vec2 wuv=vec2(wu,wv);
   float gust=smoothstep(0.84,1.18,wf);
   float blow=smoothstep(0.98,1.16,wf);
-  // 局所風速[kt]: 14knotを超えたあたりから強風で波が高くなり波頭が崩れて白波(ホワイトキャップ)が発生し始め、風が強くなるほど密度・規模が増大する
   float localKt=uWindKt*(0.88+0.36*puff+uSideBias*sideNorm*0.065);
   float over14=max(localKt-13.8,(uWindKt-13.8)*0.92);
   float whitecapIntensity=clamp(over14/3.6,0.0,1.95);
 
   vec2 g=vec2(0.0);
   float wH=0.0;
-  float farCrestField=0.0;
   float subRough=0.0;
-  // 1) 風下方向(wd)へ伝播する立体的なベース波浪(近〜中景は元のまま、遠景のみフットプリント減衰)
-  for(int i=0;i<NWAVE;i++){
-    float fi=float(i);
-    float spread=(fi-1.5)*mix(0.12,0.22,farMask);
-    vec2 d=normalize(wd*cos(spread)+wp*sin(spread));
-    float k=0.14*pow(1.72,fi); float A=0.62*pow(0.54,fi);
-    float w=sqrt(9.81*k)*0.95;
-    float fade=exp(-dist*k*0.0032-farFoot*k*0.72);
-    float ak=A*k*uGen;
-    subRough+=ak*ak*(1.0-fade)*0.16*farMask;
-    if(fade<0.015) continue;
-    float ph=mod(dot(d,p)*k-uWT*w+fi*1.7,628.3185);
-    float s=sin(ph), co=cos(ph);
-    // 波頭が尖り谷がなだらかになるトロコイド風の勾配強調で立体感を高める
-    float sharp=1.0+0.28*s;
-    g+=d*(A*k*co*sharp)*fade*uGen*1.45;
-    wH+=A*s*fade*uGen;
-    farCrestField+=max(0.0,s+0.35*co)*pow(0.68,fi)*mix(1.0,fade,farMask);
-  }
-  // 2) 海況(三角波・うねり・短周期の風浪): sim.js waveSample と完全に同じ成分・同じ進行方向で法線と高さを算出
+
+  // 1) 物理同期うねり(uSeaA/uSeaB): sim.js waveSample と同一成分で船体の上下動・波切りと完全一致させる
   for(int i=0;i<4;i++){
     vec4 A=uSeaA[i]; vec4 B=uSeaB[i];
-    float fd=exp(-dist*A.z*0.0040-farFoot*A.z*0.72);
-    float az=A.w*A.z*1.35;
+    float fd=exp(-dist*A.z*0.0038-farFoot*A.z*0.65);
+    float az=A.w*A.z*1.18;
     subRough+=az*az*(1.0-fd)*0.16*farMask;
     if(fd>0.015){
       float ph=mod(A.z*dot(A.xy,p)-B.x*uWT+B.y,6.2831853);
       float s=sin(ph), co=cos(ph);
       float sharp=1.0+0.30*s;
-      g+=A.xy*(A.w*A.z*co*sharp)*fd*1.90;
+      g+=A.xy*(A.w*A.z*co*sharp)*fd*1.65;
       wH+=A.w*s*fd;
-      farCrestField+=max(0.0,s+0.40*co)*clamp(A.w*A.z*3.2,0.15,0.95)*mix(1.0,fd,farMask);
     }
   }
   vec2 gBase=g;
-  // 3) 実海面の風浪スペクトル: 手前は元のざらざらとした自然な水面凹凸を完全維持し、
-  //    遠景(70m以遠)でピクセルより細かくなった波だけをナイキスト基準で滑らかな反射ボケへ変換する
-  float windAmp=clamp(uWindKt/11.0,0.50,1.25)*(0.66+0.55*gust);
-  // 波群(ウェーブグループ): 場所ごとに波の立ち方が変化し、均一なタイル感をなくす
-  float grpAA=exp(-farFoot*0.04);
-  float grp=mix(1.0,0.72+0.56*vn(vec2(wu*0.018+3.1,wv*0.014-uWT*0.06)),grpAA);
-  float lam0=mix(7.5,3.4,uChop);
-  float spreadA=mix(0.95,1.30,uChop);
-  float stpBase=mix(0.105,0.165,uChop);
-  vec2 gs=vec2(0.0);
-  for(int i=0;i<NSPEC;i++){
-    float fi=float(i);
-    float lam=lam0*pow(0.72,fi);
-    float k=6.2831853/lam;
-    float ang=sin(fi*2.39996+0.6)*spreadA;
-    vec2 d=normalize(wd*cos(ang)+wp*sin(ang));
-    float stp=stpBase*(0.80+0.40*fract(fi*0.618+0.3))*windAmp*grp;
-    // 近〜中景は元の exp(-dist*k*0.0010) そのまま、遠景のみ farFoot でナイキスト減衰
-    float fk=exp(-dist*k*0.0010-farFoot*k*0.62);
-    subRough+=stp*stp*(1.0-fk)*0.5;
-    if(fk<0.012) continue;
-    float om=sqrt(9.81*k);
-    float ph=mod(dot(d,p)*k-om*uWT+fi*4.13,6.2831853);
-    // 波頭が尖り谷が広い実際の風浪の形(チョップほど波頭が鋭い)
-    gs+=d*(stp*cos(ph)*(1.0+(0.25+0.35*uChop)*sin(ph)))*fk;
-  }
+
+  // 2) Colab生成 3カスケード JONSWAP / Tessendorf 2D IFFT スペクトル波浪
+  float windAmp=clamp(uWindKt/10.5,0.48,1.38)*(0.74+0.44*gust);
+  float grpAA=exp(-farFoot*0.035);
+  float grp=mix(1.0,0.78+0.44*vn(vec2(wu*0.016+2.3,wv*0.013-uWT*0.055)),grpAA);
+
+  float swellFade=exp(-dist*0.00055-farFoot*0.075);
+  float chopFade=exp(-dist*0.0022-farFoot*0.26);
+  float rippleFade=exp(-dist*0.0095-farFoot*0.68);
+
+  float swellAmp=(0.30+0.26*uGen)*mix(0.85,1.18,clamp(uWindKt/14.0,0.0,1.0))*grp;
+  float chopAmp=mix(0.24,0.42,uChop)*windAmp*grp;
+  float rippleAmp=(0.13+0.15*gust+0.12*blow)*clamp(uWindKt/9.5,0.45,1.45);
+
+  vec2 gSwell, gChop, gRipple;
+  float hSwell, hChop, hRipple;
+  vec2 uvSwA, uvSwB, uvChA, uvChB, uvRpA, uvRpB;
+
+  sampleCascade(uTexSwell, wuv, 42.0, 4.15, 3.35, 0.14, -0.17, 1.31, swellAmp, swellFade, wp, wd, gSwell, hSwell, uvSwA, uvSwB);
+  sampleCascade(uTexChop, wuv, 13.7, 2.35, 1.88, 0.22, -0.26, 1.37, chopAmp, chopFade, wp, wd, gChop, hChop, uvChA, uvChB);
+  sampleCascade(uTexRipple, wuv, 3.37, 0.96, 0.72, 0.31, -0.36, 1.43, rippleAmp, rippleFade, wp, wd, gRipple, hRipple, uvRpA, uvRpB);
+
+  float fftOn=uFftReady;
+  vec2 gs=(gSwell+gChop+gRipple)*fftOn;
+  gBase+=gSwell*0.85*fftOn;
+  float fftH=(hSwell*0.58+hChop*0.32+hRipple*0.10)*fftOn;
+
+  // 距離でミップ減衰した微細波エネルギーを法線分散粗さ(subRough)へ変換し、遠景のギラつきを防ぎつつ自然な光沢の帯を作る
+  subRough+=fftOn*(
+    swellAmp*swellAmp*(1.0-swellFade)*0.12 +
+    chopAmp*chopAmp*(1.0-chopFade)*0.22 +
+    rippleAmp*rippleAmp*(1.0-rippleFade)*0.35 +
+    (0.012+0.028*gust+0.024*blow)
+  );
 
   vec2 gn=g+gs;
   vec3 n=normalize(vec3(-gn.x,1.0,-gn.y));
-  float ndv=max(dot(n,V),0.0);
-  float sig=sqrt(subRough);
-  // フレネル反射(水の屈折率1.33: 真上から見ると約2%、浅い角度ほど空を強く映す)。細かい粗さがあるほど反射は弱く・青くなる
-  float ndvR=clamp(ndv+sig*0.55,0.0,1.0);
-  float F=min(0.02+0.98*pow(1.0-ndvR,5.0),0.82);
-  vec3 R=reflect(-V,n); R.y=abs(R.y);
-  // 空の映り込み(ほんのわずかに抑えめ)
-  vec3 refl=skyBase(normalize(vec3(R.x,R.y+sig*0.35,R.z)))*0.86;
+  float ndv=max(dot(n,V),0.001);
+  float sig=sqrt(max(0.0004,subRough));
 
-  // 水中から散乱して戻る光(海の地の色): 真上から見るほど深い紺、斜めに見るほどわずかに青緑寄り
+  // Schlick Fresnel (水屈折率1.33 -> F0=0.02): 波面粗さが高いブロー域では反射がやや拡散し海面が引き締まる
+  float ndvR=clamp(ndv+sig*0.48,0.0,1.0);
+  float F=min(0.02+0.98*pow(1.0-ndvR,5.0),0.86);
+  vec3 R=reflect(-V,n); R.y=abs(R.y);
+  // 空と水平線の映り込み (波面粗さに応じてわずかに地平線方向へ柔らかくぼかす)
+  vec3 refl=skyBase(normalize(vec3(R.x,R.y+sig*0.28,R.z)))*0.92;
+
+  // 3) 水中散乱・波頭透過(サブサーフェススキャタリング): 実測FFT波高＋急峻度により、逆光・斜光で波の峰が透明な青緑に透ける
   float sunLit=clamp(dot(n,uSun)*0.5+0.5,0.0,1.0);
-  float elev=clamp(wH*1.45+vH*0.62,-1.0,1.0);
-  vec3 deepCol=vec3(0.010,0.050,0.098);
-  vec3 scatCol=vec3(0.020,0.118,0.165);
-  vec3 body=mix(deepCol,scatCol,0.30+0.40*(1.0-ndv));
-  // 波の峰の薄い水が透ける(サブサーフェス散乱)＋太陽に向いていない時も太陽光が水中に差し込んで透けるうっすらとした透明感
-  float trans=pow(clamp(dot(V,normalize(-uSun+vec3(0.0,0.60,0.0))),0.0,1.0),3.0);
+  float elev=clamp(wH*1.25+vH*0.55+fftH*0.95,-1.0,1.25);
+  vec3 deepCol=vec3(0.010,0.054,0.108);
+  vec3 midCol=vec3(0.018,0.124,0.178);
+  vec3 body=mix(deepCol,midCol,0.30+0.42*(1.0-ndv));
+
+  float crestThin=smoothstep(0.00,0.85,elev)*clamp(0.48+length(gSwell+gChop)*1.40,0.48,1.40);
+  float backLight=pow(clamp(dot(V,normalize(-uSun+vec3(0.0,0.48,0.0))),0.0,1.0),2.5);
   vec2 vHoriz=normalize(vec2(-V.x,-V.z)+vec2(1e-6,0.0));
   float sunAz=dot(vHoriz,normalize(uSun.xz));
   float offSun=1.0-smoothstep(0.20,0.88,sunAz);
-  float crestGlow=smoothstep(-0.08,0.72,elev)*(0.26+0.18*sunLit)*offSun;
-  float sssAmt=smoothstep(0.0,0.9,elev)*(0.12+0.85*trans)+crestGlow;
-  body+=vec3(0.020,0.150,0.140)*sssAmt;
-  // 順光・側光でも海面下へ透過した光が波の斜面や浅層で青緑に澄んで見える水中散乱(近〜中景中心にうっすら付与)
-  float sunPen=pow(sunLit,1.35)*(0.42+0.58*smoothstep(-0.32,0.55,elev));
-  float rippleClarity=clamp(length(gs)*2.2,0.0,1.0)*exp(-dist*0.006-farFoot*0.35);
-  body+=vec3(0.016,0.115,0.125)*offSun*(0.30*sunPen+0.14*rippleClarity)*exp(-dist*0.0016);
-  body*=0.82+0.28*sunLit;
+  float sssAmt=crestThin*(0.24+0.96*backLight)+smoothstep(-0.06,0.68,elev)*(0.26+0.20*sunLit)*offSun;
+  body+=vec3(0.018,0.180,0.168)*sssAmt;
+  // 順光〜側光での浅層水中透過光(波斜面の澄んだ青緑感)
+  float sunPen=pow(sunLit,1.30)*(0.42+0.58*smoothstep(-0.28,0.58,elev));
+  float rippleClarity=clamp(length(gChop+gRipple)*2.2,0.0,1.0)*exp(-dist*0.0055-farFoot*0.35);
+  body+=vec3(0.014,0.118,0.130)*offSun*(0.30*sunPen+0.16*rippleClarity)*exp(-dist*0.0015);
+  // 谷(トラフ)のアンビエントオクルージョンで波の陰影と立体感を際立たせる
+  float troughAO=mix(0.78,1.10,smoothstep(-0.72,0.42,elev));
+  body*=troughAO*(0.82+0.30*sunLit);
 
   vec3 col=mix(body,refl,F);
-  // 太陽のきらめき(サングリッター): 手前は元の鋭い粒状のきらめき、遠くはピクセル粗さで滑らかに広がった光の道になる
-  float roughK=clamp(sig*5.0+smoothstep(0.8,10.0,farFoot)*0.50,0.0,1.0);
-  float shin=mix(900.0,52.0,roughK);
-  float sd=max(dot(R,uSun),0.0);
-  float farSpecCalm=mix(1.0,0.65,smoothstep(1.2,12.0,farFoot));
-  float spec=(pow(sd,shin)*(shin*0.012)+pow(sd,shin*0.12)*0.035)*farSpecCalm;
-  col+=vec3(1.0,0.94,0.82)*spec*clamp(F*6.0,0.15,1.0);
-  // 太陽側のサングリッターはそのまま維持し、太陽と逆方向(sunAz < 0)では不自然な白い点々を出さず、
-  // 太陽寄りの斜め方向(sunAz > 0)の繊細な周辺きらめきと、逆光以外の自然な空色波面ツヤのみを控えめに重ねる
-  vec2 gnGlint=g*0.35+gs*1.25;
+
+  // 4) エネルギー保存型 GGX サングリッター(太陽光のきらめき道):
+  //    近景ではFFTさざ波の鋭いファセットがダイヤモンド状にきらめき、遠景はroughness上昇で滑らかな光の道へ移行
+  vec3 Hsun=normalize(V+uSun);
+  float ndh=max(dot(n,Hsun),0.0);
+  float alphaG=clamp(0.034+sig*0.25+smoothstep(0.8,10.0,farFoot)*0.14,0.030,0.34);
+  float a2=alphaG*alphaG;
+  float denom=ndh*ndh*(a2-1.0)+1.0;
+  float Dggx=a2/(3.14159265*denom*denom+1e-5);
+  float farSpecCalm=mix(1.0,0.68,smoothstep(1.2,12.0,farFoot));
+  float ggxSpec=min(Dggx*0.035,4.6)*farSpecCalm;
+  float sunBroad=pow(max(dot(R,uSun),0.0),mix(64.0,16.0,clamp(sig*3.2,0.0,1.0)))*0.058;
+  col+=vec3(1.0,0.95,0.84)*(ggxSpec+sunBroad)*clamp(F*6.4,0.20,1.0);
+
+  // 太陽寄りの繊細な周辺きらめき＋波表斜面の柔らかな空色ツヤ(逆光以外の不自然な白点は出さない)
+  vec2 gnGlint=g*0.35+(gChop*0.85+gRipple*1.40)*fftOn;
   vec3 nGlint=normalize(vec3(-gnGlint.x,1.0,-gnGlint.y));
   vec3 Rglint=reflect(-V,nGlint);
   float vTan=V.y/max(length(V.xz),0.25);
@@ -370,66 +417,57 @@ void main(){
   float sdSky=max(dot(Rglint,skyGlintDir),0.0);
   float frontFace=smoothstep(0.11,0.28,ndv);
   float solarCoronaAz=smoothstep(-0.02,0.56,sunAz)*offSun;
-  float shinSky=mix(920.0,220.0,clamp(sig*4.2+farMask*0.35,0.0,1.0));
-  float specSky=pow(sdSky,shinSky)*(shinSky*0.0020);
-  float skyGlintMask=solarCoronaAz*frontFace*(0.35+0.65*sunLit)*(0.25+0.75*smoothstep(-0.05,0.58,elev))*exp(-dist*0.0115-farFoot*0.42);
-  vec3 skyGlintCol=mix(vec3(0.88,0.95,1.0),vec3(1.0,0.95,0.84),sunLit);
-  col+=skyGlintCol*min(specSky*skyGlintMask*0.11,0.16);
-  // 太陽と逆方向〜横方向では白い点ではなく、波の表斜面が空の青みを柔らかく拾う控えめなツヤのみ付与
-  float shinBroad=mix(76.0,28.0,clamp(sig*4.0+farMask*0.30,0.0,1.0));
-  float broadSheen=pow(sdSky,shinBroad)*0.024*offSun*frontFace*(0.35+0.65*smoothstep(-0.08,0.52,elev))*exp(-dist*0.0065-farFoot*0.18);
-  col+=vec3(0.46,0.68,0.86)*broadSheen;
+  float shinSky=mix(880.0,180.0,clamp(sig*4.0+farMask*0.35,0.0,1.0));
+  float specSky=pow(sdSky,shinSky)*(shinSky*0.0018);
+  float skyGlintMask=solarCoronaAz*frontFace*(0.35+0.65*sunLit)*(0.25+0.75*smoothstep(-0.05,0.58,elev))*exp(-dist*0.011-farFoot*0.42);
+  col+=mix(vec3(0.88,0.95,1.0),vec3(1.0,0.95,0.84),sunLit)*min(specSky*skyGlintMask*0.11,0.16);
+  float shinBroad=mix(72.0,26.0,clamp(sig*3.8+farMask*0.30,0.0,1.0));
+  float broadSheen=pow(sdSky,shinBroad)*0.028*offSun*frontFace*(0.35+0.65*smoothstep(-0.08,0.52,elev))*exp(-dist*0.0062-farFoot*0.18);
+  col+=vec3(0.46,0.72,0.90)*broadSheen;
 
-  // ブロー(風の強い海面のさざ波): 近〜中景は元のまま、遠景のみ細かいノイズ(catpaw/streak)を滑らかに平均化
-  float catpawAA=exp(-farFoot*0.20);
-  float catpaw=mix(0.76,0.55+0.45*vn(vec2(wu*0.35,adv*0.16)),catpawAA);
-  col*=mix(1.02,0.91,smoothstep(0.76,1.22,wf));
-  col=mix(col,col*vec3(0.82,0.87,0.93),blow*(0.16+0.16*catpaw)*exp(-dist*0.0006));
+  // 5) ブロー(ガスト)のキャッツポー視認性: FFTさざ波粗さ＋自然な暗色化＋わずかなラングミュア風筋
+  float catpawAA=exp(-farFoot*0.22);
+  float catpaw=mix(0.74,0.48+0.52*clamp(abs(hRipple)*1.4+length(gRipple)*1.6,0.0,1.0),catpawAA);
+  col*=mix(1.02,0.90,smoothstep(0.76,1.22,wf));
+  col=mix(col,col*vec3(0.80,0.86,0.93),blow*(0.15+0.17*catpaw)*exp(-dist*0.00055));
+
+  // ラングミュア風筋(風下に沿うごく淡い泡・水流の筋) & 14kt超の強風ホワイトキャップ(FFTヤコビアン＋高精細レース泡)
   if(dist<2600.0){
-    float streakAA=exp(-dist*0.0012-farFoot*0.28);
+    vec3 fmA=texture2D(uTexFoam, uvSwA).rgb;
+    vec3 fmB=texture2D(uTexFoam, uvChA).rgb;
+    vec3 fmC=texture2D(uTexFoam, uvRpA * 0.72).rgb;
+    float streakAA=exp(-dist*0.0014-farFoot*0.30);
     if(streakAA>0.01){
-      float streak=smoothstep(0.75,0.94,vn(vec2(wu*0.28,adv*0.10)));
-      col+=vec3(0.22,0.38,0.50)*streak*0.035*(0.4+gust)*streakAA;
+      float langmuir=smoothstep(0.58,0.90,fmB.g*0.62+fmC.b*0.38)*smoothstep(0.55,0.92,vn(vec2(wu*0.22,adv*0.055)));
+      col+=vec3(0.24,0.38,0.48)*langmuir*(0.038*(0.35+gust)+0.058*min(whitecapIntensity,1.2))*streakAA;
+    }
+    if(whitecapIntensity>0.001){
+      float wcFarFade=exp(-dist*0.00072-farFoot*0.16);
+      if(wcFarFade>0.012){
+        vec2 fmD=texture2D(uTexFoam, uvRpB * 0.92).gb;
+        float wci=clamp(whitecapIntensity,0.0,1.95);
+        float jacCrest=clamp(fmA.r*0.60+fmB.r*0.62,0.0,1.35);
+        float fwdSlope=max(0.0,dot(gBase,wd));
+        float crestEnergy=jacCrest+fwdSlope*0.75+max(0.0,elev)*0.48+max(0.0,hChop)*0.28;
+        float frothCell=clamp(fmC.b*0.52+fmB.g*0.30+fmD.y*0.38,0.0,1.2);
+        // 砕波リップ: ヤコビアン波頭に高周波の泡セルを掛け合わせ、ぼやけずシャープに砕ける白波を表現
+        float lipMask=smoothstep(0.72-0.14*min(wci,1.3),1.18,crestEnergy+frothCell*0.32);
+        float lipCrisp=smoothstep(0.32,0.74,frothCell+lipMask*0.38)*lipMask;
+        // 砕波の背後に尾を引く繊細なレース状海泡ウェブ
+        float webField=smoothstep(0.56-0.12*min(wci,1.3),1.05,crestEnergy);
+        float laceWeb=smoothstep(0.44,0.82,fmB.g*0.48+fmC.g*0.32+fmD.x*0.35);
+        float trailLace=webField*laceWeb*0.58;
+        float onset=smoothstep(0.0,0.22,wci)*(0.60+0.40*min(wci,1.35));
+        float galeFoam=clamp((lipCrisp*0.95+trailLace)*onset,0.0,0.96)*wcFarFade;
+        vec3 foamShadow=vec3(0.84,0.92,0.98);
+        vec3 foamBright=vec3(0.996,0.999,1.0);
+        vec3 foamCol=mix(foamShadow,foamBright,clamp(0.35+0.42*sunLit+0.38*lipCrisp+0.20*fmC.b,0.0,1.0));
+        col=mix(col,foamCol,galeFoam);
+      }
     }
   }
-  col=min(col,vec3(1.6));
-  // 14knot超の強風白波(手前は元のまま、遠景の細かい泡ノイズのみ farFoot で滑らかに減衰)
-  if(dist<2600.0 && whitecapIntensity>0.001){
-    float wcFarFade=exp(-dist*0.00075-farFoot*0.16);
-    if(wcFarFade>0.012){
-      float wci=clamp(whitecapIntensity,0.0,1.95);
-      float fwdSlope=max(0.0,dot(gBase,wd));
-      float wcCrestSlope=length(gBase)*2.15+fwdSlope*1.85+max(0.0,elev)*0.95+farCrestField*0.28;
-      float wcAA1=exp(-farFoot*0.18);
-      float wcAA2=exp(-farFoot*0.52);
-      float wcAA3=exp(-farFoot*1.50);
-      float wcN1=mix(0.50,vn(vec2(wu*0.34,wv*0.78-uWT*2.15)),wcAA1);
-      float wcN2=mix(0.50,vn(vec2(wu*1.35+3.7,wv*2.15-uWT*3.05)),wcAA2);
-      float wcN3=mix(0.50,vn(vec2(wu*3.80-6.2,wv*4.60-uWT*3.90)),wcAA3);
-      float wcDetail=0.50*wcN1+0.32*wcN2+0.18*wcN3;
-      float wcMetric=wcCrestSlope+wcDetail*0.36;
 
-      float warp1=vn(vec2(wu*0.09+1.3,wv*0.09-uWT*0.35))*4.2;
-      float warp2=vn(vec2(wu*0.14-3.8,wv*0.13-uWT*0.48))*4.2;
-      float wv1=sin(wv*0.48-uWT*2.40+warp1);
-      float wv2=sin(wv*0.76-uWT*3.10+warp2+1.7);
-      float sharpCrestLine=smoothstep(0.68-0.10*min(wci,1.3),0.96,wv1)*smoothstep(0.15-0.12*min(wci,1.3),0.82,wv2);
-      float patchCell=mix(0.50,vn(vec2(wu*0.24+2.1,wv*0.36-uWT*1.05))*0.62+vn(vec2(wu*0.58-4.7,wv*0.72-uWT*1.55))*0.38,wcAA1);
-      float patchGate=smoothstep(0.66-0.11*min(wci,1.4),0.84,patchCell);
-      float lipEdge=sharpCrestLine*patchGate*smoothstep(0.62-0.14*min(wci,1.3),0.98,wcMetric*0.65+wcDetail*0.45);
-      float wakePhase=sin(wv*0.48-uWT*2.40+warp1+0.55);
-      float wakeZone=smoothstep(0.42,0.90,wakePhase)*(1.0-sharpCrestLine*0.5)*patchGate;
-      float laceTex=smoothstep(0.48,0.82,wcN2*0.48+wcN3*0.52);
-      float wcMidFar=lipEdge*(0.78+0.22*wcN3)+wakeZone*laceTex*0.42*smoothstep(0.58,0.86,patchCell);
-
-      float onset=smoothstep(0.0,0.20,wci)*(0.62+0.38*min(wci,1.35));
-      float galeFoam=clamp(wcMidFar*onset,0.0,0.96)*wcFarFade;
-      vec3 foamShadow=vec3(0.84,0.92,0.97);
-      vec3 foamBright=vec3(0.995,0.998,1.0);
-      vec3 foamCol=mix(foamShadow,foamBright,clamp(0.35+0.42*sunLit+0.32*galeFoam+0.20*wcN3,0.0,1.0));
-      col=mix(col,foamCol,galeFoam);
-    }
-  }
+  col=min(col,vec3(1.65));
   float fd0=dist*${FOG_DENSITY.toFixed(7)};
   float fogF=1.0-exp(-(fd0*fd0));
   col=mix(col,vec3(0.741,0.835,0.902),fogF);
@@ -437,6 +475,39 @@ void main(){
 }`,
   fog: false,
 });
+
+// 非同期でColab生成FFT海面マップ4枚を読み込み(リニア色空間＋ミップマップ＋異方性フィルタ)
+{
+  const texLoader = new THREE.TextureLoader();
+  const fftSpecs = [
+    ['uTexSwell', './assets/ocean/fft_swell_nh.png?v=20261123d'],
+    ['uTexChop', './assets/ocean/fft_chop_nh.png?v=20261123d'],
+    ['uTexRipple', './assets/ocean/fft_ripple_nh.png?v=20261123d'],
+    ['uTexFoam', './assets/ocean/fft_foam_jwr.png?v=20261123d'],
+  ];
+  let loadedCount = 0;
+  for (const [uni, url] of fftSpecs) {
+    texLoader.load(
+      url,
+      (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.colorSpace = THREE.NoColorSpace;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.anisotropy = MOBILE ? 4 : 8;
+        tex.needsUpdate = true;
+        waterMat.uniforms[uni].value = tex;
+        loadedCount++;
+        if (loadedCount >= fftSpecs.length) {
+          waterMat.uniforms.uFftReady.value = 1.0;
+        }
+      },
+      undefined,
+      () => {}
+    );
+  }
+}
 
 // ---------- 空 ----------
 const skyMat = new THREE.ShaderMaterial({
