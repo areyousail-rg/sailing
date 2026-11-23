@@ -989,7 +989,15 @@ function updateHUD(sorted) {
     const cw = !b.penalty.clearWater ? ' 要クリア' : '';
     hud.pen.textContent = `R${b.penalty.rule} ${turns} ${pct}% (残${sec}s)${cw}`;
   } else hud.pen.style.display = 'none';
-  if (hud.ocs) hud.ocs.style.display = 'none';
+  if (hud.ocs) {
+    if (b.ocs && !b.finished && !b.dsq && !isPrac && !isOrient && t >= 0) {
+      hud.ocs.style.display = 'block';
+      hud.ocs.style.top = (b.penalty ? '128px' : '');
+      hud.ocs.textContent = 'OCS リコール — ライン下へ戻れ';
+    } else {
+      hud.ocs.style.display = 'none';
+    }
+  }
   hud.cam.textContent = 'CAM  ' + CAM_MODES[cam.mode] + ' [C]';
   if (hud.tCam) {
     const isDroneTarget = cam.mode === COCKPIT;
@@ -1000,11 +1008,11 @@ function updateHUD(sorted) {
   }
   if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
   const tpEl = $('timerPanel');
-  if (tpEl) tpEl.classList.toggle('prestartAlert', !isPrac && !isOrient && t < 0 && (t < -54.5 || t > -11));
+  if (tpEl) tpEl.classList.toggle('prestartAlert', !isPrac && !isOrient && t < 0 && (t < -58.4 || t > -11));
   if (!isPrac && !isOrient) {
     const c = Math.ceil(-t);
-    if (t >= -60.5 && t < -55.2) {
-      const fadeOut = t > -56.2 ? clamp((-55.2 - t) / 1.0, 0, 1) : 1;
+    if (t >= -60.5 && t < -58.4) {
+      const fadeOut = t > -59.0 ? clamp((-58.4 - t) / 0.6, 0, 1) : 1;
       hud.big.classList.add('oneMin');
       hud.big.classList.remove('flash');
       const degFav = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
@@ -1091,8 +1099,8 @@ function handleCollision(e) {
     if (!quiet) thud(soundVol(gw.x, gw.z), imp);
     if (!penOn) {
       if (quiet) return;
-      if (gw.isPlayer) toast(`接触 ${e.text} (ペナ無)`, 'warn', 3200);
-      else if (row.isPlayer) miniLog(`${nameOf(gw)} R${e.rule} (ペナ無)`);
+      if (gw.isPlayer) toast(`接触 ${e.text} (ペナルティ無)`, 'warn', 3200);
+      else if (row.isPlayer) miniLog(`${nameOf(gw)} R${e.rule} (ペナルティ無)`);
       return;
     }
     const issued = gw.startPenalty(e.rule === 18 ? 18 : e.rule);
@@ -1109,7 +1117,7 @@ function handleCollision(e) {
       if (e.mark === 'com') thud(v, imp); else markHit(v, imp);
     }
     if (!penOn) {
-      if (!quiet && b.isPlayer) toast('マーク接触 R31 (ペナ無)', 'warn', 3000);
+      if (!quiet && b.isPlayer) toast('マーク接触 R31 (ペナルティ無)', 'warn', 3000);
       return;
     }
     const ok = b.startPenalty(31);
@@ -2050,9 +2058,17 @@ function atGun() {
     }
   }
   if (anyOcs) {
-    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗を掲揚し、追加のホーン1回(スタート号砲と合わせて明確に計2回)を鳴らす(文字通知は出さない)
+    // リコール艇がいる場合: RRS規則29.1(個別リコール)に基づき本部船にX旗掲揚＋追加ホーン＋簡潔な表示
     if ((state.phase === 'race' || state.phase === 'orientation') && !state.paused && !state.ff) {
       signalHorn('recall');
+      if (state.phase === 'race') {
+        if (player && player.ocs) {
+          toast('リコール (OCS) — ライン下へ戻れ', 'bad', 4500);
+          updateHUD(computeRanks());
+        } else {
+          toast('個別リコール (X旗)', 'warn', 3000);
+        }
+      }
     }
   }
 }
@@ -2345,6 +2361,7 @@ function simStep(dt) {
       const pos = boatBowCourse(b);
       if (pos.bowA < lineA(pos.bowC) - 0.35 && pos.a < lineA(pos.c) - 0.5) {
         b.ocs = false;
+        if (b.isPlayer && !state.ff) toast('OCS解消', 'good', 2500);
       }
     }
     if (b.penaltyDone) { b.penaltyDone = false; if (b.isPlayer && !state.ff) toast('ペナルティ消化', 'good', 3000); }
