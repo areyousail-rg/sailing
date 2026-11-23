@@ -3420,12 +3420,6 @@ function initMenu() {
   initPreview();
   setBgmVoiceEnabled(cfg.bgmMode !== 'off');
   prewarmBgm(['menu']);
-  const syncBgmUnlockChip = () => {
-    const chip = $('bgmUnlockChip');
-    if (!chip) return;
-    const needTap = enteredStartMenu && state.phase === 'menu' && cfg.bgmMode !== 'off' && !isBgmPlaying();
-    chip.classList.toggle('hidden', !needTap);
-  };
   // ロード中はBGMを鳴らさず、AudioContextのアンロックのみ受け付け、ロード完了後(enteredStartMenu)からBGMを再生する
   const unlockEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const unlockMenuBgm = () => {
@@ -3438,30 +3432,16 @@ function initMenu() {
         if (ok && enteredStartMenu && state.phase === 'menu' && cfg.bgmMode !== 'off') {
           playBgm('menu');
         }
-        syncBgmUnlockChip();
       });
       playBgm('menu');
-      syncBgmUnlockChip();
     } else {
       unlockAudioNow();
-      syncBgmUnlockChip();
     }
     if (enteredStartMenu && isAudioRunning() && (state.phase !== 'menu' || cfg.bgmMode === 'off' || isBgmPlaying())) {
-      syncBgmUnlockChip();
       unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm, true));
     }
   };
   unlockEvents.forEach((ev) => window.addEventListener(ev, unlockMenuBgm, { capture: true, passive: true }));
-  const chipBtn = $('bgmUnlockChip');
-  if (chipBtn) {
-    chipBtn.onclick = () => {
-      unlockAudioNow().then(() => {
-        if (state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
-        syncBgmUnlockChip();
-      });
-    };
-  }
-  window.__syncBgmUnlockChip = syncBgmUnlockChip;
 }
 
 (async function boot() {
@@ -3524,22 +3504,14 @@ function initMenu() {
   const enterStartMenu = () => {
     if (enteredStartMenu) return;
     const ld = $('loading');
-    if (ld) {
-      ld.classList.remove('ready');
-      ld.classList.add('hidden');
-    }
+    if (ld) ld.classList.add('hidden');
     enteredStartMenu = true;
     clock.getDelta();
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       playBgm('menu');
       unlockAudioNow().then(() => {
         if (state.phase === 'menu' && cfg.bgmMode !== 'off' && !isBgmPlaying()) playBgm('menu');
-        if (window.__syncBgmUnlockChip) window.__syncBgmUnlockChip();
       });
-    }
-    if (window.__syncBgmUnlockChip) {
-      window.__syncBgmUnlockChip();
-      setTimeout(window.__syncBgmUnlockChip, 450);
     }
     // メニューが落ち着いた後にプリスタートBGMだけバックグラウンドで緩やかに事前生成
     setTimeout(() => {
@@ -3588,52 +3560,10 @@ function initMenu() {
     resetHailCooldowns: () => { globalHailCD = 0; pairHailUntil.clear(); for (const b of boats) b.hailCD = 0; },
   };
 
-  // ブラウザの自動再生制限でAudioContextが停止中の場合、ロード100%画面に「タップして開始（♪ BGM ON）」を表示して
-  // 1タップで確実に音声をアンロックしてからスタート画面へ遷移する（自動再生許可環境やBGM OFF時はそのまま即時遷移）
-  const finishLoadingGate = () => {
-    if (enteredStartMenu) return;
-    if (q.has('auto') || cfg.bgmMode === 'off' || isAudioRunning()) {
-      enterStartMenu();
-      return;
-    }
-    const ld = $('loading');
-    const st = $('loadStatusText');
-    const bw = $('loadBarWrap');
-    const btn = $('loadEnterBtn');
-    if (!ld || !btn) {
-      enterStartMenu();
-      return;
-    }
-    if (st) st.classList.add('hidden');
-    if (bw) bw.classList.add('hidden');
-    btn.classList.remove('hidden');
-    ld.classList.add('ready');
-    const onEnterGesture = (ev) => {
-      if (ev && ev.type === 'keydown' && !['Enter', 'Space', ' '].includes(ev.key)) return;
-      if (ev) {
-        if (ev.stopPropagation) ev.stopPropagation();
-        if (ev.type === 'click' && ev.preventDefault) ev.preventDefault();
-      }
-      ld.removeEventListener('click', onEnterGesture);
-      window.removeEventListener('keydown', onEnterGesture);
-      unlockAudioNow();
-      enterStartMenu();
-      if (state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
-    };
-    ld.addEventListener('click', onEnterGesture);
-    window.addEventListener('keydown', onEnterGesture);
-  };
-
-  // 自動再生がブラウザで許可されているか短時間だけ試行してから遷移 or タップ待機へ
-  if (cfg.bgmMode !== 'off' && !q.has('auto')) {
-    unlockAudioNow().finally(() => {
-      requestAnimationFrame(() => requestAnimationFrame(finishLoadingGate));
-    });
-    setTimeout(finishLoadingGate, 260);
-  } else {
-    requestAnimationFrame(() => requestAnimationFrame(finishLoadingGate));
-    setTimeout(finishLoadingGate, 220);
-  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => enterStartMenu());
+  });
+  setTimeout(enterStartMenu, 220);
 
   if (q.has('auto')) {
     enterStartMenu();

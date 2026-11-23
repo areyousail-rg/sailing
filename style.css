@@ -217,7 +217,6 @@ body.touch #miniLog div{font-size:.6rem}
 /* ---------- オーバーレイ / ローディング ---------- */
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10}
 #loading{background:radial-gradient(circle at 50% 34%,#153356 0%,#0a192b 76%);flex-direction:column;gap:14px;z-index:30;transition:opacity .32s ease}
-#loading.ready{cursor:pointer}
 .spinner{display:none}
 .loadingAnimeWrap{width:min(440px,90vw);border-radius:4px;overflow:hidden;border:1px solid rgba(246,243,235,.26);box-shadow:0 18px 46px rgba(3,10,20,.65);background:#0a1c30;position:relative}
 .loadingPixelCanvas{display:block;width:100%;height:auto;aspect-ratio:16/10;image-rendering:pixelated;image-rendering:crisp-edges}
@@ -225,23 +224,6 @@ body.touch #miniLog div{font-size:.6rem}
 #loading p span{color:#f7f4ec}
 .loadBar{width:min(280px,72vw);height:4px;background:rgba(246,243,235,.16);border-radius:2px;overflow:hidden}
 #loadFill{height:100%;width:0;background:linear-gradient(90deg,#f6f3eb 0%,var(--crimson) 100%);transition:width .12s ease-out}
-.loadEnterBtn{
-  margin-top:4px;padding:12px 28px;border-radius:4px;cursor:pointer;
-  background:var(--paper);color:var(--ink);border:2px solid rgba(247,244,236,.9);border-left:5px solid var(--crimson);
-  font-family:var(--f-sans);font-weight:800;font-size:.98rem;letter-spacing:.08em;
-  box-shadow:0 10px 28px rgba(3,10,20,.55);
-  animation:loadPulse 1.6s ease-in-out infinite;
-}
-.loadEnterBtn:hover{background:#ffffff}
-.loadEnterBtn:active{transform:translateY(1px)}
-@keyframes loadPulse{0%,100%{transform:scale(1);box-shadow:0 10px 28px rgba(3,10,20,.55)}50%{transform:scale(1.03);box-shadow:0 12px 34px rgba(245,211,128,.35)}}
-.bgmUnlockChip{
-  position:fixed;top:14px;right:14px;z-index:25;pointer-events:auto;cursor:pointer;
-  padding:7px 14px;border-radius:999px;
-  background:rgba(12,28,48,.92);color:#fde68a;border:1px solid rgba(253,230,138,.65);
-  font-family:var(--f-sans);font-weight:700;font-size:.78rem;letter-spacing:.05em;
-  box-shadow:0 6px 18px rgba(4,12,24,.45);
-}
 
 /* ---------- 共通モーダルカード (帆布アイボリー × アドミラルティ・ネイビー) ---------- */
 .menu{background:rgba(7,18,32,.62);overflow:auto}
