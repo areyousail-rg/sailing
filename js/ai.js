@@ -13,81 +13,84 @@ export class AI {
 
   initParams() {
     const b = this.b, rng = this.rng;
-    // スキル差に応じたクローズ角度・スタート精度・レイライン余白・戦術判断力
-    const skillGap = clamp(1.10 - (b.skill || 1), 0, 0.28);
-    // aceLevel: レート1700(skill=1.00)=0 → レート2000(skill≈1.14)=0.64 → レート2160+(skill>=1.22)=1.0
-    const aceLevel = clamp(((b.skill || 1) - 1.00) / 0.22, 0, 1);
+    // スキル差に応じた戦術・操船レベル (艇速はワンデザイン上限1.00のまま、戦術・角度・スタート・マーク回航で実力差を表現)
+    const skillGap = clamp(1.04 - (b.skill || 1), 0, 0.22);
+    // tacLevel: 一般〜高レート帯(skill 0.90..1.24)全域で滑らかに戦術精度を伸ばす
+    const tacLevel = clamp(((b.skill || 1) - 0.90) / 0.34, 0, 1);
+    // aceLevel: レート1700+(skill 1.00..1.24)の上位帯ブースト
+    const aceLevel = clamp(((b.skill || 1) - 1.00) / 0.24, 0, 1);
+    this.tacLevel = tacLevel;
     this.aceLevel = aceLevel;
-    // クローズホールド角度: 高レート上位艇は最適VMG角へほぼ誤差なく張り付く
-    const angleNoise = (rng() - 0.25) * (2.1 - 1.55 * aceLevel);
-    this.closeAngleOffset = ((angleNoise + skillGap * (5.2 + rng() * 4.5)) * Math.PI) / 180;
-    this.closeAngle = (bestCloseDeg(BASE_WIND_KT) * Math.PI) / 180 + this.closeAngleOffset;
-    // ランニング角度(下レグでVMG最大帯の160°〜167°付近、上位艇ほどタイトに攻める)
-    this.runAngle = ((164.0 - 4.0 * aceLevel + rng() * (6.0 - 2.6 * aceLevel)) * Math.PI) / 180;
+    // クローズホールド角度: sim.jsのgrooveBoostを含めた真のVMG最大帯(38°〜42.5°)へ誤差最小で張り付く
+    const angleNoise = (rng() - 0.5) * (1.25 - 0.90 * tacLevel);
+    const grooveBias = -0.65 * tacLevel;
+    this.closeAngleOffset = ((grooveBias + angleNoise + skillGap * (1.9 + rng() * 1.4)) * Math.PI) / 180;
+    this.closeAngle = Math.max((38.0 * Math.PI) / 180, (bestCloseDeg(BASE_WIND_KT) * Math.PI) / 180 + this.closeAngleOffset);
+    // ランニング角度: ポーラー最大VMGピーク(170.0°: 2.90*cos(10°) + ランチャー+6.8%)へ正確に合わせ、170°超の急減速を避ける
+    this.runAngle = ((166.5 + 3.3 * tacLevel + (rng() - 0.5) * (2.6 - 1.8 * tacLevel)) * Math.PI) / 180;
     this.targetStartC = b.startTargetC ?? b.c;
-    // コース引き: 上位艇ほど海面の地理的有利サイド(SIDE_BIAS)を的確に重視し、不利海面への無駄な遠回りを減らす
+    // コース引き: 海面の地理的有利サイド(SIDE_BIAS)を的確に重視しつつ、上位艇同士が同じレーンでブランケットし合わない間隔を保つ
     const slotSpread = (((b.id * 3) % 7) - 3) / 3; // -1 .. +1
-    const biasGain = 18 + 26 * aceLevel;
-    const biasShift = clamp((SIDE_BIAS || 0) * biasGain, -42, 42);
-    const spreadAmp = 34 - 18 * aceLevel;
-    this.prefSideC = clamp(slotSpread * spreadAmp + biasShift + (rng() - 0.5) * (16 - 8 * aceLevel), -54, 54);
-    this.corridorHalf = (22 - 5 * aceLevel) + rng() * (14 - 5 * aceLevel);
+    const biasGain = 18 + 18 * tacLevel;
+    const biasShift = clamp((SIDE_BIAS || 0) * biasGain, -38, 38);
+    const spreadAmp = 28 - 8 * tacLevel;
+    this.prefSideC = clamp(slotSpread * spreadAmp + biasShift + (rng() - 0.5) * (14 - 5 * tacLevel), -54, 54);
+    this.corridorHalf = (22 - 4 * tacLevel) + rng() * (12 - 4 * tacLevel);
     this.cLim = 76 + rng() * 10;
-    this.tackCool = (18 - 8.5 * aceLevel) + rng() * (13 - 7.5 * aceLevel); // 上位艇は振れ・ブローへ素早く戦術タック
+    this.tackCool = (15.5 - 4.5 * tacLevel) + rng() * (7.5 - 3.5 * tacLevel); // 無駄な連続タックを避けつつ本物の振れ・ブローへ反応
     this.lastTack = -99;
-    // ラインを切る目標時刻(号砲=0秒の後):
-    // 高レート上位艇はスタートラインぎりぎりから0:00ちょうどでフル加速スタートを決める
-    const isStrong = (b.skill || 1) >= 1.03;
+    // ラインを切る目標時刻(号砲=0秒の後): 第1列全体が助走を取って0:00で高速通過を狙う
+    const isStrong = (b.skill || 1) >= 0.98;
     const role = b.startRole || 'firstRow';
     // CP艇がスタートラインをフライング(OCS)する確率は約1割(10%)に制御し、残りのCP艇は0:00時点でラインぎりぎり手前に収める
     this.willOcs = (b.id === 2 && rng() < 0.12);
     if (role === 'gapShooter') {
-      this.tc = Math.max(0.08, 0.35 - 0.22 * aceLevel) + rng() * (0.55 - 0.28 * aceLevel);
-      this.goDist = 9.2 + rng() * 2.2;
+      this.tc = Math.max(0.05, 0.28 - 0.18 * tacLevel) + rng() * (0.42 - 0.22 * tacLevel);
+      this.goDist = 9.0 + rng() * 1.8;
       this.baseStartC = this.targetStartC;
       this.nextGapScanT = -26 + rng() * 2.0;
     } else if (role === 'secondRow') {
-      this.tc = (1.65 - 0.55 * aceLevel) + rng() * (1.35 - 0.45 * aceLevel);
-      this.goDist = 10.5 + rng() * 2.8;
+      this.tc = (1.35 - 0.45 * tacLevel) + rng() * (1.05 - 0.35 * tacLevel);
+      this.goDist = 10.2 + rng() * 2.2;
     } else if (role === 'highComFail') {
-      this.tc = 3.2 + rng() * 1.8;
-      this.goDist = 11.0 + rng() * 2.5;
+      this.tc = 3.0 + rng() * 1.6;
+      this.goDist = 10.5 + rng() * 2.2;
     } else if (this.willOcs) {
       this.tc = -2.2 - rng() * 0.8;
       this.goDist = 4.5 + rng() * 1.2;
     } else {
       this.tc = isStrong
-        ? Math.max(0.01, 0.12 - 0.10 * aceLevel) + rng() * (0.38 - 0.24 * aceLevel)
-        : 0.25 + rng() * 0.55 + skillGap * 0.8;
-      // 加速開始距離: 上位CP艇ほど約2艇身強(10〜12.5m)の助走距離を確保してフルスピードで0:00にラインを切る
-      this.goDist = (6.2 + 4.4 * aceLevel) + rng() * (2.2 - 0.5 * aceLevel);
+        ? Math.max(0.01, 0.08 - 0.07 * tacLevel) + rng() * (0.26 - 0.18 * tacLevel)
+        : 0.18 + rng() * 0.38 + skillGap * 0.55;
+      // 加速開始距離: 約2艇身(8.0〜10.8m)の助走距離からフルスピードで0:00にラインを切る
+      this.goDist = (8.0 + 2.2 * tacLevel) + rng() * (1.6 - 0.5 * tacLevel);
     }
     this.go = false;
     this.pinBailout = false;
-    // レイライン余白を最小限に抑え、上位艇はオーバースタンドを極小化
-    this.layMargin = (0.004 - 0.002 * aceLevel) + rng() * (0.016 - 0.010 * aceLevel) + skillGap * 0.018;
+    // レイライン余白を最小限に抑え、オーバースタンドを極小化
+    this.layMargin = (0.0025 - 0.0012 * tacLevel) + rng() * (0.010 - 0.0065 * tacLevel) + skillGap * 0.010;
     this.penDir = rng() < 0.5 ? 1 : -1;
-    this.jit = (rng() - 0.5) * (14 - 8 * aceLevel);
-    this.vmgAt = (12 - 6.5 * aceLevel) + rng() * (16 - 10 * aceLevel);
-    this.creepExp = 1.15 + rng() * 0.45;
+    this.jit = (rng() - 0.5) * (10 - 6 * tacLevel);
+    this.vmgAt = (6.0 - 3.0 * tacLevel) + rng() * (7.5 - 4.5 * tacLevel);
+    this.creepExp = 1.15 + rng() * 0.40;
     this.gap0 = null;
     this.avoidUntil = -999; this.avoidH = 0;
-    this.roundR = (6.4 - 1.1 * aceLevel) + rng() * (1.1 - 0.4 * aceLevel); // 上位艇はより鋭いマーク回航
-    this.roundROut = 2.50 - 0.28 * aceLevel;                               // マーク脱出半径(タイトアウト)
+    this.roundR = (5.4 - 0.9 * tacLevel) + rng() * (0.85 - 0.35 * tacLevel); // 鋭くロス少ないマーク回航
+    this.roundROut = 2.30 - 0.26 * tacLevel;                                 // マーク脱出半径(タイトアウト)
     this.rp = null;
-    // 4ゲート(4S=gL / 4P=gR): 上位艇は次の上レグで有利な海面側ゲートを戦略的に選択
-    if (aceLevel >= 0.35 && Math.abs(SIDE_BIAS || 0) >= 0.15) {
-      this.gateKey = (SIDE_BIAS < 0 ? (rng() < 0.78 ? 'gL' : 'gR') : (rng() < 0.78 ? 'gR' : 'gL'));
+    // 4ゲート(4S=gL / 4P=gR): 次の上レグで有利な海面側ゲートを戦略的に選択
+    if (tacLevel >= 0.22 && Math.abs(SIDE_BIAS || 0) >= 0.12) {
+      this.gateKey = (SIDE_BIAS < 0 ? (rng() < 0.84 ? 'gL' : 'gR') : (rng() < 0.84 ? 'gR' : 'gL'));
     } else {
       this.gateKey = b.id % 2 === 0 ? 'gL' : 'gR';
     }
     this.gateRp = null;
     this.poleT = 0;
     this.coverTime = 0;
-    // 戦術的に賢い上位〜中上位CP艇かどうか(上レグの抑えのタック・下レグのブランケット意識を実行)
-    this.isTacticalStrong = (b.skill || 1) >= 0.99;
-    // リーチングで前後に密着した際に後ろから上してブランケットを仕掛けたり対抗する積極性(一部CP艇が積極的に仕掛ける)
-    this.luffAggro = (b.id % 3 !== 0 || rng() < 0.65 + 0.25 * aceLevel) ? 0.58 + rng() * 0.42 : 0.20;
+    // 戦術的に賢い上位〜中位CP艇かどうか(上レグの抑えのタック・下レグのブランケット意識を実行)
+    this.isTacticalStrong = (b.skill || 1) >= 0.94;
+    // リーチングで前後に密着した際に後ろから上してブランケットを仕掛けたり対抗する積極性
+    this.luffAggro = (b.id % 4 !== 0 || rng() < 0.72 + 0.22 * tacLevel) ? 0.62 + rng() * 0.38 : 0.25;
     this.luffMatch = 0;
     this.mustReturnBelowLine = false;
   }
@@ -370,18 +373,29 @@ export class AI {
     const ca = this.closeAngle;
     const ra = this.runAngle;
     const distTgt = Math.hypot(tgt.a - b.a, tgt.c - b.c);
-    // 下レグ(目標が真風角raより深い場合): 180°で走らず164°〜170°を維持し、プロパーコースのダウンウインド・レイラインに達したらジャイブする
+    // 下レグ(目標が真風角raより深い場合): 180°で走らず最大VMG帯(169°〜173°)を維持し、ブロー・シフト・レイラインに応じて最適ジャイブ
     if (!prestart && !directDownwind && Math.abs(relT) > ra && distTgt > 22) {
+      const tac = this.tacLevel || 0;
       const hs = wrap(W - ra), hp = wrap(W + ra);
       const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
       const downDa = Math.max(8, b.a - tgt.a);
       const downLay = Math.max(12, downDa * Math.tan(Math.PI - ra) * 0.96);
       // b.tack === 1 (スタボ)は -c 方向へ進み、b.tack === -1 (ポート)は +c 方向へ進むため、目標から離れる側へ downLay 以上膨らんだら overDownLay
       const overDownLay = (b.tack === 1 && b.c - tgt.c < -downLay) || (b.tack === -1 && b.c - tgt.c > downLay);
-      const gybeCool = overDownLay ? 4.5 : 12.0;
-      if (t - this.lastTack > gybeCool && !this.crowded(overDownLay ? 4.2 : 6.0) && !this.nearObstacle(6.5) && (overDownLay || this.canTackCleanly('gybe', true))) {
-        if (b.tack === 1 && (cp > cs + 0.042 || overDownLay)) { this.lastTack = t; b.startManeuver('gybe'); }
-        else if (b.tack === -1 && (cs > cp + 0.042 || overDownLay)) { this.lastTack = t; b.startManeuver('gybe'); }
+      const gybeCool = overDownLay ? 4.0 : (14.5 - 3.0 * tac);
+      let puffAdv = 0;
+      if (!overDownLay && t - this.lastTack > gybeCool) {
+        const lookD = 55 + 40 * tac;
+        const curH = b.tack === 1 ? hs : hp;
+        const oppH = b.tack === 1 ? hp : hs;
+        const wCur = windAt(b.x + Math.sin(curH) * lookD, b.z - Math.cos(curH) * lookD, this.wt ?? t).f;
+        const wOpp = windAt(b.x + Math.sin(oppH) * lookD, b.z - Math.cos(oppH) * lookD, this.wt ?? t).f;
+        puffAdv = (wOpp - wCur) * (0.35 + 0.25 * tac);
+      }
+      const gybeThresh = 0.078 - 0.018 * tac;
+      if (t - this.lastTack > gybeCool && !this.crowded(overDownLay ? 4.0 : 5.5) && !this.nearObstacle(6.0) && (overDownLay || this.canTackCleanly('gybe', true))) {
+        if (b.tack === 1 && (cp - cs + puffAdv > gybeThresh || overDownLay)) { this.lastTack = t; b.startManeuver('gybe'); }
+        else if (b.tack === -1 && (cs - cp + puffAdv > gybeThresh || overDownLay)) { this.lastTack = t; b.startManeuver('gybe'); }
       }
       return wrap(W - b.tack * ra);
     }
@@ -525,18 +539,18 @@ export class AI {
         if (tackNow === -1 && b.c > corridorR && dc > -layLeft * 0.88) { wantTack = true; inCorridorTurn = true; }
         // 風が弱い不利海面を逆方向へ走り続けている場合や、シフトで反対タックが明確にリフトしている場合は戦術タック(プロパーコース選択)
         if (t > this.vmgAt && canTacticalTack) {
-          const ace = this.aceLevel || 0;
-          this.vmgAt = t + (11 - 6.0 * ace) + this.rng() * (9 - 4.5 * ace);
+          const tac = this.tacLevel || 0;
+          this.vmgAt = t + (9.5 - 3.2 * tac) + this.rng() * (6.0 - 2.5 * tac);
           const hs = W - ca, hp = W + ca;
           const cs = Math.cos(wrap(hs - brg)), cp = Math.cos(wrap(hp - brg));
-          const lookD = 45 + 45 * ace;
+          const lookD = 50 + 45 * tac;
           const aheadX = b.x + Math.sin(b.h) * lookD, aheadZ = b.z - Math.cos(b.h) * lookD;
           const oppH = wrap(W + tackNow * ca);
           const oppX = b.x + Math.sin(oppH) * lookD, oppZ = b.z - Math.cos(oppH) * lookD;
           const wAhead = windAt(aheadX, aheadZ, this.wt ?? t).f;
           const wOpp = windAt(oppX, oppZ, this.wt ?? t).f;
-          const windGain = (wOpp - wAhead) * (0.68 + 0.36 * ace);
-          const tackThresh = 0.11 - 0.052 * ace;
+          const windGain = (wOpp - wAhead) * (0.62 + 0.30 * tac);
+          const tackThresh = 0.115 - 0.025 * tac;
           if (tackNow === 1 && (cp - cs + windGain) > tackThresh) wantTack = true;
           if (tackNow === -1 && (cs - cp + windGain) > tackThresh) wantTack = true;
         }
@@ -560,24 +574,22 @@ export class AI {
         }
       } else if ((isMustTack || inCorridorTurn || this.canTackCleanly('tack', true)) && this.canExecuteTackNow()) {
         this.lastTack = t;
-        if (!isMustTack) this.prefSideC = clamp(b.c + b.tack * (32 - 8 * (this.aceLevel || 0)), -42, 42);
+        if (!isMustTack) this.prefSideC = clamp(b.c + b.tack * (30 - 8 * (this.tacLevel || 0)), -42, 42);
         b.startManeuver('tack');
       }
     }
-    // レイラインまたは必須タック境界を超えても並走艇・権利艇に阻まれてまだタックできない場合:
-    // レイライン超過量(overLay)に応じて速やかに減速し、相手のスターン後方へクリアを作ってオーバーセールを防止する
-    if (!prestart && !b.maneuver && (isMustTack || inCorridorTurn)) {
+    // レイライン超過時に並走艇・権利艇に阻まれてまだタックできない場合のみ緩やかに減速してクリアを作る（過度な減速は禁止）
+    if (!prestart && !b.maneuver && isMustTack) {
       const overLay = tackNow === 1 ? Math.max(0, -dc - layLeft * 0.94) : Math.max(0, dc - layRight * 0.93);
-      const overDist = Math.max(overLay, Math.abs(b.c) - (sideMustLim - 2), 0);
-      if (overDist > 0) {
-        b.throttle = Math.min(b.throttle, clamp(0.86 - overDist * 0.085, 0.10, 0.80));
+      const overDist = Math.max(overLay, Math.abs(b.c) - (sideMustLim - 1), 0);
+      if (overDist > 0.5) {
+        b.throttle = Math.min(b.throttle, clamp(0.92 - overDist * 0.045, 0.45, 0.90));
       }
     }
-    // 上位艇はブローで少し上し・ラルで少し落として局所風速ごとの最適クローズVMGを維持する
-    const ace = this.aceLevel || 0;
-    const dynCa = ace > 0.05
-      ? ca * (1 - ace) + ((bestCloseDeg(BASE_WIND_KT * (b.windF || 1)) * Math.PI) / 180 + this.closeAngleOffset * 0.5) * ace
-      : ca;
+    // ブローで少し上し・ラルで少し落として局所風速ごとの最適クローズVMG(38°〜43.8°)を維持する
+    const tac = this.tacLevel || 0;
+    const localOptRad = Math.max((38.0 * Math.PI) / 180, (bestCloseDeg(BASE_WIND_KT * (b.windF || 1)) * Math.PI) / 180 + this.closeAngleOffset * (0.75 - 0.35 * tac));
+    const dynCa = tac > 0.05 ? ca * (1 - tac) + localOptRad * tac : ca;
     return wrap(W - b.tack * dynCa);
   }
 
@@ -1274,27 +1286,30 @@ export class AI {
   // 回航後も下り・ブロードリーチが続くためマーク近接や回航中という理由だけでは絶対に下ろさず、上り角へ切り上がる場面のみ収納する
   updatePole(dt, heading, distMark, rounding) {
     const b = this.b;
+    const tac = this.tacLevel || 0;
     const relH = wrap(b.windFrom - heading);
     const twaH = Math.abs(relH);
     const sameTack = Math.sign(relH || 1) === Math.sign(b.rel || b.tack || 1);
     const onUpwindLeg = b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind';
     const keepPoleThroughMark = COURSE_MODE === 'trapezoid' && (b.leg === 4 || b.leg === 5 || b.leg === 6);
     const isGybingNow = !!(b.maneuver && b.maneuver.kind === 'gybe');
-    const markBlocksPole = !keepPoleThroughMark && (rounding || distMark <= 32);
-    const raiseTwaH = keepPoleThroughMark ? 2.04 : 2.14;
-    const raiseTwaNow = keepPoleThroughMark ? 1.98 : 2.06;
+    const dropDist = 16 - 5 * tac; // 11〜16mまでランチャーを引っ張ってから素早く収納
+    const markBlocksPole = !keepPoleThroughMark && (rounding || distMark <= dropDist + 3);
+    const raiseTwaH = keepPoleThroughMark ? (POLE_MIN + 0.08) : (POLE_MIN + 0.12);
+    const raiseTwaNow = keepPoleThroughMark ? (POLE_MIN + 0.04) : (POLE_MIN + 0.07);
     const want = !b.ocs && !b.penalty && !b.maneuver && !markBlocksPole && !onUpwindLeg && sameTack && twaH > raiseTwaH && b.twa > raiseTwaNow;
     this.poleT = want ? this.poleT + dt : 0;
-    if (!b.pole && !b.gybePoleRestore && this.poleT > 1.2) b.setPole(true);
+    const raiseDelay = 0.40 - 0.22 * tac;
+    if (!b.pole && !b.gybePoleRestore && this.poleT > raiseDelay) b.setPole(true);
     if (b.pole && !isGybingNow) {
       // 2・3マーク回航中やフィニッシュリーチではマーク手前の進入・回航角度の揺れで勝手にランチャーを下ろさず、
       // 本当にマーク風下へ流されてクローズで上り直す必要がある場合やペナルティ・上りレグ時のみ収納する
       const Lcur = LEGS[Math.min(b.leg, LEGS.length - 1)];
       const mustBeatUpToDownwindMark = keepPoleThroughMark && Lcur && Lcur.type === 'mark' && b.a < Lcur.mark.a - 4.5 && twaH < 1.48;
       const turningDownwindGybe = !sameTack && (keepPoleThroughMark ? b.twa > 1.55 : (twaH > 1.65 && b.twa > 1.65));
-      const dropTwaH = keepPoleThroughMark ? 1.30 : 1.98;
-      const dropTwaNow = keepPoleThroughMark ? POLE_MIN - 0.08 : 1.94;
-      const mustDropAtMark = !keepPoleThroughMark && (distMark < 28 || rounding);
+      const dropTwaH = keepPoleThroughMark ? 1.30 : (POLE_MIN + 0.02);
+      const dropTwaNow = keepPoleThroughMark ? POLE_MIN - 0.08 : (POLE_MIN - 0.02);
+      const mustDropAtMark = !keepPoleThroughMark && (distMark < dropDist || rounding);
       const mustDropForTack = !sameTack && !turningDownwindGybe && !keepPoleThroughMark;
       if (mustBeatUpToDownwindMark || (!keepPoleThroughMark && twaH < dropTwaH) || b.twa < dropTwaNow || mustDropForTack || onUpwindLeg || mustDropAtMark || b.penalty || b.ocs || (b.maneuver && !isGybingNow)) {
         b.setPole(false);
@@ -1304,10 +1319,11 @@ export class AI {
 
   update(dt, t, others) {
     const b = this.b;
+    const tac = this.tacLevel || 0;
     this.others = others;
     this.now = t;
     const curOptDeg = b.bestCloseDeg || bestCloseDeg(BASE_WIND_KT * (b.windF || 1));
-    this.closeAngle = (curOptDeg * Math.PI) / 180 + this.closeAngleOffset;
+    this.closeAngle = Math.max((38.0 * Math.PI) / 180, (curOptDeg * Math.PI) / 180 + this.closeAngleOffset);
     if (b.maneuver) {
       // スタボ(s0 === 1)からポート(relNew < 0)へタックする最中にスタボ艇が近くにいる場合は、タック完了角(relNew)を風下へ深く落としてタック後すぐにスタボ艇のスターン後方へ逃げる
       if (b.maneuver.kind === 'tack' && b.maneuver.s0 === 1 && b.maneuver.relNew < 0 && this.hasStbdTackConflict()) {
@@ -1323,7 +1339,7 @@ export class AI {
       // マーク・運営艇の近く(5.8m以内)や他艇の密集域(6.2m以内)ではその場で回転せず、まずクリアな海面へ出てからペナルティターンを行う(RRS 21.2 / 44.2)
       if (this.nearObstacle(5.8) || this.crowded(6.2)) {
         b.throttle = 1;
-        b.sheet += (sheetOpt(b.twa) - b.sheet) * (1 - Math.exp(-dt * 4.5));
+        b.sheet += (sheetOpt(b.twa) - b.sheet) * (1 - Math.exp(-dt * 8.5));
         const avP = this.avoid(t, b.h);
         const escH = this.avoidMarks(avP ?? b.h, t < 0);
         b.steer = clamp(wrap(escH - b.h) * 3.8, -1, 1);
@@ -1333,17 +1349,19 @@ export class AI {
       b.throttle = 1;
       return;
     }
-    b.sheet += (sheetOpt(b.twa) - b.sheet) * (1 - Math.exp(-dt * 4.5));
+    b.sheet += (sheetOpt(b.twa) - b.sheet) * (1 - Math.exp(-dt * (8.5 + 3.5 * tac)));
 
-    // ブランケット / バックウインド脱出判定 (タック先やジャイブ先もブランケットでない場合は脱出する)
-    const dirtyStrength = Math.max(b.cover, b.back * 1.15);
-    this.coverTime = dirtyStrength > 0.22
-      ? (this.coverTime || 0) + dt * (0.65 + dirtyStrength * 1.35)
-      : Math.max(0, (this.coverTime || 0) - dt * 1.4);
+    // ブランケット / バックウインド脱出判定 (タック先やジャイブ先もブランケットでない場合は素早くクリアエアーへ脱出する)
+    const dirtyStrength = Math.max(b.cover, b.back * 1.20);
+    this.coverTime = dirtyStrength > 0.18
+      ? (this.coverTime || 0) + dt * (0.75 + dirtyStrength * 1.55)
+      : Math.max(0, (this.coverTime || 0) - dt * 1.6);
     const Lc = LEGS[Math.min(b.leg, LEGS.length - 1)];
-    const nearMark = Lc && Lc.type === 'mark' && Math.hypot(b.c - Lc.mark.c, b.a - Lc.mark.a) < 38;
+    const nearMark = Lc && Lc.type === 'mark' && Math.hypot(b.c - Lc.mark.c, b.a - Lc.mark.a) < 34;
     const inGateRound = this.gateRp && this.gateRp.phase !== 'done';
-    if (this.coverTime > 2.6 && t > 6 && t - this.lastTack > 16 && b.started && !b.ocs && !nearMark && !inGateRound) {
+    const escCoverNeed = 1.85 - 0.65 * tac;
+    const escCool = 11.5 - 4.5 * tac;
+    if (this.coverTime > escCoverNeed && t > 2.5 && t - this.lastTack > escCool && b.started && !b.ocs && !nearMark && !inGateRound) {
       const onUpwindEsc = b.leg === 0 || b.leg === 3 || COURSE_MODE === 'upwind';
       const escMarkA = MARKS.m1.a;
       const escMarkC = COURSE_MODE === 'upwind' ? 1.0 : MARKS.m1.c;
@@ -1483,31 +1501,30 @@ export class AI {
         const tgtC = clamp(this.targetStartC ?? 0, -LINE_HALF + 4.0, LINE_HALF - 3.8);
         const lineAtTgt = lineA(tgtC);
         const lineHere = Math.min(lineA(b.c), lineA(clamp(b.c, -LINE_HALF, LINE_HALF)));
-        // スナイプ艇バウ先端(中心から2.30m前方)のラインに対する突出量を考慮し、上位CP艇ほど0:00でバウ先端がラインぎりぎり(手前約0.25〜0.65m)でフル加速通過
-        const ace = this.aceLevel || 0;
+        // スナイプ艇バウ先端(中心から2.30m前方)のラインに対する突出量を考慮し、第1列全体が0:00でバウ先端がラインぎりぎり(手前約0.20〜0.55m)でフル加速通過
         const dhBow = b.h - W0;
         const bowProjA = Math.max(0.6, Math.cos(dhBow) * 2.30 - Math.sin(dhBow) * 2.30 * Math.tan(LINE_SKEW));
-        const ocsSafetyMargin = this.willOcs ? -1.1 : (bowProjA + (0.65 - 0.38 * ace));
+        const ocsSafetyMargin = this.willOcs ? -1.1 : (bowProjA + (0.72 - 0.34 * tac));
         const targetLineA = (b.c > LINE_HALF - 7 ? Math.min(lineHere, lineAtTgt) : Math.min(lineHere, lineAtTgt + 0.8)) - ocsSafetyMargin;
         const gap = targetLineA - b.a;
         const posGap = Math.max(0, gap);
         const tw = Math.min(b.twa, 1.1);
         const upf = Math.max(0.48, Math.cos(tw) + Math.tan(LINE_SKEW) * Math.sin(tw) * b.tack);
         if (this.gap0 === null) this.gap0 = Math.max(24, posGap);
-        const holdDist = role === 'gapShooter' ? 7.8 : (role === 'secondRow' ? 9.2 : (this.willOcs ? 2.0 : (4.4 + 4.8 * ace)));
-        const holdEndT = role === 'gapShooter' ? -6.0 : (role === 'secondRow' ? -2.0 : (this.willOcs ? -5.0 : (-4.2 - 2.3 * ace)));
-        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -11.5 || posGap > holdDist + 1.5)) this.go = true;
+        const holdDist = role === 'gapShooter' ? 7.8 : (role === 'secondRow' ? 9.2 : (this.willOcs ? 2.0 : (6.0 + 1.8 * tac)));
+        const holdEndT = role === 'gapShooter' ? -6.0 : (role === 'secondRow' ? -2.2 : (this.willOcs ? -5.0 : (-5.6 - 1.2 * tac)));
+        if (!this.go && t >= this.tc - this.runUpTime(posGap / upf) && (t > -12.0 || posGap > holdDist + 1.5)) this.go = true;
         if (gap < holdDist + 0.3 && t < holdEndT) this.go = false; // 加速開始時刻(holdEndT)より前にラインへ寄りすぎるのを防ぐ
         // willOcsでない通常CP艇は0:00より前にバウ先端がラインを超えないよう、直前でラインを超えそうな場合のみ減速・シバーさせる
         const projZeroBowA = b.a + bowProjA + Math.max(0, -t) * Math.max(0, b.v) * upf;
-        const earlyHoldLimitA = t < holdEndT - 1.2 ? lineHere - bowProjA - holdDist - 0.8 : lineHere - bowProjA - (0.60 - 0.36 * ace);
+        const earlyHoldLimitA = t < holdEndT - 1.2 ? lineHere - bowProjA - holdDist - 0.8 : lineHere - bowProjA - (0.65 - 0.30 * tac);
         const overHoldA = b.a > earlyHoldLimitA;
-        const projMargin = 0.40 - 0.28 * ace;
-        const projExcess = (t > -4.5) ? (projZeroBowA - (lineHere - projMargin)) : -1;
+        const projMargin = 0.42 - 0.22 * tac;
+        const projExcess = (t > -4.2) ? (projZeroBowA - (lineHere - projMargin)) : -1;
         const tooEarlyForLine = !this.willOcs && (overHoldA || projExcess > 0);
         if (overHoldA) this.go = false;
         if (tooEarlyForLine) {
-          if (overHoldA || projExcess > 2.6) {
+          if (overHoldA || projExcess > 3.2) {
             b.throttle = 0;
             b.sheet = 0.05;
             if (b.a > earlyHoldLimitA + 0.25) {
@@ -1515,8 +1532,8 @@ export class AI {
             }
           } else {
             // わずかに早着気味の時はフル失速させず、スロットルとシートを微調整して0:00で高速通過を維持
-            b.throttle = clamp(0.86 - projExcess * 0.26, 0.24, 0.86);
-            b.sheet += (sheetOpt(b.twa) * (0.80 + 0.16 * b.throttle) - b.sheet) * (1 - Math.exp(-dt * 4.5));
+            b.throttle = clamp(0.92 - projExcess * 0.22, 0.34, 0.92);
+            b.sheet += (sheetOpt(b.twa) * (0.85 + 0.12 * b.throttle) - b.sheet) * (1 - Math.exp(-dt * 7.5));
           }
         } else if (this.go) {
           b.throttle = 1;
@@ -1968,7 +1985,7 @@ export class AI {
       const gybeDir = relNow > 0 ? -1 : 1;
       if (err * gybeDir < 0) err = gybeDir * Math.max(0.6, Math.abs(err));
     }
-    const steerGain = av !== null && av !== undefined ? 4.2 : 2.6;
+    const steerGain = (av !== null && av !== undefined) ? 4.2 : (Math.abs(err) < 0.08 ? 2.1 : 2.8);
     b.steer = clamp(err * steerGain, -1, 1);
     if (b.maneuver) b.steer = 0;
   }

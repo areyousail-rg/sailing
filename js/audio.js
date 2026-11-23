@@ -251,9 +251,14 @@ function ensureAudioUnlockListeners() {
   unlockListenersBound = true;
   const gestureEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const tryUnlockSync = () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.audioSession && navigator.audioSession.type !== 'playback') {
+        navigator.audioSession.type = 'playback';
+      }
+    } catch (e) {}
     initAudio();
     const loadingNow = isLoadingScreenActive();
-    if (!loadingNow && bgmMode && bgmVoiceEnabled && !bgmSource) {
+    if (!loadingNow && bgmMode && bgmVoiceEnabled && !bgmSource && ctx && ctx.state === 'running') {
       playBgm(bgmMode);
     }
     if (ctx && ctx.state !== 'running') {
@@ -303,6 +308,11 @@ export function isBgmPlaying() {
   return false;
 }
 export function unlockAudioNow() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.audioSession && navigator.audioSession.type !== 'playback') {
+      navigator.audioSession.type = 'playback';
+    }
+  } catch (e) {}
   initAudio();
   if (!isLoadingScreenActive() && bgmMode === 'menu' && bgmVoiceEnabled && !muted) {
     syncMenuHtmlAudioPlayback();
@@ -315,12 +325,26 @@ export function unlockAudioNow() {
     src.connect(ctx.destination);
     src.start(0);
   } catch (e) {}
-  if (ctx.state === 'running') return Promise.resolve(true);
-  return ctx.resume().then(() => !!(ctx && ctx.state === 'running')).catch(() => false);
+  if (ctx.state === 'running') {
+    if (!isLoadingScreenActive() && bgmMode && bgmVoiceEnabled && !bgmSource) playBgm(bgmMode);
+    return Promise.resolve(true);
+  }
+  return ctx.resume().then(() => {
+    const ok = !!(ctx && ctx.state === 'running');
+    if (ok && !isLoadingScreenActive() && bgmMode && bgmVoiceEnabled && !bgmSource) {
+      playBgm(bgmMode);
+    }
+    return ok;
+  }).catch(() => false);
 }
 
 export function initAudio() {
   ensureAudioUnlockListeners();
+  try {
+    if (typeof navigator !== 'undefined' && navigator.audioSession && navigator.audioSession.type !== 'playback') {
+      navigator.audioSession.type = 'playback';
+    }
+  } catch (e) {}
   if (ctx) { if (ctx.state !== 'running') ctx.resume().catch(() => {}); return; }
   try {
     const early = typeof window !== 'undefined' ? window.__earlyAudioCtx : null;
@@ -1150,20 +1174,20 @@ export function prewarmBgm(modes = ['menu']) {
     const m = list.shift();
     if (!m) return;
     if (bgmBufferCache.has(m)) {
-      if (list.length > 0) setTimeout(next, 60);
+      if (list.length > 0) setTimeout(next, 120);
       return;
     }
     renderBgmBuffer(m)
       .catch(() => {})
       .finally(() => {
-        if (list.length > 0) setTimeout(next, m === 'menu' ? 40 : 320);
+        if (list.length > 0) setTimeout(next, m === 'menu' ? 80 : 520);
       });
   };
   next();
 }
 
 function mountBgmBufferSource(buf, mode, isQuick) {
-  if (!ctx || ctx.state === 'closed' || !master || !buf) return false;
+  if (!ctx || ctx.state !== 'running' || !master || !buf) return false;
   let startOffset = 0;
   if (!isQuick && bgmIsQuick && bgmSource && bgmMode === mode && ctx.state === 'running') {
     // クイック2小節バッファ再生中からフル長バッファへ拍・位相完全一致でシームレス昇格
@@ -1208,8 +1232,7 @@ export function playBgm(mode = 'result') {
     bgmMode = mode;
     return;
   }
-  if (bgmMode === mode && bgmSource && !bgmIsQuick) {
-    if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+  if (bgmMode === mode && bgmSource && !bgmIsQuick && ctx && ctx.state === 'running') {
     if (mode === 'menu') syncMenuHtmlAudioPlayback();
     return;
   }
@@ -1226,16 +1249,18 @@ export function playBgm(mode = 'result') {
     if (mode === 'menu' && !menuWavUrl) {
       menuWavUrl = encodeAudioBufferToWavUrl(buf);
     }
-    if (isQuick && bgmSource && prevMode === mode) return;
-    if (!isQuick && bgmSource && !bgmIsQuick && prevMode === mode) {
-      if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+    if (isQuick && bgmSource && prevMode === mode && ctx && ctx.state === 'running') return;
+    if (!isQuick && bgmSource && !bgmIsQuick && prevMode === mode && ctx && ctx.state === 'running') {
       if (mode === 'menu') syncMenuHtmlAudioPlayback();
       return;
     }
-    mountBgmBufferSource(buf, mode, isQuick);
-    if (ctx && ctx.state !== 'running') {
+    const mounted = mountBgmBufferSource(buf, mode, isQuick);
+    if (!mounted && ctx && ctx.state !== 'running') {
       ctx.resume().then(() => {
-        if (mode === 'menu' && bgmMode === 'menu') syncMenuHtmlAudioPlayback();
+        if (!isLoadingScreenActive() && bgmReqSeq === reqId && bgmMode === mode && bgmVoiceEnabled && ctx && ctx.state === 'running') {
+          if (!bgmSource || (bgmIsQuick && !isQuick)) mountBgmBufferSource(buf, mode, isQuick);
+          else if (mode === 'menu') syncMenuHtmlAudioPlayback();
+        }
       }).catch(() => {});
     }
     if (mode === 'menu' && !muted) syncMenuHtmlAudioPlayback();
@@ -3141,7 +3166,10 @@ function renderBgmBuffer(mode) {
             }
 
             if (si < numSlices - 1) {
-              const yieldMs = (mode !== 'menu' && bgmMode !== mode && bgmQuickWaiters.size > 0) ? 90 : 0;
+              const isActiveTrack = bgmMode === mode;
+              const yieldMs = isActiveTrack
+                ? (si === 0 ? 4 : 24)
+                : (mode === 'menu' && isLoadingScreenActive() ? 4 : 150);
               await new Promise((r) => setTimeout(r, yieldMs));
             }
           }

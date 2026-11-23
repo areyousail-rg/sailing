@@ -153,43 +153,43 @@ function makeCpPairForType(primaryType, effRate) {
   };
 }
 
-// レート(1700＝CP標準レベル1.00)からCPの操船・戦術スキル倍率への換算（2000〜2300+帯でも戦術・スタート精度が伸び続けるように設定）
+// レート(1600＝標準戦術1.00)からCPの操船・戦術スキル倍率への換算（物理艇速上限はsim.jsで1.00固定、戦術・角度・スタート精度が伸びる）
 function rateToSkill(r) {
-  return clamp(1.00 + ((r - 1700) / 100) * 0.048, 0.78, 1.28);
+  return clamp(1.03 + ((r - 1600) / 100) * 0.048, 0.86, 1.34);
 }
 
 // レートに応じた19艇のCPプロフィール生成:
 // ・犬・猫・柴犬はずっと登場し、各種動物キャラのCP参戦基準は解放レート-100 (アヒル:1550解放/CP1450〜、タヌキ:1650解放/CP1550〜、ウサギ:1750解放/CP1650〜、イルカ:1850解放/CP1750〜、ペンギン:1950解放/CP1850〜)
-// ・高レート帯(1850〜2000+)では動物艇・人間艇ともにレートに応じた上位戦術レベルへ引き上げ、2000超えでもしっかり手強いフリートを構成する
+// ・通常〜高レート帯まで全体を引き上げ、艇速はワンデザイン公平のままスタート・コース引き・回航で手強いフリートを構成する
 // ・1500前後では弱いCP3艇と中くらいのレベル1艇がマストトップに黒球(hasBlackBall)を装着
 function buildCpFleetProfiles(effRate) {
   const nCp = N_BOATS - 1;
-  const hiLift = Math.max(0, effRate - 1800) * 0.72;
+  const hiLift = Math.max(0, effRate - 1650) * 0.78;
   const animalEntries = [
-    // 犬・猫はずっといる (高レート帯では中位〜上位戦術帯まで追随)
-    { type: 'cat', rate: clamp(effRate - 75 + (rng() - 0.5) * 45, 1380, 1620 + hiLift * 0.85) },
-    { type: 'dog', rate: clamp(effRate - 50 + (rng() - 0.5) * 45, 1410, 1650 + hiLift * 0.90) },
-    { type: 'shiba', rate: clamp(effRate - 25 + (rng() - 0.5) * 45, 1440, 1680 + hiLift * 0.95) },
+    // 犬・猫はずっといる (レート上昇に応じて中位〜上位戦術帯まで追随)
+    { type: 'cat', rate: clamp(effRate - 55 + (rng() - 0.5) * 40, 1420, 1680 + hiLift * 0.88) },
+    { type: 'dog', rate: clamp(effRate - 30 + (rng() - 0.5) * 40, 1450, 1710 + hiLift * 0.92) },
+    { type: 'shiba', rate: clamp(effRate - 5 + (rng() - 0.5) * 40, 1480, 1740 + hiLift * 0.96) },
   ];
   if (effRate >= 1450) {
-    animalEntries.push({ type: 'duck', rate: 1475 + hiLift * 0.80 + (rng() - 0.5) * 40 });
-    if (effRate < 1600 && rng() < 0.65) animalEntries.push({ type: 'duck', rate: 1505 + (rng() - 0.5) * 36 });
+    animalEntries.push({ type: 'duck', rate: 1510 + hiLift * 0.84 + (rng() - 0.5) * 36 });
+    if (effRate < 1600 && rng() < 0.65) animalEntries.push({ type: 'duck', rate: 1545 + (rng() - 0.5) * 32 });
   }
   if (effRate >= 1550) {
-    animalEntries.push({ type: 'tanuki', rate: 1580 + hiLift * 0.88 + (rng() - 0.5) * 40 });
-    if (effRate < 1700 && rng() < 0.65) animalEntries.push({ type: 'tanuki', rate: 1610 + (rng() - 0.5) * 36 });
+    animalEntries.push({ type: 'tanuki', rate: 1610 + hiLift * 0.90 + (rng() - 0.5) * 36 });
+    if (effRate < 1700 && rng() < 0.65) animalEntries.push({ type: 'tanuki', rate: 1645 + (rng() - 0.5) * 32 });
   }
   if (effRate >= 1650) {
-    animalEntries.push({ type: 'rabbit', rate: 1680 + hiLift * 0.96 + (rng() - 0.5) * 40 });
-    if (effRate < 1800 && rng() < 0.65) animalEntries.push({ type: 'rabbit', rate: 1715 + (rng() - 0.5) * 36 });
+    animalEntries.push({ type: 'rabbit', rate: 1710 + hiLift * 0.98 + (rng() - 0.5) * 36 });
+    if (effRate < 1800 && rng() < 0.65) animalEntries.push({ type: 'rabbit', rate: 1745 + (rng() - 0.5) * 32 });
   }
   if (effRate >= 1750) {
-    animalEntries.push({ type: 'dolphin', rate: 1790 + hiLift * 1.04 + (rng() - 0.5) * 45 });
-    if (effRate < 1900 && rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1835 + (rng() - 0.5) * 45 });
+    animalEntries.push({ type: 'dolphin', rate: 1820 + hiLift * 1.05 + (rng() - 0.5) * 40 });
+    if (effRate < 1900 && rng() < 0.75) animalEntries.push({ type: 'dolphin', rate: 1865 + (rng() - 0.5) * 40 });
   }
   if (effRate >= 1850) {
-    animalEntries.push({ type: 'penguin', rate: Math.max(1890, effRate - 15) + (rng() - 0.5) * 45 });
-    if (rng() < 0.80) animalEntries.push({ type: 'penguin', rate: Math.max(1955, effRate + 55) + (rng() - 0.5) * 45 });
+    animalEntries.push({ type: 'penguin', rate: Math.max(1920, effRate + 10) + (rng() - 0.5) * 40 });
+    if (rng() < 0.80) animalEntries.push({ type: 'penguin', rate: Math.max(1985, effRate + 75) + (rng() - 0.5) * 40 });
   }
 
   const profiles = [];
@@ -205,13 +205,13 @@ function buildCpFleetProfiles(effRate) {
     });
   }
 
-  // 残りの枠は人間クルー艇で、effRateを中心に弱いレベル〜強いレベルまで幅広く配置（高レート帯では上位陣をさらに強化）
+  // 残りの枠は人間クルー艇で、effRateを中心に中位〜強豪まで幅広く配置
   const rem = nCp - profiles.length;
-  const hiTopBoost = Math.max(0, effRate - 1850) * 0.18;
+  const hiTopBoost = Math.max(0, effRate - 1750) * 0.20;
   for (let i = 0; i < rem; i++) {
     const u = rem > 1 ? i / (rem - 1) : 0.5; // 0(上位) .. 1(下位)
     const spread = (0.5 - u) * 2.0; // +1.0 .. -1.0
-    const humanRate = effRate + spread * 185 + (u < 0.45 ? hiTopBoost : 0) + (rng() - 0.5) * 32;
+    const humanRate = effRate + 35 + spread * 175 + (u < 0.50 ? hiTopBoost : 0) + (rng() - 0.5) * 28;
     const pair = makeCpPairForType(rng() < 0.5 ? 'human_m' : 'human_f', effRate);
     profiles.push({
       rate: humanRate,
@@ -222,11 +222,11 @@ function buildCpFleetProfiles(effRate) {
     });
   }
 
-  // CP全体の平均レベル(meanSkill)は維持しつつ、1マークでの密集を防ぐため平均周りのばらつきのみをわずかに拡大
+  // CP全体の平均レベルは維持しつつ、1マークでの密集を防ぐため平均周りのばらつきのみをわずかに拡大
   if (profiles.length > 1) {
     const meanSkill = profiles.reduce((acc, p) => acc + p.skill, 0) / profiles.length;
     for (const p of profiles) {
-      p.skill = clamp(meanSkill + (p.skill - meanSkill) * 1.20, 0.74, 1.30);
+      p.skill = clamp(meanSkill + (p.skill - meanSkill) * 1.15, 0.84, 1.34);
     }
   }
 
@@ -850,6 +850,7 @@ function evaluatePairHailSituation(a, b, isPreStart) {
   return null;
 }
 
+let hailScanAcc = 0;
 function checkRightOfWayHails(dt) {
   if (!player || state.ff || (state.phase !== 'race' && state.phase !== 'practice') || cfg.bgmMode === 'off') return;
   if (globalHailCD > 0) globalHailCD -= dt;
@@ -857,6 +858,9 @@ function checkRightOfWayHails(dt) {
     if (b.hailCD > 0) b.hailCD -= dt;
   }
   if (globalHailCD > 0) return;
+  hailScanAcc += dt;
+  if (hailScanAcc < 0.065) return;
+  hailScanAcc = 0;
 
   const isPreStart = state.phase === 'race' && state.t < 0;
   const n = boats.length;
@@ -979,11 +983,11 @@ function updateHUD(sorted) {
   if (b.penalty && !b.finished && !b.dsq && !isPrac && !isOrient) {
     hud.pen.style.display = 'block';
     const deg = b.penalty.reqDeg || 360;
-    const turns = deg === 720 ? '720°(2回転)' : '360°(1回転)';
+    const turns = deg === 720 ? '2回転' : '1回転';
     const pct = Math.min(99, Math.round((b.penalty.turned / (b.penalty.reqRad || 2 * Math.PI)) * 100));
     const sec = Math.ceil(b.penalty.timer);
-    const cw = !b.penalty.clearWater ? ' [クリアウオーター確保中]' : '';
-    hud.pen.textContent = `ペナルティ(ルール${b.penalty.rule}) 残り${sec}秒以内に${turns}ターンせよ (${pct}%)${cw}`;
+    const cw = !b.penalty.clearWater ? ' 要クリア' : '';
+    hud.pen.textContent = `R${b.penalty.rule} ${turns} ${pct}% (残${sec}s)${cw}`;
   } else hud.pen.style.display = 'none';
   if (hud.ocs) hud.ocs.style.display = 'none';
   hud.cam.textContent = 'CAM  ' + CAM_MODES[cam.mode] + ' [C]';
@@ -995,12 +999,38 @@ function updateHUD(sorted) {
     if (lbl.textContent !== nx) lbl.textContent = nx;
   }
   if (hud.tCamReset) hud.tCamReset.classList.toggle('hidden', !cam.isMoved());
-  if (!isPrac) {
+  const tpEl = $('timerPanel');
+  if (tpEl) tpEl.classList.toggle('prestartAlert', !isPrac && !isOrient && t < 0 && (t < -54.5 || t > -11));
+  if (!isPrac && !isOrient) {
     const c = Math.ceil(-t);
-    if (t < 0 && t > -11) { hud.big.textContent = c; hud.big.style.opacity = 1; hud.big.classList.toggle('flash', t > -1); }
-    else if (t >= 0 && t < 2.5) { hud.big.textContent = 'START!'; hud.big.style.opacity = 1 - t / 2.5; }
-    else hud.big.style.opacity = 0;
+    if (t >= -60.5 && t < -55.2) {
+      const fadeOut = t > -56.2 ? clamp((-55.2 - t) / 1.0, 0, 1) : 1;
+      hud.big.classList.add('oneMin');
+      hud.big.classList.remove('flash');
+      const degFav = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
+      const favTxt = (FAVORED === 'even' || degFav === 0) ? '有利なし' : `${degFav}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
+      const html = `<span class="omKicker">P旗降下 · ${favTxt}</span><span class="omMain">スタート1分前</span>`;
+      if (hud.big._lastOneMin !== html) { hud.big._lastOneMin = html; hud.big.innerHTML = html; }
+      hud.big.style.opacity = fadeOut;
+    } else if (t < 0 && t > -11) {
+      hud.big.classList.remove('oneMin');
+      hud.big._lastOneMin = null;
+      hud.big.textContent = c;
+      hud.big.style.opacity = 1;
+      hud.big.classList.toggle('flash', t > -1);
+    } else if (t >= 0 && t < 2.5) {
+      hud.big.classList.remove('oneMin');
+      hud.big._lastOneMin = null;
+      hud.big.textContent = 'START!';
+      hud.big.style.opacity = 1 - t / 2.5;
+    } else {
+      hud.big.classList.remove('oneMin');
+      hud.big._lastOneMin = null;
+      hud.big.style.opacity = 0;
+    }
   } else {
+    hud.big.classList.remove('oneMin');
+    hud.big._lastOneMin = null;
     hud.big.style.opacity = 0;
   }
   const bp = $('boardPanel');
@@ -1022,13 +1052,13 @@ function handleProgress(b, evs) {
       // 違反(ペナルティ未消化 または OCS未解消)がある状態でフィニッシュした場合はプロテスト成立によりDSQ(失格)
       if (b.penalty || b.ocs) {
         b.dsq = true;
-        b.dsqReason = b.ocs ? 'OCS未解消' : `ルール${b.penalty.rule}違反・${b.penalty.reqDeg || 360}°ペナルティ未消化`;
+        b.dsqReason = b.ocs ? 'OCS未解消' : `R${b.penalty.rule} 未消化`;
         if (b.isPlayer) {
-          toast(`プロテスト成立 → DSQ (失格)!\n${b.dsqReason}のままフィニッシュしたため失格となりました`, 'bad', 9000);
+          toast(`DSQ失格 (${b.dsqReason})`, 'bad', 6500);
           state.pFinish = state.t;
           state.pAI = new AI(b, rng);
         } else if (!state.ff) {
-          miniLog(`${nameOf(b)} が違反未消化でフィニッシュ → DSQ`);
+          miniLog(`${nameOf(b)} DSQ (${b.dsqReason})`);
         }
         continue;
       }
@@ -1048,7 +1078,7 @@ function handleProgress(b, evs) {
     if (!b.isPlayer) continue;
     if (e.type === 'rounded') toast(`${e.leg.name}マーク回航`, 'good', 2500);
     else if (e.type === 'gate') toast('4ゲート通過 ― 風上の1マークへ', 'good', 3000);
-    else if (e.type === 'wrongSide') toast('回航方向が違います(ルール28): マークを左舷に見て、マークの外側を回り直してください', 'warn');
+    else if (e.type === 'wrongSide') toast('R28 逆回り — 左舷で回り直し', 'warn', 4000);
   }
 }
 const soundVol = (x, z) => clamp(1 - Math.hypot(x - player.x, z - player.z) / 90, 0, 1);
@@ -1061,15 +1091,15 @@ function handleCollision(e) {
     if (!quiet) thud(soundVol(gw.x, gw.z), imp);
     if (!penOn) {
       if (quiet) return;
-      if (gw.isPlayer) toast(`【違反判定】${nameOf(row)} と接触 (${e.text})\n本来は ルール${e.rule}違反 → 720°(2回転)ペナルティ ですが、ペナルティ無モードのためそのままレース続行`, 'warn', 6500);
-      else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}・本来720°ターン) ※ペナルティ無のため続行`);
+      if (gw.isPlayer) toast(`接触 ${e.text} (ペナ無)`, 'warn', 3200);
+      else if (row.isPlayer) miniLog(`${nameOf(gw)} R${e.rule} (ペナ無)`);
       return;
     }
     const issued = gw.startPenalty(e.rule === 18 ? 18 : e.rule);
     if (quiet) return;
-    if (gw.isPlayer) toast(`ペナルティ! ${nameOf(row)} と接触\n${e.text}\n→ 速やかに(25秒以内に) 720°(2回転)ターン で消化せよ!`, 'bad', 7500);
-    else if (row.isPlayer) miniLog(`${nameOf(gw)} が違反(ルール${e.rule}) → 720°(2回転)ターン`);
-    else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) miniLog(`${nameOf(gw)} 違反(R${e.rule}) → 720°`);
+    if (gw.isPlayer) toast(`接触 ${e.text} → 720°(2回転)`, 'bad', 4200);
+    else if (row.isPlayer) miniLog(`${nameOf(gw)} R${e.rule} → 720°`);
+    else if (Math.hypot(gw.x - player.x, gw.z - player.z) < 60) miniLog(`${nameOf(gw)} R${e.rule} → 720°`);
     if (!issued) return;
   } else if (e.type === 'touch') {
     const b = e.boat;
@@ -1079,14 +1109,14 @@ function handleCollision(e) {
       if (e.mark === 'com') thud(v, imp); else markHit(v, imp);
     }
     if (!penOn) {
-      if (!quiet && b.isPlayer) toast('【違反判定】マークに接触! (ルール31)\n本来は 360°(1回転)ペナルティ ですが、ペナルティ無モードのためそのままレース続行', 'warn', 5500);
+      if (!quiet && b.isPlayer) toast('マーク接触 R31 (ペナ無)', 'warn', 3000);
       return;
     }
     const ok = b.startPenalty(31);
     if (quiet) return;
     if (b.isPlayer && ok) {
       const isUpgraded = b.penalty && b.penalty.reqDeg === 720;
-      toast(isUpgraded ? 'ペナルティ中の追加接触!(ルール31) → 720°(2回転)ターン へ格上げ!' : 'マークに接触!(ルール31) → 速やかに(20秒以内に) 360°(1回転)ターン で消化せよ!', 'bad', 6500);
+      toast(isUpgraded ? '追加接触 R31 → 720°格上げ' : 'マーク接触 R31 → 360°(1回転)', 'bad', 4000);
     }
   } else if (e.type === 'anchorSnag') {
     const b = e.boat;
@@ -1100,8 +1130,8 @@ function startRace() {
   clearHailBubbles();
   resetCloseHoldLock();
   playBgm(cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima');
-  prewarmBgm([cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima', 'result']);
   state.phase = 'race'; state.t = START_T - 0.02; state.sig = 0; state.pFinish = null; state.firstFinish = null; state.resultShown = false; state.count = -1; state.ff = false; state.pAI = null;
+  state.raceBgmPrewarmed = false; state.resultBgmPrewarmed = false;
   state.lastTack = undefined; state.lastPole = undefined; hTarget = null;
   // レートON時はレース開始時にトラペゾイドなら100、上マークフィニッシュなら50を引く
   const beforeRate = rateData.rate;
@@ -1140,9 +1170,8 @@ function startRace() {
   clearOrientHighlight();
   cam.mode = 0; cam.inited = false; cam.zoom = 1; cam.yaw = 0; cam.pitch = 0;
   clock.getDelta(); // シーン切替直後のフレームスパイクを防止
-  const deg = Math.round(Math.abs((LINE_SKEW * 180) / Math.PI));
-  const favLabel = (FAVORED === 'even' || deg === 0) ? '0°有利なし' : `${deg}°${FAVORED === 'com' ? '上有利' : '下有利'}`;
-  toast(`P旗降下、スタート1分前 (${favLabel})`, 'info', 6500);
+  hudAcc = 0;
+  updateHUD(computeRanks());
 }
 
 // ---------- オリエンテーション ----------
@@ -2282,13 +2311,22 @@ function simStep(dt) {
   handlePlayerSailingEvents(player);
   for (const e of resolveCollisions(boats, t)) { if (recorder) recorder.event(e, t); handleCollision(e); }
   checkRightOfWayHails(dt);
+  if (!state.ff && state.phase === 'race') {
+    if (!state.raceBgmPrewarmed && t >= -28) {
+      state.raceBgmPrewarmed = true;
+      prewarmBgm([cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima']);
+    } else if (!state.resultBgmPrewarmed && player && player.leg >= Math.max(1, LEGS.length - 1)) {
+      state.resultBgmPrewarmed = true;
+      prewarmBgm(['result']);
+    }
+  }
   for (const b of boats) {
     if (b.penaltyUpgraded !== null) {
       const r = b.penaltyUpgraded;
       b.penaltyUpgraded = null;
       if (b.isPlayer && !state.ff) {
         if (!state.ff) horn(0.4, 380);
-        toast(`ペナルティ格上げ! (ルール${r})\n20秒以内に360°ターンが完了しなかったため 720°(2回転)ターン へ格上げされました!`, 'bad', 7000);
+        toast(`R${r} 時間超過 → 720°格上げ`, 'bad', 4200);
       }
     }
     if (b.penaltyExpired !== null) {
@@ -2296,10 +2334,10 @@ function simStep(dt) {
       b.penaltyExpired = null;
       if (b.isPlayer) {
         if (!state.ff) horn(0.6, 320);
-        toast(`プロテスト成立 → DSQ (失格)!\n${b.dsqReason} のため失格となりました`, 'bad', 9000);
+        toast(`DSQ失格 (${b.dsqReason || `R${r} 未消化`})`, 'bad', 6500);
         if (state.pFinish === null) { state.pFinish = state.t; state.pAI = new AI(b, rng); }
       } else if (!state.ff) {
-        miniLog(`${nameOf(b)} ペナルティ未履行によりDSQ`);
+        miniLog(`${nameOf(b)} DSQ (未履行)`);
       }
     }
     if (!b.dsq) handleProgress(b, updateProgress(b, t));
@@ -2794,11 +2832,11 @@ function loop() {
     challengerPv.r.render(challengerPv.sc, challengerPv.cm);
   }
   
-  for (const m of models) m.sync(dt, time);
+  for (const m of models) m.sync(dt, time, camera.position);
   // フィニッシュ船のカメラマン視点への切り替えは、リザルト画面表示後(またはオリエンテーションSTEP 8)にする
   const isPostFinishView = (state.phase === 'race' && state.resultShown) || (state.phase === 'orientation' && orientState.step === 7);
   if (models[0]) models[0].setFirstPerson(!isPostFinishView && cam.mode === COCKPIT);
-  world.wake.update(boats, state.paused ? 0 : dt);
+  world.wake.update(boats, state.paused ? 0 : dt, camera.position);
   
   if (player) {
     if (isPostFinishView && world.markObjs && world.markObjs.fcom) {
@@ -2835,41 +2873,43 @@ function loop() {
       const rdx = px - cx, rdz = pz - cz;
       const rhLen = Math.hypot(rdx, rdz) || 1;
       const uhx = rdx / rhLen, uhz = rdz / rhLen;
+      const maxCheckR2 = (rhLen + 6.5) * (rhLen + 6.5);
+      const checkSegPerp = (ptX, ptZ) => {
+        const sx = ptX - cx, sz = ptZ - cz;
+        const along = sx * uhx + sz * uhz;
+        if (along > 0.8 && along < rhLen + 1.0) {
+          const clampedAlong = clamp(along, 1.0, rhLen + 0.4);
+          const ox = sx - uhx * clampedAlong, oz = sz - uhz * clampedAlong;
+          return Math.hypot(ox, oz);
+        }
+        return 999;
+      };
       for (let i = 1; i < models.length; i++) {
         const m = models[i], b = boats[i];
         if (!m || !b || !m.setOccludingAlpha) continue;
         let tgtAlpha = 1.0;
         if (isDrone) {
-          // CP艇のバウ・中央・スターン・リーワード側セールの複数サンプル点で、カメラ〜自艇の視線セグメントとの水平距離を判定
-          const fx = Math.sin(b.h), fz = -Math.cos(b.h);
-          const rx = Math.cos(b.h), rz = Math.sin(b.h);
-          const leeSgn = -(b.tack || 1);
-          const pts = [
-            [b.x, b.z],
-            [b.x + fx * 1.9, b.z + fz * 1.9],
-            [b.x - fx * 1.9, b.z - fz * 1.9],
-            [b.x + fx * 0.8, b.z + fz * 0.8],
-            [b.x - fx * 0.8 + rx * leeSgn * 0.85, b.z - fz * 0.8 + rz * leeSgn * 0.85],
-          ];
-          let minPerpH = 999;
-          for (let k = 0; k < pts.length; k++) {
-            const sx = pts[k][0] - cx, sz = pts[k][1] - cz;
-            const along = sx * uhx + sz * uhz;
-            if (along > 0.8 && along < rhLen + 1.0) {
-              const clampedAlong = clamp(along, 1.0, rhLen + 0.4);
-              const ox = sx - uhx * clampedAlong, oz = sz - uhz * clampedAlong;
-              const perpH = Math.hypot(ox, oz);
-              if (perpH < minPerpH) minPerpH = perpH;
+          const dcx = b.x - cx, dcz = b.z - cz;
+          if (dcx * dcx + dcz * dcz < maxCheckR2) {
+            const fx = Math.sin(b.h), fz = -Math.cos(b.h);
+            const rx = Math.cos(b.h), rz = Math.sin(b.h);
+            const leeSgn = -(b.tack || 1);
+            let minPerpH = checkSegPerp(b.x, b.z);
+            let pH = checkSegPerp(b.x + fx * 1.9, b.z + fz * 1.9); if (pH < minPerpH) minPerpH = pH;
+            pH = checkSegPerp(b.x - fx * 1.9, b.z - fz * 1.9); if (pH < minPerpH) minPerpH = pH;
+            pH = checkSegPerp(b.x + fx * 0.8, b.z + fz * 0.8); if (pH < minPerpH) minPerpH = pH;
+            pH = checkSegPerp(b.x - fx * 0.8 + rx * leeSgn * 0.85, b.z - fz * 0.8 + rz * leeSgn * 0.85); if (pH < minPerpH) minPerpH = pH;
+            if (minPerpH < 2.35) {
+              tgtAlpha = clamp(0.22 + (Math.max(0, minPerpH - 0.95) / 1.40) * 0.78, 0.22, 1.0);
             }
-          }
-          if (minPerpH < 2.35) {
-            tgtAlpha = clamp(0.22 + (Math.max(0, minPerpH - 0.95) / 1.40) * 0.78, 0.22, 1.0);
           }
         }
         const curA = m._curOccAlpha ?? 1.0;
-        const nextA = curA + (tgtAlpha - curA) * (1 - Math.exp(-dt * 14));
-        m._curOccAlpha = nextA;
-        m.setOccludingAlpha(nextA);
+        if (Math.abs(tgtAlpha - curA) > 0.004 || tgtAlpha < 0.999) {
+          const nextA = curA + (tgtAlpha - curA) * (1 - Math.exp(-dt * 14));
+          m._curOccAlpha = nextA;
+          m.setOccludingAlpha(nextA);
+        }
       }
     }
     world.update(time, camera, dt, (state.phase === 'race' || state.phase === 'orientation') ? state.t : time, player, boats);
@@ -3183,7 +3223,7 @@ function buildVenueChoices() {
     btn.innerHTML = `<span class="ic">${v.icon}</span><span class="lb">${v.label}</span>`;
     btn.onclick = () => {
       cfg.venue = v.id; saveCfg(); applyVenue(); makeFleet();
-      prewarmBgm([v.id === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima', v.id === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima']);
+      prewarmBgm([v.id === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima']);
       cam.inited = false; cam.yaw = 0; cam.pitch = 0;
       if (player) cam.update(0, performance.now() / 1000, player, boats);
       buildVenueChoices();
@@ -3379,11 +3419,13 @@ function initMenu() {
   };
   initPreview();
   setBgmVoiceEnabled(cfg.bgmMode !== 'off');
-  prewarmBgm([
-    'menu',
-    cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima',
-    cfg.venue === 'hakkeijima' ? 'race_hakkeijima' : 'race_enoshima',
-  ]);
+  prewarmBgm(['menu']);
+  const syncBgmUnlockChip = () => {
+    const chip = $('bgmUnlockChip');
+    if (!chip) return;
+    const needTap = enteredStartMenu && state.phase === 'menu' && cfg.bgmMode !== 'off' && !isBgmPlaying();
+    chip.classList.toggle('hidden', !needTap);
+  };
   // ロード中はBGMを鳴らさず、AudioContextのアンロックのみ受け付け、ロード完了後(enteredStartMenu)からBGMを再生する
   const unlockEvents = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const unlockMenuBgm = () => {
@@ -3396,16 +3438,30 @@ function initMenu() {
         if (ok && enteredStartMenu && state.phase === 'menu' && cfg.bgmMode !== 'off') {
           playBgm('menu');
         }
+        syncBgmUnlockChip();
       });
       playBgm('menu');
+      syncBgmUnlockChip();
     } else {
       unlockAudioNow();
+      syncBgmUnlockChip();
     }
     if (enteredStartMenu && isAudioRunning() && (state.phase !== 'menu' || cfg.bgmMode === 'off' || isBgmPlaying())) {
+      syncBgmUnlockChip();
       unlockEvents.forEach((ev) => window.removeEventListener(ev, unlockMenuBgm, true));
     }
   };
   unlockEvents.forEach((ev) => window.addEventListener(ev, unlockMenuBgm, { capture: true, passive: true }));
+  const chipBtn = $('bgmUnlockChip');
+  if (chipBtn) {
+    chipBtn.onclick = () => {
+      unlockAudioNow().then(() => {
+        if (state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
+        syncBgmUnlockChip();
+      });
+    };
+  }
+  window.__syncBgmUnlockChip = syncBgmUnlockChip;
 }
 
 (async function boot() {
@@ -3468,13 +3524,29 @@ function initMenu() {
   const enterStartMenu = () => {
     if (enteredStartMenu) return;
     const ld = $('loading');
-    if (ld) ld.classList.add('hidden');
+    if (ld) {
+      ld.classList.remove('ready');
+      ld.classList.add('hidden');
+    }
     enteredStartMenu = true;
     clock.getDelta();
     if (state.phase === 'menu' && cfg.bgmMode !== 'off') {
       playBgm('menu');
-      unlockAudioNow();
+      unlockAudioNow().then(() => {
+        if (state.phase === 'menu' && cfg.bgmMode !== 'off' && !isBgmPlaying()) playBgm('menu');
+        if (window.__syncBgmUnlockChip) window.__syncBgmUnlockChip();
+      });
     }
+    if (window.__syncBgmUnlockChip) {
+      window.__syncBgmUnlockChip();
+      setTimeout(window.__syncBgmUnlockChip, 450);
+    }
+    // メニューが落ち着いた後にプリスタートBGMだけバックグラウンドで緩やかに事前生成
+    setTimeout(() => {
+      if (state.phase === 'menu') {
+        prewarmBgm([cfg.venue === 'hakkeijima' ? 'prestart_hakkeijima' : 'prestart_enoshima']);
+      }
+    }, 1800);
   };
 
   window.__game = {
@@ -3516,10 +3588,52 @@ function initMenu() {
     resetHailCooldowns: () => { globalHailCD = 0; pairHailUntil.clear(); for (const b of boats) b.hailCD = 0; },
   };
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => enterStartMenu());
-  });
-  setTimeout(enterStartMenu, 220);
+  // ブラウザの自動再生制限でAudioContextが停止中の場合、ロード100%画面に「タップして開始（♪ BGM ON）」を表示して
+  // 1タップで確実に音声をアンロックしてからスタート画面へ遷移する（自動再生許可環境やBGM OFF時はそのまま即時遷移）
+  const finishLoadingGate = () => {
+    if (enteredStartMenu) return;
+    if (q.has('auto') || cfg.bgmMode === 'off' || isAudioRunning()) {
+      enterStartMenu();
+      return;
+    }
+    const ld = $('loading');
+    const st = $('loadStatusText');
+    const bw = $('loadBarWrap');
+    const btn = $('loadEnterBtn');
+    if (!ld || !btn) {
+      enterStartMenu();
+      return;
+    }
+    if (st) st.classList.add('hidden');
+    if (bw) bw.classList.add('hidden');
+    btn.classList.remove('hidden');
+    ld.classList.add('ready');
+    const onEnterGesture = (ev) => {
+      if (ev && ev.type === 'keydown' && !['Enter', 'Space', ' '].includes(ev.key)) return;
+      if (ev) {
+        if (ev.stopPropagation) ev.stopPropagation();
+        if (ev.type === 'click' && ev.preventDefault) ev.preventDefault();
+      }
+      ld.removeEventListener('click', onEnterGesture);
+      window.removeEventListener('keydown', onEnterGesture);
+      unlockAudioNow();
+      enterStartMenu();
+      if (state.phase === 'menu' && cfg.bgmMode !== 'off') playBgm('menu');
+    };
+    ld.addEventListener('click', onEnterGesture);
+    window.addEventListener('keydown', onEnterGesture);
+  };
+
+  // 自動再生がブラウザで許可されているか短時間だけ試行してから遷移 or タップ待機へ
+  if (cfg.bgmMode !== 'off' && !q.has('auto')) {
+    unlockAudioNow().finally(() => {
+      requestAnimationFrame(() => requestAnimationFrame(finishLoadingGate));
+    });
+    setTimeout(finishLoadingGate, 260);
+  } else {
+    requestAnimationFrame(() => requestAnimationFrame(finishLoadingGate));
+    setTimeout(finishLoadingGate, 220);
+  }
 
   if (q.has('auto')) {
     enterStartMenu();

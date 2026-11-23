@@ -320,8 +320,11 @@ function drawAnimalPairSailLogo(ctx, animalType, colorHex) {
 
 // メインセールテクスチャ: 実艇写真準拠の3本バテンポケット、パネルシーム、スナイプ鳥マーク、国別コード & 4色セールNo、同種動物ペア時の薄めの動物ロゴ、タック角の三角形カット、下部クリアウィンドウ
 function mainSailTexture(no, color, nat = 'JPN', isPlayer = false, animalPairLogo = null) {
-  const c = document.createElement('canvas'); c.width = 512; c.height = 1024;
+  const c = document.createElement('canvas');
+  const scale = isPlayer ? 1 : 0.5;
+  c.width = 512 * scale; c.height = 1024 * scale;
   const x = c.getContext('2d');
+  if (scale !== 1) x.scale(scale, scale);
   x.fillStyle = 'rgba(249, 251, 253, 0.98)';
   x.fillRect(0, 0, 512, 1024);
 
@@ -1394,12 +1397,12 @@ export class BoatModel {
         else obj.material = cloneMat(obj.material);
       });
     }
-    const isTrans = a < 0.98;
+    const isTrans = this._wasTrans ? (a < 0.992) : (a < 0.96);
     const transChanged = this._wasTrans !== isTrans;
     this._wasTrans = isTrans;
     for (const item of this._occMats) {
       const nextTrans = isTrans ? true : item.baseTrans;
-      if (item.mat.transparent !== nextTrans || transChanged) {
+      if (item.mat.transparent !== nextTrans) {
         item.mat.transparent = nextTrans;
         item.mat.needsUpdate = true;
       }
@@ -1522,9 +1525,9 @@ export class BoatModel {
     out.set(px, py, pz);
   }
 
-  updateJibShape(pk, jibRot, camberSigned) {
+  updateJibShape(pk, jibRot, camberSigned, epsOverride = null) {
     const closeF = this._closeFactor ?? 0;
-    const eps = this.boat.isPlayer ? 0.004 : 0.015;
+    const eps = epsOverride !== null ? epsOverride : (this.boat.isPlayer ? 0.004 : 0.018);
     if (Math.abs(pk - this._lastPk) < eps && Math.abs(jibRot - this._lastJibRot) < eps && Math.abs(camberSigned - this._lastJibCamber) < eps && Math.abs((this.boomRotY || 0) - (this._lastBoomRotY || 0)) < eps && Math.abs(closeF - (this._lastCloseF || 0)) < eps) return;
     this._lastPk = pk; this._lastJibRot = jibRot; this._lastJibCamber = camberSigned; this._lastBoomRotY = this.boomRotY || 0; this._lastCloseF = closeF;
 
@@ -1601,10 +1604,15 @@ export class BoatModel {
     this._firstSyncDone = false;
   }
 
-  sync(dt, t) {
+  sync(dt, t, camPos = null) {
     const b = this.boat;
     this.root.position.set(b.x, 0, b.z);
     this.root.rotation.y = -b.h;
+    const dCamSq = (!b.isPlayer && camPos)
+      ? ((b.x - camPos.x) * (b.x - camPos.x) + (b.z - camPos.z) * (b.z - camPos.z))
+      : 0;
+    const nearCam = b.isPlayer || dCamSq < 34 * 34;
+    const midCam = b.isPlayer || dCamSq < 78 * 78;
     const ph = t * 1.6 + this.phase;
     const hx = Math.sin(b.h), hz = -Math.cos(b.h);
     const ws = waveSample(b.x, b.z, SEA.clock, hx, hz);
@@ -1632,9 +1640,11 @@ export class BoatModel {
     const minPitchW = -0.025 - 0.055 * downFactor * (1 - 0.65 * clamp(planingF, 0, 1));
     const slopeRespond = chopRespond + 0.48 * downFactor;
     const pitchW = clamp(Math.atan(ws.slopeLong * 0.72 + (ws.slope - ws.slopeLong) * 0.62 * slopeRespond), minPitchW, 0.115);
-    const wsR = waveSample(b.x, b.z, SEA.clock, -hz, hx);
     const wakeWobble = (b.wakeWave || 0) * 0.045 * Math.sin(t * 11.0 + this.phase);
-    const rollW = clamp(Math.atan(wsR.slope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115);
+    const wsRSlope = midCam ? waveSample(b.x, b.z, SEA.clock, -hz, hx).slope : 0;
+    const rollW = midCam
+      ? clamp(Math.atan(wsRSlope) * 0.56 * chopRespond + wakeWobble, -0.115, 0.115)
+      : clamp(wakeWobble, -0.08, 0.08);
     // プレーニング時はハルがステップに乗ってわずかに浮上し、バウが軽快にリフトするスナイプ特有の滑走姿勢を再現
     const planingLiftY = 0.052 * planingF;
     const planingBowPitch = 0.048 * planingF + 0.0035 * planingF * Math.sin(t * 22.0 + this.phase);
@@ -1655,7 +1665,7 @@ export class BoatModel {
       const surfY = ws.hLong * 0.96 + (ws.h - ws.hLong) * 0.58;
       this.waterCutMesh.position.y = surfY;
       this.waterCutMesh.rotation.x = clamp(Math.atan(ws.slopeLong * 0.85 + (ws.slope - ws.slopeLong) * 0.45), -0.09, 0.09);
-      this.waterCutMesh.rotation.z = -clamp(Math.atan(wsR.slope * 0.55), -0.08, 0.08);
+      this.waterCutMesh.rotation.z = -clamp(Math.atan(wsRSlope * 0.55), -0.08, 0.08);
       const u = this.waterCutMat.uniforms;
       u.uTime.value = t;
       u.uSpeed.value = clamp(ktApprox / 4.2, 0, 1.45);
@@ -1763,7 +1773,8 @@ export class BoatModel {
     const jibCamber = jibBulge * jibCamberScale * Math.max(0.08, 1 - jibLuff * (0.55 + 0.45 * Math.sin(t * 25 + this.phase + 1))) * transitDip;
     this.jibSail.scale.x = 1;
     this.jibSail.rotation.x = 0;
-    this.updateJibShape(pk, jibRot, jibCamber);
+    const jibEps = b.isPlayer ? 0.004 : (nearCam ? 0.018 : (midCam ? 0.048 : 0.095));
+    this.updateJibShape(pk, jibRot, jibCamber, jibEps);
 
     const clewX = JIB_CLEW_LEN * Math.sin(jibRot);
     const clewY = JIB_TACK_Y + 0.055 * closeFactor + 0.16 * (1 - closeFactor) + 0.54 * pk;
@@ -1787,12 +1798,14 @@ export class BoatModel {
       this.pole.visible = true;
     } else this.pole.visible = false;
 
-    if (this.tells) this.syncTells(t, jibCamber, jibLuff, b.stall, pk, jibRot);
-    if (this.vanes) {
-      const aw = b.awa;
-      for (const v of this.vanes) {
-        v.g.rotation.y = Math.atan2(-Math.cos(aw), -Math.sin(aw)) + Math.sin(t * 7 + v.ph) * 0.08;
-        v.g.rotation.z = -0.15 + Math.sin(t * 9 + v.ph) * 0.06;
+    if (nearCam || this._firstSyncDone !== true) {
+      if (this.tells) this.syncTells(t, jibCamber, jibLuff, b.stall, pk, jibRot);
+      if (this.vanes) {
+        const aw = b.awa;
+        for (const v of this.vanes) {
+          v.g.rotation.y = Math.atan2(-Math.cos(aw), -Math.sin(aw)) + Math.sin(t * 7 + v.ph) * 0.08;
+          v.g.rotation.z = -0.15 + Math.sin(t * 9 + v.ph) * 0.06;
+        }
       }
     }
     if (b.pole !== this._prevPole) {
@@ -2022,29 +2035,37 @@ export class BoatModel {
     // カメラ位置：船尾寄りのオンボード(GoPro風)引き画角に配置し、クルーが画面を占有せずコクピット・セール・前方海面が見渡せるように調整
     this.mount.position.set(this.side * (0.26 + 0.14 * helmDeck + lean * 0.34), 1.50 - lean * 0.04, 2.02);
 
-    // パフォーマンス最適化(24艇対応): CP艇の細かいロープ・リーチリボン更新は3フレームに1回間引いてCPU負荷を軽減
-    this._ropeTick = ((this._ropeTick || 0) + 1) % 3;
-    const doDetailSync = b.isPlayer || this._ropeTick === 0 || this._firstSyncDone !== true;
+    // パフォーマンス最適化(20艇対応): CP艇の細かいロープ・リーチリボン更新は艇IDごとにフレーム分散し、遠方艇はスキップしてCPU負荷を軽減
+    if (this._ropeTick === undefined) this._ropeTick = (b.id || 0) % 3;
+    this._ropeTick = (this._ropeTick + 1) % 3;
+    const isFirstSync = this._firstSyncDone !== true;
+    const doDetailSync = b.isPlayer || isFirstSync || (midCam && this._ropeTick === 0);
     this._firstSyncDone = true;
     if (doDetailSync) {
-      this.syncShrouds(t, sgn, luff, Math.abs(b.v), pk, runShroudHold);
-      this.syncForestay(pk, sgn);
-      if (this.leechRibbons) {
-        const stall = b.stall || 0;
-        const fastFlow = 1 + 0.55 * clamp(planingF, 0, 1);
-        for (const r of this.leechRibbons) {
-          r.m.position.x = r.twistX * this.mainSail.scale.x;
-          const twistYaw = bulgeSign * (0.14 * r.u);
-          const curl = -bulgeSign * stall * (0.75 + 0.55 * Math.sin(t * 20 + r.ph)) + luff * 0.45 * Math.sin(t * 23 + r.ph);
-          const flutter = (0.05 + 0.22 * Math.max(luff, stall) + 0.03 * planingF) * Math.sin(t * 17 * fastFlow + r.ph);
-          r.m.rotation.y = twistYaw + curl + flutter;
-          r.m.rotation.x = -0.04 * (1 - 0.5 * clamp(planingF, 0, 1)) + 0.14 * Math.sin(t * 14 * fastFlow + r.ph) * (0.28 + Math.max(luff, stall));
+      if (nearCam || isFirstSync) {
+        this.syncShrouds(t, sgn, luff, Math.abs(b.v), pk, runShroudHold);
+        this.syncForestay(pk, sgn);
+        if (this.leechRibbons) {
+          const stall = b.stall || 0;
+          const fastFlow = 1 + 0.55 * clamp(planingF, 0, 1);
+          for (const r of this.leechRibbons) {
+            r.m.position.x = r.twistX * this.mainSail.scale.x;
+            const twistYaw = bulgeSign * (0.14 * r.u);
+            const curl = -bulgeSign * stall * (0.75 + 0.55 * Math.sin(t * 20 + r.ph)) + luff * 0.45 * Math.sin(t * 23 + r.ph);
+            const flutter = (0.05 + 0.22 * Math.max(luff, stall) + 0.03 * planingF) * Math.sin(t * 17 * fastFlow + r.ph);
+            r.m.rotation.y = twistYaw + curl + flutter;
+            r.m.rotation.x = -0.04 * (1 - 0.5 * clamp(planingF, 0, 1)) + 0.14 * Math.sin(t * 14 * fastFlow + r.ph) * (0.28 + Math.max(luff, stall));
+          }
         }
+        this.syncMainSheet(sgn, lean, sideAbs);
+        if (this.rjLoopSegs) this.syncRopes(sgn, clewY, pk);
+      } else {
+        this.syncForestay(pk, sgn);
       }
-      this.syncMainSheet(sgn, lean, sideAbs);
-      if (this.rjLoopSegs) this.syncRopes(sgn, clewY, pk);
     }
-    this.syncBowSpray(dt, t, ws, sgn);
+    if (midCam || isFirstSync || this.slamBurstT > 0) {
+      this.syncBowSpray(dt, t, ws, sgn);
+    }
   }
 
   // バウしぶき: 常時走行の波切り・プレーニングチャインスプレーは海面シェーダ(waterCutMesh)で精細に表現し、波頭スラム時のみ控えめな立体飛沫(16..27)を上げる

@@ -2451,16 +2451,20 @@ export function createWorld(scene) {
   const hist = new Map();
   const col = new THREE.Color();
   const tv = new THREE.Vector3(), ts = new THREE.Vector3(), tq = new THREE.Quaternion(), yAx = new THREE.Vector3(0, 1, 0);
-  const hide = (k) => { m4.makeScale(0, 0, 0); trail.setMatrixAt(k, m4); col.setScalar(0); trail.setColorAt(k, col); };
+  const maxTrailInst = TRAIL_N * PER * MAXB;
   const wake = {
-    update(boats, dt) {
+    update(boats, dt, camPos = null) {
       let k = 0;
       for (const b of boats) {
         let h = hist.get(b.id);
         if (!h) { h = { pts: [], acc: 0 }; hist.set(b.id, h); }
+        const dCamSq = (!b.isPlayer && camPos)
+          ? ((b.x - camPos.x) * (b.x - camPos.x) + (b.z - camPos.z) * (b.z - camPos.z))
+          : 0;
+        const farSkip = !b.isPlayer && dCamSq > 135 * 135;
         h.acc += dt;
         const rDrag = clampN(b.rudderDrag || 0, 0, 1);
-        if (h.acc > (rDrag > 0.22 ? 0.048 : 0.068) && (b.v > 0.38 || rDrag > 0.16)) {
+        if (!farSkip && h.acc > (rDrag > 0.22 ? 0.048 : 0.068) && (b.v > 0.38 || rDrag > 0.16)) {
           h.acc = 0;
           const fx = Math.sin(b.h), fz = -Math.cos(b.h);
           const sternX = b.x - fx * 2.68, sternZ = b.z - fz * 2.68;
@@ -2486,93 +2490,89 @@ export function createWorld(scene) {
           });
           if (h.pts.length > TRAIL_N) h.pts.pop();
         }
+        for (let i = h.pts.length - 1; i >= 0; i--) {
+          h.pts[i].age += dt;
+          if (h.pts[i].age >= LIFE) h.pts.splice(i, 1);
+        }
+        if (farSkip || h.pts.length === 0) continue;
+        const step = (!b.isPlayer && dCamSq > 68 * 68) ? 2 : 1;
         const curFx = Math.sin(b.h), curFz = -Math.cos(b.h);
         const curRx = Math.cos(b.h), curRz = Math.sin(b.h);
-        for (const p of h.pts) p.age += dt;
-        for (let i = 0; i < TRAIL_N; i++) {
+        for (let i = 0; i < h.pts.length && k + PER <= maxTrailInst; i += step) {
           const p = h.pts[i];
-          if (!p || p.age >= LIFE) { for (let j = 0; j < PER; j++) hide(k++); continue; }
           const life = 1 - p.age / LIFE, fade = life * life;
           const rx = Math.cos(p.h), rz = Math.sin(p.h); // 艇の右方向
           const rFoam = (p.rudder || 0) * Math.pow(life, 0.78);
+          const wantBow = (p.cruiseFoam > 0.08 || p.slamSpray > 0.08) && p.age > 0.10 && p.age < 0.62;
+          const wantKelvin = p.s > 0.18 && p.age > 0.16;
+          const wantRudder = rFoam > 0.20 && p.age > 0.06 && p.age < 1.00;
+          if (!wantBow && !wantKelvin && !wantRudder) continue;
 
-          // 1, 2) 通常走行時はバウ外側の海面がほんのわずかに白くなるフラットな泡、波にはたかれた時だけ少し強い白泡(船体との接地点は絶対に白くしないよう船体周囲1.15m以内はマスク)
-          if ((p.cruiseFoam > 0.08 || p.slamSpray > 0.08) && p.age > 0.10 && p.age < 0.62) {
+          // 履歴点ごとに1回だけ波高をサンプルしてCPU負荷を大幅削減
+          const wsP = waveSample(p.midX, p.midZ, SEA.clock);
+          const surfY = wsP.hLong * 0.95 + (wsP.h - wsP.hLong) * 0.55 + 0.016;
+
+          // 1, 2) 通常走行時はバウ外側の海面がほんのわずかに白くなるフラットな泡、波にはたかれた時だけ少し強い白泡(船体周囲1.15m以内はマスク)
+          if (wantBow) {
             const bLife = 1 - (p.age - 0.10) / 0.52;
             const bFade = Math.pow(clampN(bLife, 0, 1), 1.45);
-            const wsB = waveSample(p.bowX, p.bowZ, SEA.clock);
-            const bowY = wsB.hLong * 0.95 + (wsB.h - wsB.hLong) * 0.55 + 0.015;
             const sprayOff = 0.96 + p.age * (1.20 + p.s * 0.85);
+            const sprayBright = (0.056 * (p.cruiseFoam || 0) + 0.145 * (p.slamSpray || 0)) * bFade;
             for (const s of [-1, 1]) {
               const px = p.bowX + rx * s * sprayOff;
               const pz = p.bowZ + rz * s * sprayOff;
               const relF = (px - b.x) * curFx + (pz - b.z) * curFz;
               const relR = Math.abs((px - b.x) * curRx + (pz - b.z) * curRz);
-              if (relF > -2.65 && relF < 2.55 && relR < 1.15) {
-                hide(k++);
-                continue;
-              }
+              if (relF > -2.65 && relF < 2.55 && relR < 1.15) continue;
               const sa = p.h - s * 0.42;
               tq.setFromAxisAngle(yAx, -sa);
               ts.set(0.165 + p.age * 0.21, 1, 0.48 + p.age * 0.34);
-              m4.compose(tv.set(px, bowY, pz), tq, ts);
+              m4.compose(tv.set(px, surfY, pz), tq, ts);
               trail.setMatrixAt(k, m4);
-              const sprayBright = (0.056 * (p.cruiseFoam || 0) + 0.145 * (p.slamSpray || 0)) * bFade;
               col.setRGB(0.90, 0.96, 1.0).multiplyScalar(sprayBright);
               trail.setColorAt(k++, col);
             }
-          } else {
-            hide(k++);
-            hide(k++);
           }
 
           // 3) わずかに立つ引き波(ケルビンV字波紋): 船体後方の離れた位置からごく控えめな水面光沢筋として左右交互に配置
-          if (p.s > 0.18 && p.age > 0.16) {
+          if (wantKelvin) {
             const sideS = i % 2 === 0 ? 1 : -1;
             const wakeOff = 0.94 + p.age * (0.74 + p.s * 0.92);
             const wx = p.midX + rx * sideS * wakeOff;
             const wz = p.midZ + rz * sideS * wakeOff;
             const relF = (wx - b.x) * curFx + (wz - b.z) * curFz;
             const relR = Math.abs((wx - b.x) * curRx + (wz - b.z) * curRz);
-            if (relF > -2.65 && relF < 2.55 && relR < 1.15) {
-              hide(k++);
-            } else {
-              const wsW = waveSample(wx, wz, SEA.clock);
-              const wy = wsW.hLong * 0.95 + (wsW.h - wsW.hLong) * 0.55 + 0.015;
+            if (!(relF > -2.65 && relF < 2.55 && relR < 1.15)) {
               const wa = p.h - sideS * 0.38;
               tq.setFromAxisAngle(yAx, -wa);
               ts.set(0.060 + p.age * 0.042, 1, 0.96 + p.age * 0.52);
-              m4.compose(tv.set(wx, wy, wz), tq, ts);
+              m4.compose(tv.set(wx, surfY, wz), tq, ts);
               trail.setMatrixAt(k, m4);
               const wakeGlint = 0.032 * p.s * fade;
               col.setRGB(0.58, 0.78, 0.90).multiplyScalar(wakeGlint);
               trail.setColorAt(k++, col);
             }
-          } else {
-            hide(k++);
           }
 
-          // 4) ラダー周辺の白泡: ラダーに抵抗があった時(rFoam > 0.20)だけ船尾後方がわずかに白くなる(船体と海面の接地点は白くしない)
-          if (rFoam > 0.20 && p.age > 0.06 && p.age < 1.00) {
+          // 4) ラダー周辺の白泡: ラダーに抵抗があった時(rFoam > 0.20)だけ船尾後方がわずかに白くなる
+          if (wantRudder) {
             const rFade = Math.pow(1 - p.age / 1.00, 1.55);
-            const wsR = waveSample(p.x, p.z, SEA.clock);
-            const ry = wsR.hLong * 0.95 + (wsR.h - wsR.hLong) * 0.55 + 0.02;
             tq.setFromAxisAngle(yAx, -p.h + (i % 2 === 0 ? 0.14 : -0.14));
             ts.set(0.175 + p.age * 0.16, 1, 0.42 + p.age * 0.26);
-            m4.compose(tv.set(p.x, ry, p.z), tq, ts);
+            m4.compose(tv.set(p.x, surfY + 0.005, p.z), tq, ts);
             trail.setMatrixAt(k, m4);
             col.setRGB(0.86, 0.94, 0.99).multiplyScalar(0.165 * rFoam * rFade);
             trail.setColorAt(k++, col);
-          } else {
-            hide(k++);
           }
         }
       }
-      for (; k < TRAIL_N * PER * MAXB; k++) { m4.makeScale(0, 0, 0); trail.setMatrixAt(k, m4); }
-      trail.instanceMatrix.needsUpdate = true;
-      if (trail.instanceColor) trail.instanceColor.needsUpdate = true;
+      trail.count = k;
+      if (k > 0) {
+        trail.instanceMatrix.needsUpdate = true;
+        if (trail.instanceColor) trail.instanceColor.needsUpdate = true;
+      }
     },
-    reset() { hist.clear(); },
+    reset() { hist.clear(); trail.count = 0; },
   };
 
   return {
@@ -2911,24 +2911,28 @@ export function createWorld(scene) {
       startCurtain.visible = lineMesh.visible;
       startCurtainMat.opacity = 0.90 * postStartFade;
       if (lineMesh.visible) {
-        // 波に隠れず、かつ船や本部船より手前に優先描画されない(depthTest: true)よう、ライン帯と光カーテンの各頂点高さを海面波高に追従させる
-        const paL = toWorld(MARKS.pin.a, MARKS.pin.c), pbL = toWorld(MARKS.com.a, MARKS.com.c);
-        const posAttr = lineGeo.attributes.position;
-        const cPosAttr = startCurtainGeo.attributes.position;
-        const cols = 73;
-        for (let ix = 0; ix < cols; ix++) {
-          const uL = (posAttr.getX(ix) / len) + 0.5;
-          const wx = paL.x + (pbL.x - paL.x) * uL;
-          const wz = paL.z + (pbL.z - paL.z) * uL;
-          const wsL = waveSample(wx, wz, SEA.clock);
-          const hSurf = wsL.h + 0.24;
-          posAttr.setZ(ix, hSurf);
-          posAttr.setZ(ix + cols, hSurf);
-          cPosAttr.setY(ix, wsL.h + 1.62);
-          cPosAttr.setY(ix + cols, wsL.h + 0.18);
+        const lastLT = lineMesh.userData._lastWaveT;
+        if (lastLT === undefined || Math.abs(SEA.clock - lastLT) >= 0.048) {
+          lineMesh.userData._lastWaveT = SEA.clock;
+          // 波に隠れず、かつ船や本部船より手前に優先描画されない(depthTest: true)よう、ライン帯と光カーテンの各頂点高さを海面波高に追従させる
+          const paL = toWorld(MARKS.pin.a, MARKS.pin.c), pbL = toWorld(MARKS.com.a, MARKS.com.c);
+          const posAttr = lineGeo.attributes.position;
+          const cPosAttr = startCurtainGeo.attributes.position;
+          const cols = 73;
+          for (let ix = 0; ix < cols; ix++) {
+            const uL = (posAttr.getX(ix) / len) + 0.5;
+            const wx = paL.x + (pbL.x - paL.x) * uL;
+            const wz = paL.z + (pbL.z - paL.z) * uL;
+            const wsL = waveSample(wx, wz, SEA.clock);
+            const hSurf = wsL.h + 0.24;
+            posAttr.setZ(ix, hSurf);
+            posAttr.setZ(ix + cols, hSurf);
+            cPosAttr.setY(ix, wsL.h + 1.62);
+            cPosAttr.setY(ix + cols, wsL.h + 0.18);
+          }
+          posAttr.needsUpdate = true;
+          cPosAttr.needsUpdate = true;
         }
-        posAttr.needsUpdate = true;
-        cPosAttr.needsUpdate = true;
       }
 
       camera.getWorldDirection(camDir);
